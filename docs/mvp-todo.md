@@ -106,13 +106,13 @@ Before implementing any task, read:
 
 ## MVP 3 — Connector Abstraction
 
-- [ ] Create connector interface.
-- [ ] Create connector metadata model.
-- [ ] Create connector permission state model.
-- [ ] Create connector revoke/delete contract.
-- [ ] Ensure connector emits only derived events.
-- [ ] Ensure raw content cannot be passed into store APIs.
-- [ ] Commit connector abstraction.
+- [x] Create connector interface.
+- [x] Create connector metadata model.
+- [x] Create connector permission state model.
+- [x] Create connector revoke/delete contract.
+- [x] Ensure connector emits only derived events.
+- [x] Ensure raw content cannot be passed into store APIs.
+- [x] Commit connector abstraction.
 
 ## MVP 4 — Local Store
 
