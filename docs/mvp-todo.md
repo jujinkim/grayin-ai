@@ -179,13 +179,13 @@ Before implementing any task, read:
 
 ## MVP 9 — Local AI Adapter
 
-- [ ] Create `LocalLanguageModel` interface.
-- [ ] Add replaceable Gemma 4 adapter placeholder.
-- [ ] Add fake/stub implementation.
-- [ ] Ensure model receives only Evidence Pack.
-- [ ] Ensure no commercial LLM API.
-- [ ] Ensure no network access.
-- [ ] Commit local AI adapter.
+- [x] Create `LocalLanguageModel` interface.
+- [x] Add replaceable Gemma 4 adapter placeholder.
+- [x] Add fake/stub implementation.
+- [x] Ensure model receives only Evidence Pack.
+- [x] Ensure no commercial LLM API.
+- [x] Ensure no network access.
+- [x] Commit local AI adapter.
 
 ## MVP 10 — UI
 
