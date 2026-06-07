@@ -204,17 +204,17 @@ Before implementing any task, read:
 
 ## MVP 11 — Security and Backup Policy
 
-- [ ] Document SQLCipher plan.
-- [ ] Document Android Keystore plan.
-- [ ] Document encrypted export/import plan.
-- [ ] Configure or document backup exclusion.
-- [ ] Ensure no crash analytics.
-- [ ] Ensure no ad SDK.
-- [ ] Ensure no telemetry.
-- [ ] Ensure no raw logs.
-- [ ] Add optional screenshot blocking TODO.
-- [ ] Add optional biometric app lock TODO.
-- [ ] Commit security policy.
+- [x] Document SQLCipher plan.
+- [x] Document Android Keystore plan.
+- [x] Document encrypted export/import plan.
+- [x] Configure or document backup exclusion.
+- [x] Ensure no crash analytics.
+- [x] Ensure no ad SDK.
+- [x] Ensure no telemetry.
+- [x] Ensure no raw logs.
+- [x] Add optional screenshot blocking TODO.
+- [x] Add optional biometric app lock TODO.
+- [x] Commit security policy.
 
 ## MVP 12 — Export/Import Design
 

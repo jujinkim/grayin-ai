@@ -33,7 +33,7 @@
 - No raw data retention
 - Encrypted local DB in final implementation
 - Android Keystore integration
-- Backup exclusion
+- Backup exclusion through `android:allowBackup="false"` in MVP
 - No network permission in MVP
 - No telemetry
 - No ads

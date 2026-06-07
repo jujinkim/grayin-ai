@@ -48,3 +48,4 @@ Final implementation must encrypt local storage.
 - SQLCipher-backed persistence must be chosen before a real database is added.
 - Android Keystore must protect database keys before sensitive derived data is stored persistently.
 - Store APIs must accept only source references, derived memory, citations, summaries, clusters, and index metadata.
+- Android backup remains disabled in the MVP manifest until encrypted export/import is implemented.
