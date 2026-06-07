@@ -54,6 +54,8 @@ Original data is accessed only transiently in memory, processed immediately, and
 
 The app stores only source references and derived memory/index data.
 
+Core model types are restricted to source references, derived memory events, evidence, citations, confidence, and missing-data explanations. They do not define fields for raw/original content.
+
 ## Android Skeleton
 
 The MVP app is a Kotlin Android project using Jetpack Compose.

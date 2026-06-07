@@ -57,3 +57,18 @@ All derived data is still sensitive and must be encrypted in the final implement
 There must be no store API that accepts raw content.
 
 Connectors may read raw source data only inside connector-owned transient processing scopes. They may emit only derived events and source references.
+
+## Core Model Rule
+
+Core model types may represent only:
+
+- source references
+- derived memory events
+- derived summaries
+- keywords, labels, and entities
+- citation metadata
+- confidence
+- missing-source explanations
+- connector and processing state
+
+Core model types must not add fields for original file bytes, raw notification text, raw message text, raw local-file content, raw calendar records, raw usage event dumps, or any raw content blob.

@@ -80,29 +80,29 @@ Before implementing any task, read:
 
 ## MVP 2 — Core Data Model
 
-- [ ] Add `SourceReference`.
-- [ ] Add `DerivedMemoryEvent`.
-- [ ] Add `MemoryCitation`.
-- [ ] Add `EvidenceItem`.
-- [ ] Add `EvidencePack`.
-- [ ] Add `GroundedAnswer`.
-- [ ] Add `InferenceStep`.
-- [ ] Add `MissingSource`.
-- [ ] Add `ConnectorState`.
-- [ ] Add `ConnectorCapability`.
-- [ ] Add `MemoryCapability`.
-- [ ] Add `SensitivityLevel`.
-- [ ] Add `ConfidenceLevel`.
-- [ ] Add `ProcessingState`.
-- [ ] Add `SourceAvailability`.
-- [ ] Add `DailyMemorySummary`.
-- [ ] Add `PlaceCluster`.
-- [ ] Add `PlaceVisit`.
-- [ ] Add `PhotoMemoryIndex`.
-- [ ] Add `NotificationDerivedEvent`.
-- [ ] Add `AppUsageSummary`.
-- [ ] Ensure no model requires raw content persistence.
-- [ ] Commit core model phase.
+- [x] Add `SourceReference`.
+- [x] Add `DerivedMemoryEvent`.
+- [x] Add `MemoryCitation`.
+- [x] Add `EvidenceItem`.
+- [x] Add `EvidencePack`.
+- [x] Add `GroundedAnswer`.
+- [x] Add `InferenceStep`.
+- [x] Add `MissingSource`.
+- [x] Add `ConnectorState`.
+- [x] Add `ConnectorCapability`.
+- [x] Add `MemoryCapability`.
+- [x] Add `SensitivityLevel`.
+- [x] Add `ConfidenceLevel`.
+- [x] Add `ProcessingState`.
+- [x] Add `SourceAvailability`.
+- [x] Add `DailyMemorySummary`.
+- [x] Add `PlaceCluster`.
+- [x] Add `PlaceVisit`.
+- [x] Add `PhotoMemoryIndex`.
+- [x] Add `NotificationDerivedEvent`.
+- [x] Add `AppUsageSummary`.
+- [x] Ensure no model requires raw content persistence.
+- [x] Commit core model phase.
 
 ## MVP 3 — Connector Abstraction
 
