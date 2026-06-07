@@ -167,15 +167,15 @@ Before implementing any task, read:
 
 ## MVP 8 — Grounded Answer Format
 
-- [ ] Implement template-based grounded answer generator.
-- [ ] Include answer.
-- [ ] Include evidence.
-- [ ] Include inference.
-- [ ] Include confidence.
-- [ ] Include missing data.
-- [ ] Include source links or references.
-- [ ] Enforce no uncited claims.
-- [ ] Commit grounded answer format.
+- [x] Implement template-based grounded answer generator.
+- [x] Include answer.
+- [x] Include evidence.
+- [x] Include inference.
+- [x] Include confidence.
+- [x] Include missing data.
+- [x] Include source links or references.
+- [x] Enforce no uncited claims.
+- [x] Commit grounded answer format.
 
 ## MVP 9 — Local AI Adapter
 
