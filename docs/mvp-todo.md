@@ -152,18 +152,18 @@ Before implementing any task, read:
 
 ## MVP 7 — Retrieval and Query Planning
 
-- [ ] Create query intent model.
-- [ ] Parse approximate time expressions.
-- [ ] Support location recall intent.
-- [ ] Support schedule recall intent.
-- [ ] Support future busyness check intent.
-- [ ] Support photo recall intent.
-- [ ] Support notification/payment recall intent.
-- [ ] Support app usage recall intent.
-- [ ] Support general memory recall intent.
-- [ ] Support night-out route reconstruction intent.
-- [ ] Determine required/optional/available/missing capabilities.
-- [ ] Commit retrieval/query planner.
+- [x] Create query intent model.
+- [x] Parse approximate time expressions.
+- [x] Support location recall intent.
+- [x] Support schedule recall intent.
+- [x] Support future busyness check intent.
+- [x] Support photo recall intent.
+- [x] Support notification/payment recall intent.
+- [x] Support app usage recall intent.
+- [x] Support general memory recall intent.
+- [x] Support night-out route reconstruction intent.
+- [x] Determine required/optional/available/missing capabilities.
+- [x] Commit retrieval/query planner.
 
 ## MVP 8 — Grounded Answer Format
 
