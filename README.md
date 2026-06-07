@@ -53,3 +53,33 @@ Grayin AI never stores original user data.
 Original data is accessed only transiently in memory, processed immediately, and discarded.
 
 The app stores only source references and derived memory/index data.
+
+## Android Skeleton
+
+The MVP app is a Kotlin Android project using Jetpack Compose.
+
+Current package structure:
+
+- `ai.grayin.app`
+- `ai.grayin.core.model`
+- `ai.grayin.core.connector`
+- `ai.grayin.core.store`
+- `ai.grayin.core.indexing`
+- `ai.grayin.core.retrieval`
+- `ai.grayin.core.grounding`
+- `ai.grayin.core.security`
+- `ai.grayin.core.ai`
+- `ai.grayin.connectors.location`
+- `ai.grayin.connectors.photos`
+- `ai.grayin.connectors.calendar`
+- `ai.grayin.connectors.notification`
+- `ai.grayin.connectors.usagestats`
+- `ai.grayin.connectors.localfiles`
+
+Build command:
+
+```bash
+ANDROID_HOME=/home/jujin/workspace/android-sdk ./gradlew :app:assembleDebug
+```
+
+The manifest must not include `android.permission.INTERNET`.

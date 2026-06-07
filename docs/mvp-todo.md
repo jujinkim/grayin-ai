@@ -50,33 +50,33 @@ Before implementing any task, read:
 
 ## MVP 1 — Android Project Skeleton
 
-- [ ] Create native Android project using Kotlin.
-- [ ] Use Jetpack Compose for UI.
-- [ ] Create modular package structure:
-  - [ ] `app`
-  - [ ] `core.model`
-  - [ ] `core.connector`
-  - [ ] `core.store`
-  - [ ] `core.indexing`
-  - [ ] `core.retrieval`
-  - [ ] `core.grounding`
-  - [ ] `core.security`
-  - [ ] `core.ai`
-  - [ ] `connectors.location`
-  - [ ] `connectors.photos`
-  - [ ] `connectors.calendar`
-  - [ ] `connectors.notification`
-  - [ ] `connectors.usagestats`
-  - [ ] `connectors.localfiles`
-- [ ] Add placeholder screens:
-  - [ ] Ask
-  - [ ] Timeline
-  - [ ] Places
-  - [ ] Sources
-  - [ ] Settings
-- [ ] Ensure home screen is Ask-first.
-- [ ] Ensure manifest does not include INTERNET permission.
-- [ ] Commit project skeleton.
+- [x] Create native Android project using Kotlin.
+- [x] Use Jetpack Compose for UI.
+- [x] Create modular package structure:
+  - [x] `app`
+  - [x] `core.model`
+  - [x] `core.connector`
+  - [x] `core.store`
+  - [x] `core.indexing`
+  - [x] `core.retrieval`
+  - [x] `core.grounding`
+  - [x] `core.security`
+  - [x] `core.ai`
+  - [x] `connectors.location`
+  - [x] `connectors.photos`
+  - [x] `connectors.calendar`
+  - [x] `connectors.notification`
+  - [x] `connectors.usagestats`
+  - [x] `connectors.localfiles`
+- [x] Add placeholder screens:
+  - [x] Ask
+  - [x] Timeline
+  - [x] Places
+  - [x] Sources
+  - [x] Settings
+- [x] Ensure home screen is Ask-first.
+- [x] Ensure manifest does not include INTERNET permission.
+- [x] Commit project skeleton.
 
 ## MVP 2 — Core Data Model
 
