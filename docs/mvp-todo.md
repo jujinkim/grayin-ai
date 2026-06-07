@@ -116,18 +116,18 @@ Before implementing any task, read:
 
 ## MVP 4 — Local Store
 
-- [ ] Create local store abstraction.
-- [ ] Support saving source references.
-- [ ] Support saving derived memory events.
-- [ ] Support saving citations.
-- [ ] Support saving daily summaries.
-- [ ] Support saving place clusters.
-- [ ] Support saving app usage summaries.
-- [ ] Support connector-level delete.
-- [ ] Support index invalidation after delete.
-- [ ] Add SQLCipher TODO.
-- [ ] Add Android Keystore TODO.
-- [ ] Commit local store abstraction.
+- [x] Create local store abstraction.
+- [x] Support saving source references.
+- [x] Support saving derived memory events.
+- [x] Support saving citations.
+- [x] Support saving daily summaries.
+- [x] Support saving place clusters.
+- [x] Support saving app usage summaries.
+- [x] Support connector-level delete.
+- [x] Support index invalidation after delete.
+- [x] Add SQLCipher TODO.
+- [x] Add Android Keystore TODO.
+- [x] Commit local store abstraction.
 
 ## MVP 5 — Indexing Queue
 

@@ -72,3 +72,9 @@ Core model types may represent only:
 - connector and processing state
 
 Core model types must not add fields for original file bytes, raw notification text, raw message text, raw local-file content, raw calendar records, raw usage event dumps, or any raw content blob.
+
+## Local Store Rule
+
+`LocalMemoryStore` accepts only source references, derived memory events, citations, daily summaries, place clusters, app usage summaries, connector-scoped delete requests, and index invalidation requests.
+
+It must never add a method that accepts original file bytes, raw notification text, raw message text, raw local-file content, raw calendar records, raw usage event dumps, or raw source payloads.
