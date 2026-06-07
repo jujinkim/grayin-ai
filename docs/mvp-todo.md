@@ -189,18 +189,18 @@ Before implementing any task, read:
 
 ## MVP 10 — UI
 
-- [ ] Add Ask screen.
-- [ ] Add answer card.
-- [ ] Add expandable evidence section.
-- [ ] Add missing-data section.
-- [ ] Add confidence label.
-- [ ] Add Sources screen.
-- [ ] Add Timeline screen.
-- [ ] Add Places screen.
-- [ ] Add Settings screen.
-- [ ] Add manual indexing button placeholder.
-- [ ] Add connector revoke/delete placeholder.
-- [ ] Commit UI skeleton.
+- [x] Add Ask screen.
+- [x] Add answer card.
+- [x] Add expandable evidence section.
+- [x] Add missing-data section.
+- [x] Add confidence label.
+- [x] Add Sources screen.
+- [x] Add Timeline screen.
+- [x] Add Places screen.
+- [x] Add Settings screen.
+- [x] Add manual indexing button placeholder.
+- [x] Add connector revoke/delete placeholder.
+- [x] Commit UI skeleton.
 
 ## MVP 11 — Security and Backup Policy
 

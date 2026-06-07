@@ -10,13 +10,16 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,6 +37,21 @@ private enum class GrayinScreen(val label: String) {
     Sources("Sources"),
     Settings("Settings"),
 }
+
+private data class ConnectorUiState(
+    val name: String,
+    val status: String,
+    val sensitivity: String,
+)
+
+private val sourceRows = listOf(
+    ConnectorUiState("Location", "Off", "High sensitivity"),
+    ConnectorUiState("Photos", "Off", "High sensitivity"),
+    ConnectorUiState("Calendar", "Off", "High sensitivity"),
+    ConnectorUiState("Notifications", "Off", "Very high sensitivity"),
+    ConnectorUiState("App usage", "Off", "Very high sensitivity"),
+    ConnectorUiState("Local files", "Off", "High sensitivity"),
+)
 
 @Composable
 fun GrayinApp() {
@@ -89,39 +107,124 @@ fun GrayinApp() {
 private fun AskScreen() {
     var query by rememberSaveable { mutableStateOf("") }
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Ask", style = MaterialTheme.typography.headlineMedium)
-        OutlinedTextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = query,
-            onValueChange = { query = it },
-            label = { Text("Memory question") },
-            singleLine = false,
-            minLines = 3,
-        )
-        Button(
-            enabled = false,
-            onClick = {},
-        ) {
-            Text("Search")
+        item {
+            Text("Ask", style = MaterialTheme.typography.headlineMedium)
         }
-        EvidenceState(
-            title = "No indexed evidence",
-            body = "Answer unavailable until at least one source is enabled and indexed.",
-            confidence = "Confidence: low",
-            missing = "Missing data: location, calendar, photos, notifications, app usage, local files.",
-        )
+        item {
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Memory question") },
+                singleLine = false,
+                minLines = 3,
+            )
+        }
+        item {
+            Button(
+                enabled = false,
+                onClick = {},
+            ) {
+                Text("Search")
+            }
+        }
+        item {
+            AnswerCard(
+                answer = "No answer available from indexed evidence.",
+                confidence = "Unknown",
+                evidenceRows = listOf("No cited evidence available."),
+                missingRows = listOf(
+                    "Location not indexed.",
+                    "Calendar not indexed.",
+                    "Photos not indexed.",
+                    "Notifications not indexed.",
+                    "App usage not indexed.",
+                    "Local files not indexed.",
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnswerCard(
+    answer: String,
+    confidence: String,
+    evidenceRows: List<String>,
+    missingRows: List<String>,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Answer", style = MaterialTheme.typography.titleMedium)
+            Text(answer, style = MaterialTheme.typography.bodyLarge)
+            ConfidenceLabel(confidence)
+            HorizontalDivider()
+            EvidenceSection(evidenceRows)
+            HorizontalDivider()
+            MissingDataSection(missingRows)
+        }
+    }
+}
+
+@Composable
+private fun ConfidenceLabel(confidence: String) {
+    Text(
+        text = "Confidence: $confidence",
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+@Composable
+private fun EvidenceSection(rows: List<String>) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Evidence", style = MaterialTheme.typography.titleSmall)
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(if (expanded) "Hide" else "Show")
+            }
+        }
+        if (expanded) {
+            rows.forEach { row ->
+                Text("- $row", style = MaterialTheme.typography.bodyMedium)
+            }
+        } else {
+            Text("${rows.size} item", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun MissingDataSection(rows: List<String>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Missing data", style = MaterialTheme.typography.titleSmall)
+        rows.forEach { row ->
+            Text("- $row", style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
 @Composable
 private fun TimelineScreen() {
-    PlaceholderScreen(
+    SimpleListScreen(
         title = "Timeline",
         rows = listOf("No derived memory events indexed."),
     )
@@ -129,7 +232,7 @@ private fun TimelineScreen() {
 
 @Composable
 private fun PlacesScreen() {
-    PlaceholderScreen(
+    SimpleListScreen(
         title = "Places",
         rows = listOf("No place clusters indexed."),
     )
@@ -137,34 +240,93 @@ private fun PlacesScreen() {
 
 @Composable
 private fun SourcesScreen() {
-    PlaceholderScreen(
-        title = "Sources",
-        rows = listOf(
-            "Location: off",
-            "Photos: off",
-            "Calendar: off",
-            "Notifications: off",
-            "App usage: off",
-            "Local files: off",
-        ),
-    )
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Text("Sources", style = MaterialTheme.typography.headlineMedium)
+        }
+        items(sourceRows) { source ->
+            SourceRow(source)
+        }
+    }
+}
+
+@Composable
+private fun SourceRow(source: ConnectorUiState) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(source.name, style = MaterialTheme.typography.titleMedium)
+                Text(source.status, style = MaterialTheme.typography.labelLarge)
+            }
+            Text(source.sensitivity, style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    enabled = false,
+                    onClick = {},
+                ) {
+                    Text("Revoke")
+                }
+                OutlinedButton(
+                    enabled = false,
+                    onClick = {},
+                ) {
+                    Text("Delete")
+                }
+            }
+        }
+    }
 }
 
 @Composable
 private fun SettingsScreen() {
-    PlaceholderScreen(
-        title = "Settings",
-        rows = listOf(
-            "Network permission: absent",
-            "Account: absent",
-            "Cloud sync: absent",
-            "Telemetry: absent",
-        ),
-    )
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        }
+        item {
+            Button(
+                enabled = false,
+                onClick = {},
+            ) {
+                Text("Index now")
+            }
+        }
+        items(
+            listOf(
+                "Network permission: absent",
+                "Account: absent",
+                "Cloud sync: absent",
+                "Telemetry: absent",
+                "Crash analytics: absent",
+            ),
+        ) { row ->
+            StatusRow(row)
+        }
+    }
 }
 
 @Composable
-private fun PlaceholderScreen(
+private fun SimpleListScreen(
     title: String,
     rows: List<String>,
 ) {
@@ -178,44 +340,23 @@ private fun PlaceholderScreen(
             Text(title, style = MaterialTheme.typography.headlineMedium)
         }
         items(rows) { row ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                tonalElevation = 1.dp,
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Text(
-                    modifier = Modifier.padding(16.dp),
-                    text = row,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
+            StatusRow(row)
         }
     }
 }
 
 @Composable
-private fun EvidenceState(
-    title: String,
-    body: String,
-    confidence: String,
-    missing: String,
-) {
+private fun StatusRow(row: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         tonalElevation = 1.dp,
         shape = MaterialTheme.shapes.small,
     ) {
-        Column(
+        Text(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(body, style = MaterialTheme.typography.bodyMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(confidence, style = MaterialTheme.typography.bodySmall)
-            }
-            Text(missing, style = MaterialTheme.typography.bodySmall)
-        }
+            text = row,
+            style = MaterialTheme.typography.bodyLarge,
+        )
     }
 }
 
