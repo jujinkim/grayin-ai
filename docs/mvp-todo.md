@@ -131,12 +131,12 @@ Before implementing any task, read:
 
 ## MVP 5 — Indexing Queue
 
-- [ ] Create processing queue model.
-- [ ] Add pending/running/completed/failed/skipped/stale states.
-- [ ] Add automatic indexing policy: charging + low-usage/night + battery + thermal.
-- [ ] Add manual indexing commands: index now, connector, date range.
-- [ ] Add indexing status model for UI.
-- [ ] Commit indexing queue.
+- [x] Create processing queue model.
+- [x] Add pending/running/completed/failed/skipped/stale states.
+- [x] Add automatic indexing policy: charging + low-usage/night + battery + thermal.
+- [x] Add manual indexing commands: index now, connector, date range.
+- [x] Add indexing status model for UI.
+- [x] Commit indexing queue.
 
 ## MVP 6 — Initial Connectors as Stubs
 
