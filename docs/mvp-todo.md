@@ -140,15 +140,15 @@ Before implementing any task, read:
 
 ## MVP 6 — Initial Connectors as Stubs
 
-- [ ] Add Location Connector stub.
-- [ ] Add Photos Connector stub.
-- [ ] Add Calendar Connector stub.
-- [ ] Add Notification Connector stub.
-- [ ] Add App Usage Connector stub.
-- [ ] Add Local Files Connector stub.
-- [ ] Add connector sensitivity defaults.
-- [ ] Add TODOs for real platform permission implementation.
-- [ ] Commit stub connectors.
+- [x] Add Location Connector stub.
+- [x] Add Photos Connector stub.
+- [x] Add Calendar Connector stub.
+- [x] Add Notification Connector stub.
+- [x] Add App Usage Connector stub.
+- [x] Add Local Files Connector stub.
+- [x] Add connector sensitivity defaults.
+- [x] Add TODOs for real platform permission implementation.
+- [x] Commit stub connectors.
 
 ## MVP 7 — Retrieval and Query Planning
 

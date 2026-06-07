@@ -37,6 +37,17 @@ Notification and app usage connectors are highly sensitive.
 
 They must default to OFF and require strong opt-in UX.
 
+MVP 6 sensitivity defaults:
+
+- Location: high
+- Photos: high
+- Calendar: high
+- Notifications: very high
+- App Usage: very high
+- Local Files: high
+
+All MVP 6 stubs default OFF.
+
 ## MVP API Boundary
 
 The MVP connector interface exposes only:
