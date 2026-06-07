@@ -227,18 +227,18 @@ Before implementing any task, read:
 
 ## MVP 13 — Benchmark Questions
 
-- [ ] Create `benchmarks/query-set.md`.
-- [ ] Add question: Where did I go yesterday?
-- [ ] Add question: What did I do yesterday?
-- [ ] Add question: Was I drinking last week?
-- [ ] Add question: Did I call my family this week?
-- [ ] Add question: What meetings did I have yesterday?
-- [ ] Add question: Am I busy next week?
-- [ ] Add question: Find food photos from last month.
-- [ ] Add question: Around this time last year, did I go drinking in Seoul, and what was the route?
-- [ ] Define required capabilities per question.
-- [ ] Define optional capabilities per question.
-- [ ] Define expected evidence types.
-- [ ] Define missing-data behavior.
-- [ ] Define confidence rules.
-- [ ] Commit benchmarks.
+- [x] Create `benchmarks/query-set.md`.
+- [x] Add question: Where did I go yesterday?
+- [x] Add question: What did I do yesterday?
+- [x] Add question: Was I drinking last week?
+- [x] Add question: Did I call my family this week?
+- [x] Add question: What meetings did I have yesterday?
+- [x] Add question: Am I busy next week?
+- [x] Add question: Find food photos from last month.
+- [x] Add question: Around this time last year, did I go drinking in Seoul, and what was the route?
+- [x] Define required capabilities per question.
+- [x] Define optional capabilities per question.
+- [x] Define expected evidence types.
+- [x] Define missing-data behavior.
+- [x] Define confidence rules.
+- [x] Commit benchmarks.
