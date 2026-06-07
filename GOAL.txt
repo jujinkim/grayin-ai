@@ -1,0 +1,22 @@
+Build Grayin AI by following the repository documentation.
+
+Always read and follow:
+- docs/product-spec.md
+- docs/mvp-todo.md
+- docs/zero-raw-retention.md
+- docs/non-agentic-boundary.md
+
+Implement the next incomplete task from docs/mvp-todo.md step by step.
+
+After each coherent step:
+1. update docs/mvp-todo.md,
+2. update any affected documentation,
+3. run available checks/builds,
+4. commit the changes with a clear git commit message.
+
+Never violate the core rules:
+- no network permission in MVP,
+- no raw/original data storage, logging, caching, export, sync, or transmission,
+- no agentic action APIs,
+- no server, account, cloud, analytics, ads, or crash SDK,
+- answers must be evidence-grounded with confidence and missing-data explanations.

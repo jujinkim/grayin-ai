@@ -1,0 +1,15 @@
+Create or update the Grayin AI repository using the documentation in this repo.
+
+First read:
+- docs/product-spec.md
+- docs/mvp-todo.md
+- docs/zero-raw-retention.md
+- docs/non-agentic-boundary.md
+
+Then continue from the next incomplete task in docs/mvp-todo.md.
+
+Implement one coherent step at a time, update docs/mvp-todo.md, update affected docs, run available checks/builds, and commit the changes.
+
+Do not add Android INTERNET permission.
+Do not store, log, cache, export, sync, or transmit raw/original data.
+Do not create agentic action APIs.
