@@ -22,6 +22,7 @@ MVP 11 documents required security posture. It does not add persistent storage o
 - Export must include only allowed derived data and source references.
 - Export must exclude source originals.
 - Import on a new device must require connector re-consent before any connector can refresh or re-link sources.
+- MVP export/import design must not add cloud sync, network transfer, account storage, or server backup.
 
 ## Backup
 

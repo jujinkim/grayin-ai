@@ -218,12 +218,12 @@ Before implementing any task, read:
 
 ## MVP 12 — Export/Import Design
 
-- [ ] Document encrypted export format.
-- [ ] Document export allowed data.
-- [ ] Document export forbidden data.
-- [ ] Document import re-consent requirement.
-- [ ] Add skeleton if simple.
-- [ ] Commit export/import design.
+- [x] Document encrypted export format.
+- [x] Document export allowed data.
+- [x] Document export forbidden data.
+- [x] Document import re-consent requirement.
+- [x] Add skeleton if simple.
+- [x] Commit export/import design.
 
 ## MVP 13 — Benchmark Questions
 
