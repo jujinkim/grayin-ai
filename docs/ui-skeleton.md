@@ -1,6 +1,6 @@
-# UI Skeleton
+# UI
 
-MVP 10 expands the Compose UI while keeping data flows stubbed.
+The Compose UI now wires Ask, Sources, Timeline, and Settings to local connector/store state.
 
 ## Screens
 
@@ -17,20 +17,20 @@ Ask remains the first screen.
 The Ask screen includes:
 
 - memory question input
-- disabled search command placeholder
+- enabled search command when query text is present
 - answer card
 - confidence label
 - expandable evidence section
 - missing-data section
 
-The answer card starts with no indexed, cited evidence.
+The answer card starts empty, then renders grounded answers from indexed local Text/Markdown evidence.
 
 ## Sources
 
-The Sources screen lists all MVP connector stubs with default OFF state and sensitivity labels.
+The Sources screen lists connector state and sensitivity labels.
 
-Each source row includes disabled revoke and delete placeholders.
+Local Files can be indexed and queried. Other source rows remain disabled until their platform connectors are implemented.
 
 ## Settings
 
-Settings includes a disabled manual index command placeholder and local-only policy status rows.
+Settings includes a manual local-file index command and local-only policy status rows.

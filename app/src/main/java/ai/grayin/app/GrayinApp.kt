@@ -22,13 +22,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 private enum class GrayinScreen(val label: String) {
     Ask("Ask"),
@@ -38,26 +43,28 @@ private enum class GrayinScreen(val label: String) {
     Settings("Settings"),
 }
 
-private data class ConnectorUiState(
-    val name: String,
-    val status: String,
-    val sensitivity: String,
-)
-
-private val sourceRows = listOf(
-    ConnectorUiState("Location", "Off", "High sensitivity"),
-    ConnectorUiState("Photos", "Off", "High sensitivity"),
-    ConnectorUiState("Calendar", "Off", "High sensitivity"),
-    ConnectorUiState("Notifications", "Off", "Very high sensitivity"),
-    ConnectorUiState("App usage", "Off", "Very high sensitivity"),
-    ConnectorUiState("Local files", "Off", "High sensitivity"),
-)
-
 @Composable
 fun GrayinApp() {
+    val context = LocalContext.current
+    val controller = remember(context) { GrayinMemoryController(context) }
+    val scope = rememberCoroutineScope()
     var selectedScreenName by rememberSaveable { mutableStateOf(GrayinScreen.Ask.name) }
+    var snapshot by remember { mutableStateOf(emptySnapshot()) }
+    var answerState by remember { mutableStateOf(emptyAnswerState()) }
+    var statusMessage by remember { mutableStateOf("") }
+    var working by remember { mutableStateOf(false) }
     val selectedScreen = GrayinScreen.valueOf(selectedScreenName)
     val screens = GrayinScreen.entries
+
+    fun refreshSnapshot() {
+        scope.launch {
+            snapshot = controller.snapshot()
+        }
+    }
+
+    LaunchedEffect(controller) {
+        snapshot = controller.snapshot()
+    }
 
     MaterialTheme(
         colorScheme = lightColorScheme(
@@ -92,11 +99,35 @@ fun GrayinApp() {
                 color = MaterialTheme.colorScheme.background,
             ) {
                 when (selectedScreen) {
-                    GrayinScreen.Ask -> AskScreen()
-                    GrayinScreen.Timeline -> TimelineScreen()
-                    GrayinScreen.Places -> PlacesScreen()
-                    GrayinScreen.Sources -> SourcesScreen()
-                    GrayinScreen.Settings -> SettingsScreen()
+                    GrayinScreen.Ask -> AskScreen(
+                        answerState = answerState,
+                        working = working,
+                        onAsk = { query ->
+                            scope.launch {
+                                working = true
+                                answerState = controller.ask(query)
+                                working = false
+                                refreshSnapshot()
+                            }
+                        },
+                    )
+
+                    GrayinScreen.Timeline -> TimelineScreen(snapshot.timelineRows)
+                    GrayinScreen.Places -> PlacesScreen(snapshot.placesRows)
+                    GrayinScreen.Sources -> SourcesScreen(snapshot.sourceRows)
+                    GrayinScreen.Settings -> SettingsScreen(
+                        rows = snapshot.settingsRows,
+                        statusMessage = statusMessage,
+                        working = working,
+                        onIndex = {
+                            scope.launch {
+                                working = true
+                                statusMessage = controller.indexLocalFiles()
+                                snapshot = controller.snapshot()
+                                working = false
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -104,7 +135,11 @@ fun GrayinApp() {
 }
 
 @Composable
-private fun AskScreen() {
+private fun AskScreen(
+    answerState: AnswerUiState,
+    working: Boolean,
+    onAsk: (String) -> Unit,
+) {
     var query by rememberSaveable { mutableStateOf("") }
 
     LazyColumn(
@@ -128,25 +163,18 @@ private fun AskScreen() {
         }
         item {
             Button(
-                enabled = false,
-                onClick = {},
+                enabled = query.isNotBlank() && !working,
+                onClick = { onAsk(query) },
             ) {
-                Text("Search")
+                Text(if (working) "Searching" else "Search")
             }
         }
         item {
             AnswerCard(
-                answer = "No answer available from indexed evidence.",
-                confidence = "Unknown",
-                evidenceRows = listOf("No cited evidence available."),
-                missingRows = listOf(
-                    "Location not indexed.",
-                    "Calendar not indexed.",
-                    "Photos not indexed.",
-                    "Notifications not indexed.",
-                    "App usage not indexed.",
-                    "Local files not indexed.",
-                ),
+                answer = answerState.answer,
+                confidence = answerState.confidence,
+                evidenceRows = answerState.evidenceRows,
+                missingRows = answerState.missingRows,
             )
         }
     }
@@ -223,23 +251,23 @@ private fun MissingDataSection(rows: List<String>) {
 }
 
 @Composable
-private fun TimelineScreen() {
+private fun TimelineScreen(rows: List<String>) {
     SimpleListScreen(
         title = "Timeline",
-        rows = listOf("No derived memory events indexed."),
+        rows = rows,
     )
 }
 
 @Composable
-private fun PlacesScreen() {
+private fun PlacesScreen(rows: List<String>) {
     SimpleListScreen(
         title = "Places",
-        rows = listOf("No place clusters indexed."),
+        rows = rows,
     )
 }
 
 @Composable
-private fun SourcesScreen() {
+private fun SourcesScreen(sourceRows: List<ConnectorUiState>) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -293,7 +321,12 @@ private fun SourceRow(source: ConnectorUiState) {
 }
 
 @Composable
-private fun SettingsScreen() {
+private fun SettingsScreen(
+    rows: List<String>,
+    statusMessage: String,
+    working: Boolean,
+    onIndex: () -> Unit,
+) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -305,21 +338,18 @@ private fun SettingsScreen() {
         }
         item {
             Button(
-                enabled = false,
-                onClick = {},
+                enabled = !working,
+                onClick = onIndex,
             ) {
-                Text("Index now")
+                Text(if (working) "Indexing" else "Index now")
             }
         }
-        items(
-            listOf(
-                "Network permission: absent",
-                "Account: absent",
-                "Cloud sync: absent",
-                "Telemetry: absent",
-                "Crash analytics: absent",
-            ),
-        ) { row ->
+        if (statusMessage.isNotBlank()) {
+            item {
+                StatusRow(statusMessage)
+            }
+        }
+        items(rows) { row ->
             StatusRow(row)
         }
     }
@@ -345,6 +375,24 @@ private fun SimpleListScreen(
     }
 }
 
+private fun emptySnapshot(): GrayinSnapshot {
+    return GrayinSnapshot(
+        sourceRows = emptyList(),
+        timelineRows = listOf("No derived memory events indexed."),
+        placesRows = listOf("No place clusters indexed."),
+        settingsRows = listOf("Loading local state."),
+    )
+}
+
+private fun emptyAnswerState(): AnswerUiState {
+    return AnswerUiState(
+        answer = "No answer available from indexed evidence.",
+        confidence = "UNKNOWN",
+        evidenceRows = listOf("No cited evidence available."),
+        missingRows = listOf("Add and index a local text or Markdown file first."),
+    )
+}
+
 @Composable
 private fun StatusRow(row: String) {
     Surface(
@@ -359,4 +407,3 @@ private fun StatusRow(row: String) {
         )
     }
 }
-
