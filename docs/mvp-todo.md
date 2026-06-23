@@ -252,6 +252,6 @@ Before implementing any task, read:
 - [x] Implement real local `.txt` / `.md` connector.
 - [x] Wire Ask flow to indexed local evidence.
 - [x] Add local-file selection and indexing UI.
-- [ ] Add verification tests.
+- [x] Add verification tests.
 - [ ] Update user-facing and engineering docs.
 - [ ] Push completed work.
