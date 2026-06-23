@@ -1,17 +1,27 @@
-# Stub Connectors
+# Connector Status
 
-MVP 6 adds disabled connector stubs only. They do not read device sources.
+Grayin AI still keeps most MVP connectors as disabled stubs. Local Files now has a real Text/Markdown path.
 
-Each stub reports metadata, permission state, skipped scan status, missing-source explanations, and revoke/delete-derived-data contracts.
+Every connector must report metadata, permission state, scan status, missing-source explanations, and revoke/delete-derived-data contracts.
 
-## Stubs
+## Current Connectors
 
 - Location: high sensitivity, default OFF, pending location permission implementation.
 - Photos: high sensitivity, default OFF, pending media permission implementation.
 - Calendar: high sensitivity, default OFF, pending calendar permission implementation.
 - Notifications: very high sensitivity, default OFF, pending notification-listener implementation.
 - App Usage: very high sensitivity, default OFF, pending usage-access implementation.
-- Local Files: high sensitivity, default OFF, pending user-selected file/folder access implementation.
+- Local Files: high sensitivity, default OFF until user selects files. Supports user-selected `.txt` and `.md` documents through Android's document picker.
+
+## Local Files
+
+The Local Files connector:
+
+- stores persisted read permission only after explicit user selection
+- reads selected files only inside connector-owned scan scopes
+- emits only source references, derived events, and citations
+- stores keyword signals and summary metadata, not full file content
+- supports revoke and delete-derived-data flows
 
 ## Platform Permission TODOs
 
@@ -20,6 +30,5 @@ Each stub reports metadata, permission state, skipped scan status, missing-sourc
 - TODO: add Android calendar permission handling when real calendar indexing is implemented.
 - TODO: add notification-listener settings flow when notification indexing is implemented.
 - TODO: add usage-access settings flow when app usage indexing is implemented.
-- TODO: add system picker flow for user-selected local files and folders when local file indexing is implemented.
 
-No stub adds manifest permissions, no stub requests network access, and no stub reads or stores source originals.
+No connector adds INTERNET permission, requests network access, or reads/stores source originals outside transient connector processing.

@@ -46,7 +46,9 @@ MVP 6 sensitivity defaults:
 - App Usage: very high
 - Local Files: high
 
-All MVP 6 stubs default OFF.
+All connectors default OFF.
+
+Local Files is the first real connector. It supports explicit user-selected `.txt` and `.md` documents through the Android document picker. It reads source text transiently, emits only derived keyword/summary metadata, and does not store raw file contents.
 
 ## MVP API Boundary
 

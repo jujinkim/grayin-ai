@@ -6,9 +6,10 @@
 - Kotlin
 - Jetpack Compose
 - Ask-first UI
-- local store abstraction
+- SQLCipher-backed derived-memory store
 - connector abstraction
-- stub connectors
+- real Local Files connector for user-selected `.txt` / `.md` documents
+- stub connectors for location, photos, calendar, notifications, and app usage
 - indexing queue abstraction
 - query planner skeleton
 - grounded answer format
@@ -39,4 +40,4 @@
 - Calendar
 - Notification-derived events
 - App Usage
-- Local Files / Markdown / PDF
+- Local Files / Markdown
