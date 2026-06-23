@@ -23,13 +23,13 @@ The Local Files connector:
 - stores keyword signals and summary metadata, not full file content
 - supports revoke and delete-derived-data flows
 
-## Platform Permission TODOs
+## Future Connector Work
 
-- TODO: add Android runtime permission handling for location when real location indexing is implemented.
-- TODO: add Android media permission handling for photos when real photo indexing is implemented.
-- TODO: add Android calendar permission handling when real calendar indexing is implemented.
-- TODO: add notification-listener settings flow when notification indexing is implemented.
-- TODO: add usage-access settings flow when app usage indexing is implemented.
+- Add Android runtime permission handling for location when real location indexing is implemented.
+- Add Android media permission handling for photos when real photo indexing is implemented.
+- Add Android calendar permission handling when real calendar indexing is implemented.
+- Add notification-listener settings flow when notification indexing is implemented.
+- Add usage-access settings flow when app usage indexing is implemented.
 
 Connectors must not read or store source originals outside transient connector processing.
 

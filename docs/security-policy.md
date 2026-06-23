@@ -56,7 +56,7 @@ MVP must not include:
 
 MVP must not log source originals, derived memory contents, source references, evidence packs, prompts, answers, or connector outputs.
 
-## Optional Hardening TODOs
+## Future Hardening
 
-- TODO: add optional screenshot blocking for sensitive screens.
-- TODO: add optional biometric app lock for opening the app or viewing sensitive indexed memory.
+- Add optional screenshot blocking for sensitive screens.
+- Add optional biometric app lock for opening the app or viewing sensitive indexed memory.

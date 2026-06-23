@@ -2,14 +2,15 @@ Create or update the Grayin AI repository using the documentation in this repo.
 
 First read:
 - docs/product-spec.md
-- docs/mvp-todo.md
+- docs/roadmap.md
 - docs/zero-raw-retention.md
 - docs/non-agentic-boundary.md
 
-Then continue from the next incomplete task in docs/mvp-todo.md.
+The completed MVP task list has been removed. Use docs/roadmap.md for future work.
 
-Implement one coherent step at a time, update docs/mvp-todo.md, update affected docs, run available checks/builds, and commit the changes.
+Implement one coherent step at a time, update affected docs, run available checks/builds, and commit the changes.
 
-Do not add Android INTERNET permission.
+Android INTERNET permission is allowed only through typed online enrichment methods.
+Do not add arbitrary URL or endpoint callers.
 Do not store, log, cache, export, sync, or transmit raw/original data.
 Do not create agentic action APIs.

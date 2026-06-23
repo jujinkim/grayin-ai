@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Grayin AI is an Android Kotlin/Jetpack Compose app. Core source lives under `app/src/main/java/ai/grayin/`: UI/controller code is in `app/`, shared domain models in `core/model`, connector contracts in `core/connector`, SQLCipher store code in `core/store`, and retrieval/grounding/security/local-AI code in matching `core/*` packages. Local Text/Markdown indexing is in `connectors/localfiles`; other connectors remain stubs. Tests live under `app/src/test`. Product, privacy, and architecture docs live in `docs/`; benchmark prompts live in `benchmarks/query-set.md`.
+Grayin AI is an Android Kotlin/Jetpack Compose app. Core source lives under `app/src/main/java/ai/grayin/`: UI/controller code is in `app/`, shared domain models in `core/model`, connector contracts in `core/connector`, SQLCipher store code in `core/store`, and retrieval/grounding/security/local-AI code in matching `core/*` packages. Local Text/Markdown indexing is in `connectors/localfiles`; other connectors remain stubs. Tests live under `app/src/test`. Product, privacy, architecture, and roadmap docs live in `docs/`; benchmark prompts live in `benchmarks/query-set.md`.
 
 ## Build, Test, and Development Commands
 
@@ -21,8 +21,8 @@ JVM tests are under `app/src/test`. Name tests after the unit under test, for ex
 
 ## Commit & Pull Request Guidelines
 
-Git history uses short imperative commits such as `Add MVP 8 grounded answer format` and `Complete MVP 13 benchmarks`. Follow that style and keep each commit to one coherent phase. Pull requests should describe scope, list validation commands run, link relevant docs or TODO items, and include screenshots for UI changes.
+Git history uses short imperative commits such as `Add MVP 8 grounded answer format` and `Complete MVP 13 benchmarks`. Follow that style and keep each commit to one coherent phase. Pull requests should describe scope, list validation commands run, link relevant docs or roadmap items, and include screenshots for UI changes.
 
 ## Security & Configuration Tips
 
-MVP constraints are hard requirements: `android.permission.INTERNET` is allowed only through typed online enrichment methods, no arbitrary URL/endpoint caller, no server/cloud/account SDKs, no analytics or crash SDKs, and no raw/original data storage, logging, caching, export, sync, or transmission. Derived memory storage must stay SQLCipher-backed with Android Keystore passphrase protection. When changing behavior, update affected files in `docs/` and keep `docs/mvp-todo.md` aligned.
+MVP constraints are hard requirements: `android.permission.INTERNET` is allowed only through typed online enrichment methods, no arbitrary URL/endpoint caller, no server/cloud/account SDKs, no analytics or crash SDKs, and no raw/original data storage, logging, caching, export, sync, or transmission. Derived memory storage must stay SQLCipher-backed with Android Keystore passphrase protection. When changing behavior, update affected files in `docs/` and keep `docs/roadmap.md` aligned if scope changes.

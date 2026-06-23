@@ -455,8 +455,8 @@ Import should require re-consent for connectors on the new device.
 
 After each coherent step:
 
-1. update `docs/mvp-todo.md`
-2. update any affected documentation
+1. update affected documentation
+2. update `docs/roadmap.md` when scope or future work changes
 3. run available checks/builds
 4. commit the changes with a clear git commit message
 

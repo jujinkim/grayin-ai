@@ -103,10 +103,6 @@ ANDROID_HOME=/home/jujin/workspace/android-sdk ANDROID_SDK_ROOT=/home/jujin/work
 
 The manifest includes `android.permission.INTERNET` for typed online enrichment such as weather or reverse-geocode lookups.
 
-## Known Remaining Work
+## Roadmap
 
-- real location, photos, calendar, notification, and app-usage connectors
-- PDF/OCR local-file indexing
-- real on-device Gemma adapter
-- encrypted export/import runtime
-- optional screenshot blocking and biometric lock
+Current phase is complete. Future work is tracked in `docs/roadmap.md`.

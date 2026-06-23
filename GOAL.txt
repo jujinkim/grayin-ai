@@ -2,20 +2,24 @@ Build Grayin AI by following the repository documentation.
 
 Always read and follow:
 - docs/product-spec.md
-- docs/mvp-todo.md
+- docs/roadmap.md
 - docs/zero-raw-retention.md
 - docs/non-agentic-boundary.md
+- docs/privacy-model.md
+- docs/security-policy.md
 
-Implement the next incomplete task from docs/mvp-todo.md step by step.
+The current usable local Text/Markdown MVP is complete.
+
+For new work, choose the next coherent roadmap item from docs/roadmap.md and keep the implementation scoped.
 
 After each coherent step:
-1. update docs/mvp-todo.md,
-2. update any affected documentation,
-3. run available checks/builds,
-4. commit the changes with a clear git commit message.
+1. update affected documentation,
+2. run available checks/builds,
+3. commit the changes with a clear git commit message.
 
 Never violate the core rules:
-- no network permission in MVP,
+- INTERNET permission only through typed online enrichment methods,
+- no arbitrary URL or endpoint caller,
 - no raw/original data storage, logging, caching, export, sync, or transmission,
 - no agentic action APIs,
 - no server, account, cloud, analytics, ads, or crash SDK,
