@@ -24,6 +24,18 @@ MVP 11 documents required security posture. It does not add persistent storage o
 - Import on a new device must require connector re-consent before any connector can refresh or re-link sources.
 - MVP export/import design must not add cloud sync, network transfer, account storage, or server backup.
 
+## Network Permission
+
+The app may request INTERNET permission for typed online enrichment such as weather or reverse-geocode lookups.
+
+Network use must not:
+
+- expose arbitrary URL or endpoint calls to app feature code
+- upload raw/original source data
+- create cloud sync or server backup
+- send evidence packs to remote LLMs
+- add account, telemetry, ads, or crash analytics SDKs
+
 ## Backup
 
 The MVP manifest sets `android:allowBackup="false"`.

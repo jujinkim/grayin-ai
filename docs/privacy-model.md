@@ -4,8 +4,8 @@ Grayin AI is designed around user-owned local memory.
 
 ## Defaults
 
-- Offline by default.
-- No network permission in MVP.
+- Local-first by default.
+- Internet permission is allowed only through typed online enrichment methods.
 - No account.
 - No server.
 - No cloud.
@@ -13,6 +13,19 @@ Grayin AI is designed around user-owned local memory.
 - No ads.
 - No crash analytics SDK.
 - No raw data retention.
+
+## Online Enrichment
+
+Online enrichment may fetch weather or reverse-geocode information.
+
+Allowed network requests must:
+
+- use explicit lookup inputs such as latitude/longitude, timestamp, or coarse place query
+- call typed internal methods such as `getWeather` or `reverseGeocode`
+- avoid arbitrary URL or endpoint parameters in app feature code
+- never upload raw/original source data
+- never create cloud sync, account storage, telemetry, ads, or crash analytics
+- be explainable in policy docs and UI copy before use
 
 ## Consent
 

@@ -25,4 +25,4 @@ Git history uses short imperative commits such as `Add MVP 8 grounded answer for
 
 ## Security & Configuration Tips
 
-MVP constraints are hard requirements: no `android.permission.INTERNET`, no server/cloud/account SDKs, no analytics or crash SDKs, and no raw/original data storage, logging, caching, export, sync, or transmission. Derived memory storage must stay SQLCipher-backed with Android Keystore passphrase protection. When changing behavior, update affected files in `docs/` and keep `docs/mvp-todo.md` aligned.
+MVP constraints are hard requirements: `android.permission.INTERNET` is allowed only through typed online enrichment methods, no arbitrary URL/endpoint caller, no server/cloud/account SDKs, no analytics or crash SDKs, and no raw/original data storage, logging, caching, export, sync, or transmission. Derived memory storage must stay SQLCipher-backed with Android Keystore passphrase protection. When changing behavior, update affected files in `docs/` and keep `docs/mvp-todo.md` aligned.

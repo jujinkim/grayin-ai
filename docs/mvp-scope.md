@@ -14,6 +14,7 @@
 - query planner skeleton
 - grounded answer format
 - local LLM adapter abstraction
+- INTERNET permission for typed weather/reverse-geocode enrichment
 - documentation
 - benchmark questions
 
@@ -24,7 +25,8 @@
 - server
 - account
 - commercial LLM API
-- network permission
+- broad background networking
+- arbitrary URL or endpoint calls from app feature code
 - ads
 - analytics
 - crash SDK

@@ -25,6 +25,8 @@ No commercial LLM API is configured in MVP.
 
 No network dependency is added for local AI in MVP.
 
+The app may request INTERNET permission for typed weather or reverse-geocode enrichment, but that permission must not be used by local model adapters.
+
 ## Current Answer Path
 
 Ask uses `TemplateGroundedAnswerGenerator` over an `EvidencePack` built from SQLCipher-stored derived local-file evidence.

@@ -20,7 +20,7 @@ Before implementing any task, read:
 
 ## Hard Constraints
 
-- [x] No INTERNET permission in MVP.
+- [x] INTERNET permission restricted to typed online enrichment methods.
 - [x] Never store raw/original data.
 - [x] Never log raw/original data.
 - [x] Never cache raw/original data.
@@ -45,7 +45,7 @@ Before implementing any task, read:
 - [x] Create `docs/mvp-todo.md`.
 - [x] Explicitly state no raw/original data storage.
 - [x] Explicitly state no action APIs.
-- [x] Explicitly state no INTERNET permission in MVP.
+- [x] Explicitly state typed online enrichment network boundary.
 - [x] Commit documentation phase.
 
 ## MVP 1 — Android Project Skeleton
@@ -75,7 +75,7 @@ Before implementing any task, read:
   - [x] Sources
   - [x] Settings
 - [x] Ensure home screen is Ask-first.
-- [x] Ensure manifest does not include INTERNET permission.
+- [x] Ensure manifest includes INTERNET permission only for typed enrichment.
 - [x] Commit project skeleton.
 
 ## MVP 2 — Core Data Model
@@ -255,3 +255,11 @@ Before implementing any task, read:
 - [x] Add verification tests.
 - [x] Update user-facing and engineering docs.
 - [x] Push completed work.
+
+## Online Enrichment Policy
+
+- [x] Allow `android.permission.INTERNET`.
+- [x] Add typed `OnlineEnrichmentGateway`.
+- [x] Restrict online features to weather lookup and reverse geocode.
+- [x] Reject arbitrary URL or endpoint method surfaces.
+- [x] Push online-enrichment policy update.

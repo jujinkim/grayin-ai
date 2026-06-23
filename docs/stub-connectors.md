@@ -31,4 +31,6 @@ The Local Files connector:
 - TODO: add notification-listener settings flow when notification indexing is implemented.
 - TODO: add usage-access settings flow when app usage indexing is implemented.
 
-No connector adds INTERNET permission, requests network access, or reads/stores source originals outside transient connector processing.
+Connectors must not read or store source originals outside transient connector processing.
+
+INTERNET permission is allowed for typed weather or reverse-geocode enrichment. Connector and feature code must not call arbitrary URLs or endpoints, upload raw/original source data, or create cloud sync.

@@ -72,7 +72,7 @@ class GrayinMemoryController(
             timelineRows = timelineRows(events),
             placesRows = listOf("No place clusters indexed."),
             settingsRows = listOf(
-                "Network permission: absent",
+                "Network permission: restricted to typed enrichment methods",
                 "Account: absent",
                 "Cloud sync: absent",
                 "Telemetry: absent",

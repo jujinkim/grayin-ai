@@ -15,7 +15,7 @@ Grayin AI is non-agentic. It does not act on behalf of the user. It helps the us
 - No server
 - No account
 - No cloud in MVP
-- No network permission in MVP
+- Internet permission allowed only through typed enrichment features
 - No raw data retention
 - No commercial LLM API in MVP
 - No agentic actions
@@ -35,6 +35,8 @@ Current usable MVP path:
 - SQLCipher encrypts the local derived-memory store
 - Android Keystore protects the generated SQLCipher passphrase
 - Ask answers from indexed, cited local evidence and lists missing sources
+
+Planned online enrichment may fetch weather or reverse-geocode details. Network calls must go through typed internal methods (`getWeather` and `reverseGeocode`), not arbitrary URLs or endpoints. They must not upload raw/original source data or add cloud sync, accounts, telemetry, ads, or crash analytics.
 
 Examples:
 
@@ -99,7 +101,7 @@ Test command:
 ANDROID_HOME=/home/jujin/workspace/android-sdk ANDROID_SDK_ROOT=/home/jujin/workspace/android-sdk ./gradlew :app:testDebugUnitTest
 ```
 
-The manifest must not include `android.permission.INTERNET`.
+The manifest includes `android.permission.INTERNET` for typed online enrichment such as weather or reverse-geocode lookups.
 
 ## Known Remaining Work
 

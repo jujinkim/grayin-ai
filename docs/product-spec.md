@@ -1,6 +1,6 @@
 # Grayin AI Product Spec
 
-Grayin AI is an Android-only, local-first, offline personal memory indexer and search engine.
+Grayin AI is an Android-only, local-first personal memory indexer and search engine.
 
 It helps the user recall their life by indexing user-enabled local phone data into derived memory events, then answering natural-language questions with evidence, confidence, and missing-data explanations.
 
@@ -53,7 +53,7 @@ Grayin AI is not:
 - No server.
 - No account.
 - No cloud in MVP.
-- No network permission in MVP.
+- Internet permission is allowed only through typed online enrichment methods in MVP.
 - No commercial LLM API in MVP.
 - No raw/original data storage, ever.
 - No raw/original data transmission, ever.
@@ -62,7 +62,9 @@ Grayin AI is not:
 - No raw/original data export, ever.
 - No agentic action APIs.
 - Android-native only for MVP.
-- Fully offline by default.
+- Local-first by default.
+- Online enrichment must be explicit and limited to derived lookup inputs, such as weather or reverse-geocode requests.
+- App feature code must not call arbitrary URLs or endpoints.
 - All data sources are explicit opt-in.
 - Every connector can be enabled, disabled, revoked, and deleted independently.
 - The app only reasons over locally available, user-enabled, indexed evidence.
@@ -223,6 +225,7 @@ Rules:
 
 - no offline map data in MVP
 - no online map SDK in MVP
+- weather and reverse-geocode lookups may use network permission through typed enrichment methods when implemented
 - exact business names are not required
 - focus on region, movement, stay duration, and user-defined place labels
 
@@ -363,7 +366,9 @@ MVP should start with a stub LocalLanguageModel implementation.
 
 No commercial LLM API in MVP.
 
-No network access.
+Local AI must not require network access.
+
+Weather and reverse-geocode enrichment may use app network permission outside the local AI path through typed enrichment methods only.
 
 The local LLM receives only Evidence Pack.
 
@@ -414,7 +419,9 @@ MVP should document and prepare for:
 - optional screenshot blocking
 - optional biometric app lock
 
-MVP should not request INTERNET permission.
+MVP may request INTERNET permission for typed online enrichment.
+
+It must not use network access for arbitrary URL calls, cloud sync, accounts, telemetry, raw source upload, or commercial LLM APIs.
 
 Prefer `allowBackup=false` unless there is a documented reason otherwise.
 

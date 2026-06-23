@@ -27,6 +27,7 @@
 - Screenshots/screen recordings
 - Connector over-collection
 - Accidental raw data persistence
+- Online enrichment metadata leakage
 
 ## Mitigations
 
@@ -34,7 +35,10 @@
 - Encrypted local DB in final implementation
 - Android Keystore integration
 - Backup exclusion through `android:allowBackup="false"` in MVP
-- No network permission in MVP
+- Network permission restricted to typed online enrichment methods
+- No arbitrary URL or endpoint calls from app feature code
+- No raw/original source upload
+- No cloud sync, telemetry, ads, or crash SDK
 - No telemetry
 - No ads
 - No crash SDK
