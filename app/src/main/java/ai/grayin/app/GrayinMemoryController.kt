@@ -1,6 +1,7 @@
 package ai.grayin.app
 
 import android.content.Context
+import android.net.Uri
 import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFilesConnector
 import ai.grayin.core.grounding.GroundedAnswerRequest
@@ -98,6 +99,14 @@ class GrayinMemoryController(
             }
 
             else -> "No local files indexed."
+        }
+    }
+
+    suspend fun rememberSelectedLocalFile(uri: Uri): String = withContext(Dispatchers.IO) {
+        if (localFilesConnector.rememberSelectedFile(uri)) {
+            "Selected local file. Run Index now to update evidence."
+        } else {
+            "Unsupported file or read permission was not granted."
         }
     }
 

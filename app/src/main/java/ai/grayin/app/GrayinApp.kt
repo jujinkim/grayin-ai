@@ -1,5 +1,7 @@
 package ai.grayin.app
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,6 +57,23 @@ fun GrayinApp() {
     var working by remember { mutableStateOf(false) }
     val selectedScreen = GrayinScreen.valueOf(selectedScreenName)
     val screens = GrayinScreen.entries
+    val openDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                working = true
+                try {
+                    statusMessage = controller.rememberSelectedLocalFile(uri)
+                } catch (error: Throwable) {
+                    statusMessage = error.message ?: "Local file selection failed."
+                } finally {
+                    snapshot = controller.snapshot()
+                    working = false
+                }
+            }
+        }
+    }
 
     fun refreshSnapshot() {
         scope.launch {
@@ -105,16 +124,58 @@ fun GrayinApp() {
                         onAsk = { query ->
                             scope.launch {
                                 working = true
-                                answerState = controller.ask(query)
-                                working = false
-                                refreshSnapshot()
+                                try {
+                                    answerState = controller.ask(query)
+                                } catch (error: Throwable) {
+                                    answerState = AnswerUiState(
+                                        answer = error.message ?: "Search failed.",
+                                        confidence = "UNKNOWN",
+                                        evidenceRows = listOf("No cited evidence available."),
+                                        missingRows = listOf("Try indexing local evidence again."),
+                                    )
+                                } finally {
+                                    working = false
+                                    refreshSnapshot()
+                                }
                             }
                         },
                     )
 
                     GrayinScreen.Timeline -> TimelineScreen(snapshot.timelineRows)
                     GrayinScreen.Places -> PlacesScreen(snapshot.placesRows)
-                    GrayinScreen.Sources -> SourcesScreen(snapshot.sourceRows)
+                    GrayinScreen.Sources -> SourcesScreen(
+                        sourceRows = snapshot.sourceRows,
+                        working = working,
+                        onAddLocalFile = {
+                            openDocumentLauncher.launch(arrayOf("text/*", "application/octet-stream"))
+                        },
+                        onRevokeLocalFiles = {
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.revokeLocalFiles()
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: "Revoke failed."
+                                } finally {
+                                    snapshot = controller.snapshot()
+                                    working = false
+                                }
+                            }
+                        },
+                        onDeleteLocalFileData = {
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.deleteLocalFileData()
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: "Delete failed."
+                                } finally {
+                                    snapshot = controller.snapshot()
+                                    working = false
+                                }
+                            }
+                        },
+                    )
                     GrayinScreen.Settings -> SettingsScreen(
                         rows = snapshot.settingsRows,
                         statusMessage = statusMessage,
@@ -122,9 +183,14 @@ fun GrayinApp() {
                         onIndex = {
                             scope.launch {
                                 working = true
-                                statusMessage = controller.indexLocalFiles()
-                                snapshot = controller.snapshot()
-                                working = false
+                                try {
+                                    statusMessage = controller.indexLocalFiles()
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: "Indexing failed."
+                                } finally {
+                                    snapshot = controller.snapshot()
+                                    working = false
+                                }
                             }
                         },
                     )
@@ -267,7 +333,13 @@ private fun PlacesScreen(rows: List<String>) {
 }
 
 @Composable
-private fun SourcesScreen(sourceRows: List<ConnectorUiState>) {
+private fun SourcesScreen(
+    sourceRows: List<ConnectorUiState>,
+    working: Boolean,
+    onAddLocalFile: () -> Unit,
+    onRevokeLocalFiles: () -> Unit,
+    onDeleteLocalFileData: () -> Unit,
+) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -277,14 +349,32 @@ private fun SourcesScreen(sourceRows: List<ConnectorUiState>) {
         item {
             Text("Sources", style = MaterialTheme.typography.headlineMedium)
         }
+        item {
+            Button(
+                enabled = !working,
+                onClick = onAddLocalFile,
+            ) {
+                Text("Add local file")
+            }
+        }
         items(sourceRows) { source ->
-            SourceRow(source)
+            SourceRow(
+                source = source,
+                working = working,
+                onRevokeLocalFiles = onRevokeLocalFiles,
+                onDeleteLocalFileData = onDeleteLocalFileData,
+            )
         }
     }
 }
 
 @Composable
-private fun SourceRow(source: ConnectorUiState) {
+private fun SourceRow(
+    source: ConnectorUiState,
+    working: Boolean,
+    onRevokeLocalFiles: () -> Unit,
+    onDeleteLocalFileData: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         tonalElevation = 1.dp,
@@ -304,14 +394,14 @@ private fun SourceRow(source: ConnectorUiState) {
             Text(source.sensitivity, style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    enabled = false,
-                    onClick = {},
+                    enabled = source.canRevoke && !working,
+                    onClick = onRevokeLocalFiles,
                 ) {
                     Text("Revoke")
                 }
                 OutlinedButton(
-                    enabled = false,
-                    onClick = {},
+                    enabled = source.canDelete && !working,
+                    onClick = onDeleteLocalFileData,
                 ) {
                     Text("Delete")
                 }

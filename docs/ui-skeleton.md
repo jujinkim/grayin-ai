@@ -29,8 +29,14 @@ The answer card starts empty, then renders grounded answers from indexed local T
 
 The Sources screen lists connector state and sensitivity labels.
 
-Local Files can be indexed and queried. Other source rows remain disabled until their platform connectors are implemented.
+Local Files supports:
+
+- Add local file
+- Revoke
+- Delete derived data
+
+Other source rows remain disabled until their platform connectors are implemented.
 
 ## Settings
 
-Settings includes a manual local-file index command and local-only policy status rows.
+Settings includes a manual local-file index command, operation status, indexed counts, and local-only policy status rows.

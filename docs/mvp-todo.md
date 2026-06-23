@@ -251,7 +251,7 @@ Before implementing any task, read:
 - [x] Protect generated SQLCipher passphrase with Android Keystore.
 - [x] Implement real local `.txt` / `.md` connector.
 - [x] Wire Ask flow to indexed local evidence.
-- [ ] Add local-file selection and indexing UI.
+- [x] Add local-file selection and indexing UI.
 - [ ] Add verification tests.
 - [ ] Update user-facing and engineering docs.
 - [ ] Push completed work.
