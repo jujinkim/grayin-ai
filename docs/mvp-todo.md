@@ -254,4 +254,4 @@ Before implementing any task, read:
 - [x] Add local-file selection and indexing UI.
 - [x] Add verification tests.
 - [x] Update user-facing and engineering docs.
-- [ ] Push completed work.
+- [x] Push completed work.
