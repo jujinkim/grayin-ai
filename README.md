@@ -27,6 +27,15 @@ Grayin AI is non-agentic. It does not act on behalf of the user. It helps the us
 
 Grayin AI indexes user-enabled local Android data sources into derived memory events.
 
+Current usable MVP path:
+
+- user selects `.txt` or `.md` files with the Android document picker
+- connector reads file text transiently during indexing
+- app stores only source references, keyword signals, summaries, citations, and confidence
+- SQLCipher encrypts the local derived-memory store
+- Android Keystore protects the generated SQLCipher passphrase
+- Ask answers from indexed, cited local evidence and lists missing sources
+
 Examples:
 
 - location clusters
@@ -56,9 +65,9 @@ The app stores only source references and derived memory/index data.
 
 Core model types are restricted to source references, derived memory events, evidence, citations, confidence, and missing-data explanations. They do not define fields for raw/original content.
 
-## Android Skeleton
+## Android App
 
-The MVP app is a Kotlin Android project using Jetpack Compose.
+The app is a Kotlin Android project using Jetpack Compose.
 
 Current package structure:
 
@@ -81,7 +90,21 @@ Current package structure:
 Build command:
 
 ```bash
-ANDROID_HOME=/home/jujin/workspace/android-sdk ./gradlew :app:assembleDebug
+ANDROID_HOME=/home/jujin/workspace/android-sdk ANDROID_SDK_ROOT=/home/jujin/workspace/android-sdk ./gradlew :app:assembleDebug
+```
+
+Test command:
+
+```bash
+ANDROID_HOME=/home/jujin/workspace/android-sdk ANDROID_SDK_ROOT=/home/jujin/workspace/android-sdk ./gradlew :app:testDebugUnitTest
 ```
 
 The manifest must not include `android.permission.INTERNET`.
+
+## Known Remaining Work
+
+- real location, photos, calendar, notification, and app-usage connectors
+- PDF/OCR local-file indexing
+- real on-device Gemma adapter
+- encrypted export/import runtime
+- optional screenshot blocking and biometric lock

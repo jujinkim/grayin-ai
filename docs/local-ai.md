@@ -24,3 +24,9 @@ Both implementations set:
 No commercial LLM API is configured in MVP.
 
 No network dependency is added for local AI in MVP.
+
+## Current Answer Path
+
+Ask uses `TemplateGroundedAnswerGenerator` over an `EvidencePack` built from SQLCipher-stored derived local-file evidence.
+
+The Gemma placeholder remains unavailable until a real on-device model adapter is added.

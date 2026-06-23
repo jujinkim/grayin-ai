@@ -2,6 +2,8 @@
 
 Each benchmark answer must be grounded in indexed evidence, include confidence, list missing data, and avoid claims that are not supported by citations.
 
+Current usable local MVP can satisfy text-backed parts of these benchmarks from user-selected `.txt` and `.md` files. Benchmarks requiring location, calendar, photos, payments, app usage, or person/call evidence must report those sources as missing until their connectors are implemented.
+
 ## 1. Where did I go yesterday?
 
 Required capabilities:
