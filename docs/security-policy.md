@@ -4,14 +4,14 @@ MVP 11 documents required security posture. It does not add persistent storage o
 
 ## SQLCipher Plan
 
-- Use SQLCipher before introducing a real local database.
+- Use SQLCipher for the local database.
 - Encrypt all source references, derived memory events, citations, summaries, place clusters, app usage summaries, indexes, and entity graph data.
 - Keep database pages encrypted at rest.
 - Do not add a plaintext fallback database.
 
 ## Android Keystore Plan
 
-- Use Android Keystore to protect database encryption keys.
+- Use Android Keystore to protect the generated SQLCipher passphrase.
 - Generate or unwrap database keys locally on device.
 - Do not sync, export, log, or transmit database keys.
 - Rotate keys only through an explicit local migration path.

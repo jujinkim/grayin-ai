@@ -242,3 +242,16 @@ Before implementing any task, read:
 - [x] Define missing-data behavior.
 - [x] Define confidence rules.
 - [x] Commit benchmarks.
+
+---
+
+## Usable Local MVP — Text/Markdown Recall
+
+- [x] Add SQLCipher-backed local memory store.
+- [x] Protect generated SQLCipher passphrase with Android Keystore.
+- [ ] Implement real local `.txt` / `.md` connector.
+- [ ] Wire Ask flow to indexed local evidence.
+- [ ] Add local-file selection and indexing UI.
+- [ ] Add verification tests.
+- [ ] Update user-facing and engineering docs.
+- [ ] Push completed work.

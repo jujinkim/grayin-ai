@@ -1,6 +1,8 @@
-# Local Store Abstraction
+# Local Store
 
-MVP 4 defines the local store contract only. It does not add a database implementation.
+Grayin AI now uses a SQLCipher-backed local store for derived memory data.
+
+The store is opened through `SqlCipherLocalMemoryStore`. The SQLCipher passphrase is generated locally, encrypted with an Android Keystore AES-GCM key, and kept in app-private preferences.
 
 ## Accepted Data
 
@@ -17,13 +19,21 @@ MVP 4 defines the local store contract only. It does not add a database implemen
 
 The store contract must not accept original file bytes, notification originals, message originals, raw calendar records, raw usage logs, raw local-file content, or raw source payloads.
 
+## Read APIs
+
+Read APIs return only `SourceReference`, `DerivedMemoryEvent`, and `MemoryCitation` records.
+
+They do not return raw source content. Query and UI layers must build evidence packs from those derived records only.
+
 ## Connector Delete
 
 Connector-level delete removes source references, derived memory events, citations, summaries, and index entries associated with one connector.
 
 Index invalidation must run after connector-level delete so retrieval cannot cite stale evidence.
 
-## Security TODO
+## Security
 
-- TODO: choose SQLCipher-backed persistence before adding a real database.
-- TODO: derive and protect database keys with Android Keystore before storing sensitive derived data.
+- SQLCipher encrypts derived memory at rest.
+- Android Keystore protects the SQLCipher passphrase.
+- Android backup remains disabled in the manifest.
+- Export/import must use a separately documented encrypted envelope before backup or transfer is added.

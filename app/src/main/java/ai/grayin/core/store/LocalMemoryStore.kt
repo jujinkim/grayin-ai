@@ -23,5 +23,10 @@ interface LocalMemoryStore {
     suspend fun deleteConnectorData(connectorId: String): StoreDeleteResult
 
     suspend fun invalidateIndexesAfterDelete(request: IndexInvalidationRequest): IndexInvalidationResult
-}
 
+    suspend fun loadSourceReferences(connectorId: String? = null): List<SourceReference>
+
+    suspend fun loadDerivedMemoryEvents(): List<DerivedMemoryEvent>
+
+    suspend fun loadCitations(): List<MemoryCitation>
+}
