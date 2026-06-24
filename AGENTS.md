@@ -23,6 +23,12 @@ JVM tests are under `app/src/test`. Name tests after the unit under test, for ex
 
 Git history uses short imperative commits such as `Add MVP 8 grounded answer format` and `Complete MVP 13 benchmarks`. Follow that style and keep each commit to one coherent phase. Pull requests should describe scope, list validation commands run, link relevant docs or roadmap items, and include screenshots for UI changes.
 
+## Agent Workflow
+
+Before implementation work, read `docs/product-spec.md`, `docs/roadmap.md`, `docs/zero-raw-retention.md`, and `docs/non-agentic-boundary.md`. Use `docs/roadmap.md` for future work because the completed MVP task list has been removed.
+
+Implement one coherent step at a time. Update affected docs, run available checks or builds, and commit with a clear message.
+
 ## Security & Configuration Tips
 
 MVP constraints are hard requirements: `android.permission.INTERNET` is allowed only through typed online enrichment methods, no arbitrary URL/endpoint caller, no server/cloud/account SDKs, no analytics or crash SDKs, and no raw/original data storage, logging, caching, export, sync, or transmission. Derived memory storage must stay SQLCipher-backed with Android Keystore passphrase protection. When changing behavior, update affected files in `docs/` and keep `docs/roadmap.md` aligned if scope changes.
