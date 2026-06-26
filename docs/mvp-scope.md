@@ -6,6 +6,8 @@
 - Kotlin
 - Jetpack Compose
 - Ask-first UI
+- language settings for system, Korean, English, and Japanese
+- icon-labeled bottom navigation
 - SQLCipher-backed derived-memory store
 - connector abstraction
 - real Local Files connector for user-selected `.txt` / `.md` documents

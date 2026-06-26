@@ -328,6 +328,10 @@ The app must use an Ask-first interface.
 
 Home is not a note list. Home is a memory question input.
 
+The MVP UI supports English, Korean, and Japanese copy. Settings exposes language choices as `system`, `korean`, `english`, and `japanese`; `system` resolves from the Android system language and falls back to English for unsupported languages.
+
+Primary navigation uses a bottom navigation bar with icons and localized labels for Ask, Timeline, Places, Sources, and Settings.
+
 The retrieval pipeline:
 
 ```text

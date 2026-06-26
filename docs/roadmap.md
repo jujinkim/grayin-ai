@@ -7,6 +7,8 @@ Current phase status: usable local Text/Markdown MVP is complete.
 - User-selected `.txt` and `.md` files through Android document picker.
 - SQLCipher-backed derived-memory store protected by Android Keystore.
 - Ask flow over cited local evidence with confidence and missing-data output.
+- Localized UI copy for system, Korean, English, and Japanese language settings.
+- Bottom navigation with icons and localized labels.
 - INTERNET permission restricted to typed enrichment methods only: `getWeather` and `reverseGeocode`.
 
 ## Future Work

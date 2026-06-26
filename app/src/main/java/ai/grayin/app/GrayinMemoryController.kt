@@ -52,85 +52,85 @@ class GrayinMemoryController(
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
     private val answerGenerator: TemplateGroundedAnswerGenerator = TemplateGroundedAnswerGenerator(),
 ) {
-    suspend fun snapshot(): GrayinSnapshot = withContext(Dispatchers.IO) {
+    suspend fun snapshot(strings: GrayinStrings): GrayinSnapshot = withContext(Dispatchers.IO) {
         val sourceReferences = store.loadSourceReferences()
         val events = store.loadDerivedMemoryEvents()
         val localState = localFilesConnector.currentState()
         GrayinSnapshot(
-            sourceRows = staticConnectorRows() + ConnectorUiState(
+            sourceRows = staticConnectorRows(strings) + ConnectorUiState(
                 id = LocalFileMemoryExtractor.CONNECTOR_ID,
-                name = "Local files",
+                name = strings.localFiles,
                 status = when {
-                    localState.processingState == ProcessingState.COMPLETED -> "Indexed"
-                    localState.enabled -> "Selected"
-                    else -> "Off"
+                    localState.processingState == ProcessingState.COMPLETED -> strings.indexed
+                    localState.enabled -> strings.selected
+                    else -> strings.off
                 },
-                sensitivity = "High sensitivity",
+                sensitivity = strings.highSensitivity,
                 canRevoke = localState.enabled,
                 canDelete = sourceReferences.any { it.connectorId == LocalFileMemoryExtractor.CONNECTOR_ID },
             ),
-            timelineRows = timelineRows(events),
-            placesRows = listOf("No place clusters indexed."),
+            timelineRows = timelineRows(events, strings),
+            placesRows = listOf(strings.noPlaceClusters),
             settingsRows = listOf(
-                "Network permission: restricted to typed enrichment methods",
-                "Account: absent",
-                "Cloud sync: absent",
-                "Telemetry: absent",
-                "Crash analytics: absent",
-                "Encrypted store: SQLCipher",
-                "Indexed source references: ${sourceReferences.size}",
-                "Derived memory events: ${events.size}",
+                strings.networkPermissionRestricted,
+                strings.accountAbsent,
+                strings.cloudSyncAbsent,
+                strings.telemetryAbsent,
+                strings.crashAnalyticsAbsent,
+                strings.encryptedStoreSqlCipher,
+                "${strings.indexedSourceReferencesPrefix} ${sourceReferences.size}",
+                "${strings.derivedMemoryEventsPrefix} ${events.size}",
             ),
         )
     }
 
-    suspend fun indexLocalFiles(): String = withContext(Dispatchers.IO) {
+    suspend fun indexLocalFiles(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val scanResult = localFilesConnector.scan(ai.grayin.core.connector.ConnectorScanScope(forceRefresh = true))
         store.saveSourceReferences(scanResult.sourceReferences)
         store.saveDerivedMemoryEvents(scanResult.derivedEvents)
         store.saveCitations(scanResult.citations)
         when {
             scanResult.derivedEvents.isNotEmpty() -> {
-                "Indexed ${scanResult.derivedEvents.size} local file event(s)."
+                strings.indexedLocalFileEvents(scanResult.derivedEvents.size)
             }
 
             scanResult.missingSources.isNotEmpty() -> {
                 scanResult.missingSources.first().explanation
             }
 
-            else -> "No local files indexed."
+            else -> strings.noLocalFilesIndexed
         }
     }
 
-    suspend fun rememberSelectedLocalFile(uri: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun rememberSelectedLocalFile(uri: Uri, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         if (localFilesConnector.rememberSelectedFile(uri)) {
-            "Selected local file. Run Index now to update evidence."
+            strings.selectedLocalFile
         } else {
-            "Unsupported file or read permission was not granted."
+            strings.unsupportedFileOrPermissionDenied
         }
     }
 
-    suspend fun deleteLocalFileData(): String = withContext(Dispatchers.IO) {
+    suspend fun deleteLocalFileData(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val deleteResult = store.deleteConnectorData(LocalFileMemoryExtractor.CONNECTOR_ID)
-        "Deleted ${deleteResult.deletedDerivedMemoryEventIds.size} local file event(s)."
+        strings.deletedLocalFileEvents(deleteResult.deletedDerivedMemoryEventIds.size)
     }
 
-    suspend fun revokeLocalFiles(): String = withContext(Dispatchers.IO) {
+    suspend fun revokeLocalFiles(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val revokeResult = localFilesConnector.revoke()
         store.deleteConnectorData(revokeResult.connectorId)
-        "Revoked local file access and deleted derived local file data."
+        strings.revokedLocalFiles
     }
 
-    suspend fun ask(query: String): AnswerUiState = withContext(Dispatchers.IO) {
+    suspend fun ask(query: String, strings: GrayinStrings): AnswerUiState = withContext(Dispatchers.IO) {
         val trimmedQuery = query.trim()
-        if (trimmedQuery.isEmpty()) return@withContext emptyAnswer("Enter a memory question.")
+        if (trimmedQuery.isEmpty()) return@withContext emptyAnswer(strings.enterMemoryQuestion, strings)
 
         val availableCapabilities = availableCapabilities()
         val plan = queryPlanner.plan(trimmedQuery, availableCapabilities)
         val evidenceItems = evidenceFor(trimmedQuery, plan)
         val usedCitationIds = evidenceItems.flatMap { it.citationIds }.toSet()
         val citations = store.loadCitations().filter { it.id in usedCitationIds }
-        val missingSources = missingSourcesFor(plan, evidenceItems)
+        val missingSources = missingSourcesFor(plan, evidenceItems, strings)
         val evidencePack = EvidencePack(
             id = "evidence:${Instant.now().toEpochMilli()}",
             query = trimmedQuery,
@@ -142,10 +142,10 @@ class GrayinMemoryController(
         val answer = answerGenerator.generate(GroundedAnswerRequest(evidencePack))
 
         AnswerUiState(
-            answer = answer.answer,
+            answer = if (answer.evidence.isEmpty()) strings.cannotAnswerFromIndexedEvidence else answer.answer,
             confidence = answer.confidence.name,
             evidenceRows = if (answer.evidence.isEmpty()) {
-                listOf("No cited evidence available.")
+                listOf(strings.noCitedEvidence)
             } else {
                 answer.evidence.map { item ->
                     val labels = citations
@@ -155,9 +155,9 @@ class GrayinMemoryController(
                 }
             },
             missingRows = if (answer.missingData.isEmpty()) {
-                listOf("No missing sources for selected evidence.")
+                listOf(strings.noMissingSources)
             } else {
-                answer.missingData.map { "${it.capability.name}: ${it.explanation}" }
+                answer.missingData.map { missingSourceRow(it, strings) }
             },
         )
     }
@@ -214,40 +214,56 @@ class GrayinMemoryController(
         return keywordScore + labelScore + summaryScore
     }
 
-    private fun missingSourcesFor(plan: QueryPlan, evidenceItems: List<EvidenceItem>): List<MissingSource> {
+    private fun missingSourcesFor(
+        plan: QueryPlan,
+        evidenceItems: List<EvidenceItem>,
+        strings: GrayinStrings,
+    ): List<MissingSource> {
         if (evidenceItems.isNotEmpty()) return plan.missingSources
         return plan.missingSources + MissingSource(
             capability = MemoryCapability.HAS_TEXT,
             availability = SourceAvailability.NOT_INDEXED,
-            explanation = "No local text or Markdown evidence has been indexed.",
+            explanation = strings.noLocalTextEvidenceIndexed,
             connectorId = LocalFileMemoryExtractor.CONNECTOR_ID,
         )
     }
 
-    private fun staticConnectorRows(): List<ConnectorUiState> {
+    private fun staticConnectorRows(strings: GrayinStrings): List<ConnectorUiState> {
         return listOf(
-            ConnectorUiState("location", "Location", "Not implemented", "High sensitivity"),
-            ConnectorUiState("photos", "Photos", "Not implemented", "High sensitivity"),
-            ConnectorUiState("calendar", "Calendar", "Not implemented", "High sensitivity"),
-            ConnectorUiState("notifications", "Notifications", "Not implemented", "Very high sensitivity"),
-            ConnectorUiState("app_usage", "App usage", "Not implemented", "Very high sensitivity"),
+            ConnectorUiState("location", strings.location, strings.notImplemented, strings.highSensitivity),
+            ConnectorUiState("photos", strings.photos, strings.notImplemented, strings.highSensitivity),
+            ConnectorUiState("calendar", strings.calendar, strings.notImplemented, strings.highSensitivity),
+            ConnectorUiState("notifications", strings.notifications, strings.notImplemented, strings.veryHighSensitivity),
+            ConnectorUiState("app_usage", strings.appUsage, strings.notImplemented, strings.veryHighSensitivity),
         )
     }
 
-    private fun timelineRows(events: List<DerivedMemoryEvent>): List<String> {
-        if (events.isEmpty()) return listOf("No derived memory events indexed.")
+    private fun timelineRows(events: List<DerivedMemoryEvent>, strings: GrayinStrings): List<String> {
+        if (events.isEmpty()) return listOf(strings.noDerivedEvents)
         return events.sortedByDescending { it.createdAt }
             .take(MAX_TIMELINE_ROWS)
             .map { "${it.createdAt}: ${it.summary}" }
     }
 
-    private fun emptyAnswer(message: String): AnswerUiState {
+    private fun emptyAnswer(message: String, strings: GrayinStrings): AnswerUiState {
         return AnswerUiState(
             answer = message,
             confidence = ConfidenceLevel.UNKNOWN.name,
-            evidenceRows = listOf("No cited evidence available."),
-            missingRows = listOf("Ask from indexed evidence after adding and indexing a local file."),
+            evidenceRows = listOf(strings.noCitedEvidence),
+            missingRows = listOf(strings.askFromIndexedEvidence),
         )
+    }
+
+    private fun missingSourceRow(missingSource: MissingSource, strings: GrayinStrings): String {
+        val explanation = if (
+            missingSource.explanation.startsWith("Required capability ") ||
+            missingSource.explanation.startsWith("Optional capability ")
+        ) {
+            strings.capabilityUnavailable(missingSource.capability.name)
+        } else {
+            missingSource.explanation
+        }
+        return "${missingSource.capability.name}: $explanation"
     }
 
     private fun tokenize(value: String): Set<String> {

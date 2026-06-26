@@ -11,8 +11,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -33,27 +40,33 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-private enum class GrayinScreen(val label: String) {
-    Ask("Ask"),
-    Timeline("Timeline"),
-    Places("Places"),
-    Sources("Sources"),
-    Settings("Settings"),
+enum class GrayinScreen {
+    Ask,
+    Timeline,
+    Places,
+    Sources,
+    Settings,
 }
 
 @Composable
 fun GrayinApp() {
     val context = LocalContext.current
     val controller = remember(context) { GrayinMemoryController(context) }
+    val languageStore = remember(context) { LanguagePreferenceStore(context) }
     val scope = rememberCoroutineScope()
     var selectedScreenName by rememberSaveable { mutableStateOf(GrayinScreen.Ask.name) }
-    var snapshot by remember { mutableStateOf(emptySnapshot()) }
-    var answerState by remember { mutableStateOf(emptyAnswerState()) }
+    var languageOptionName by rememberSaveable { mutableStateOf(languageStore.load().name) }
+    val languageOption = GrayinLanguageOption.valueOf(languageOptionName)
+    val strings = remember(languageOption) { GrayinText.forOption(languageOption) }
+    var snapshot by remember { mutableStateOf(emptySnapshot(strings)) }
+    var answerState by remember { mutableStateOf(emptyAnswerState(strings)) }
     var statusMessage by remember { mutableStateOf("") }
+    var hasAsked by rememberSaveable { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
     val selectedScreen = GrayinScreen.valueOf(selectedScreenName)
     val screens = GrayinScreen.entries
@@ -64,11 +77,11 @@ fun GrayinApp() {
             scope.launch {
                 working = true
                 try {
-                    statusMessage = controller.rememberSelectedLocalFile(uri)
+                    statusMessage = controller.rememberSelectedLocalFile(uri, strings)
                 } catch (error: Throwable) {
-                    statusMessage = error.message ?: "Local file selection failed."
+                    statusMessage = error.message ?: strings.localFileSelectionFailed
                 } finally {
-                    snapshot = controller.snapshot()
+                    snapshot = controller.snapshot(strings)
                     working = false
                 }
             }
@@ -77,12 +90,15 @@ fun GrayinApp() {
 
     fun refreshSnapshot() {
         scope.launch {
-            snapshot = controller.snapshot()
+            snapshot = controller.snapshot(strings)
         }
     }
 
-    LaunchedEffect(controller) {
-        snapshot = controller.snapshot()
+    LaunchedEffect(controller, strings) {
+        snapshot = controller.snapshot(strings)
+        if (!hasAsked) {
+            answerState = emptyAnswerState(strings)
+        }
     }
 
     MaterialTheme(
@@ -104,8 +120,13 @@ fun GrayinApp() {
                         NavigationBarItem(
                             selected = screen == selectedScreen,
                             onClick = { selectedScreenName = screen.name },
-                            icon = {},
-                            label = { Text(screen.label) },
+                            icon = {
+                                Icon(
+                                    imageVector = screen.icon(),
+                                    contentDescription = strings.screenLabel(screen),
+                                )
+                            },
+                            label = { Text(strings.screenLabel(screen)) },
                         )
                     }
                 }
@@ -120,18 +141,20 @@ fun GrayinApp() {
                 when (selectedScreen) {
                     GrayinScreen.Ask -> AskScreen(
                         answerState = answerState,
+                        strings = strings,
                         working = working,
                         onAsk = { query ->
                             scope.launch {
                                 working = true
+                                hasAsked = true
                                 try {
-                                    answerState = controller.ask(query)
+                                    answerState = controller.ask(query, strings)
                                 } catch (error: Throwable) {
                                     answerState = AnswerUiState(
-                                        answer = error.message ?: "Search failed.",
+                                        answer = error.message ?: strings.searchFailed,
                                         confidence = "UNKNOWN",
-                                        evidenceRows = listOf("No cited evidence available."),
-                                        missingRows = listOf("Try indexing local evidence again."),
+                                        evidenceRows = listOf(strings.noCitedEvidence),
+                                        missingRows = listOf(strings.tryIndexingAgain),
                                     )
                                 } finally {
                                     working = false
@@ -141,10 +164,11 @@ fun GrayinApp() {
                         },
                     )
 
-                    GrayinScreen.Timeline -> TimelineScreen(snapshot.timelineRows)
-                    GrayinScreen.Places -> PlacesScreen(snapshot.placesRows)
+                    GrayinScreen.Timeline -> TimelineScreen(snapshot.timelineRows, strings)
+                    GrayinScreen.Places -> PlacesScreen(snapshot.placesRows, strings)
                     GrayinScreen.Sources -> SourcesScreen(
                         sourceRows = snapshot.sourceRows,
+                        strings = strings,
                         working = working,
                         onAddLocalFile = {
                             openDocumentLauncher.launch(arrayOf("text/*", "application/octet-stream"))
@@ -153,11 +177,11 @@ fun GrayinApp() {
                             scope.launch {
                                 working = true
                                 try {
-                                    statusMessage = controller.revokeLocalFiles()
+                                    statusMessage = controller.revokeLocalFiles(strings)
                                 } catch (error: Throwable) {
-                                    statusMessage = error.message ?: "Revoke failed."
+                                    statusMessage = error.message ?: strings.revokeFailed
                                 } finally {
-                                    snapshot = controller.snapshot()
+                                    snapshot = controller.snapshot(strings)
                                     working = false
                                 }
                             }
@@ -166,11 +190,11 @@ fun GrayinApp() {
                             scope.launch {
                                 working = true
                                 try {
-                                    statusMessage = controller.deleteLocalFileData()
+                                    statusMessage = controller.deleteLocalFileData(strings)
                                 } catch (error: Throwable) {
-                                    statusMessage = error.message ?: "Delete failed."
+                                    statusMessage = error.message ?: strings.deleteFailed
                                 } finally {
-                                    snapshot = controller.snapshot()
+                                    snapshot = controller.snapshot(strings)
                                     working = false
                                 }
                             }
@@ -179,16 +203,23 @@ fun GrayinApp() {
                     GrayinScreen.Settings -> SettingsScreen(
                         rows = snapshot.settingsRows,
                         statusMessage = statusMessage,
+                        languageOption = languageOption,
+                        strings = strings,
                         working = working,
+                        onLanguageSelected = { option ->
+                            languageStore.save(option)
+                            languageOptionName = option.name
+                            statusMessage = ""
+                        },
                         onIndex = {
                             scope.launch {
                                 working = true
                                 try {
-                                    statusMessage = controller.indexLocalFiles()
+                                    statusMessage = controller.indexLocalFiles(strings)
                                 } catch (error: Throwable) {
-                                    statusMessage = error.message ?: "Indexing failed."
+                                    statusMessage = error.message ?: strings.indexingFailed
                                 } finally {
-                                    snapshot = controller.snapshot()
+                                    snapshot = controller.snapshot(strings)
                                     working = false
                                 }
                             }
@@ -203,6 +234,7 @@ fun GrayinApp() {
 @Composable
 private fun AskScreen(
     answerState: AnswerUiState,
+    strings: GrayinStrings,
     working: Boolean,
     onAsk: (String) -> Unit,
 ) {
@@ -215,14 +247,14 @@ private fun AskScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            Text("Ask", style = MaterialTheme.typography.headlineMedium)
+            Text(strings.ask, style = MaterialTheme.typography.headlineMedium)
         }
         item {
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = query,
                 onValueChange = { query = it },
-                label = { Text("Memory question") },
+                label = { Text(strings.memoryQuestion) },
                 singleLine = false,
                 minLines = 3,
             )
@@ -232,7 +264,7 @@ private fun AskScreen(
                 enabled = query.isNotBlank() && !working,
                 onClick = { onAsk(query) },
             ) {
-                Text(if (working) "Searching" else "Search")
+                Text(if (working) strings.searching else strings.search)
             }
         }
         item {
@@ -241,6 +273,7 @@ private fun AskScreen(
                 confidence = answerState.confidence,
                 evidenceRows = answerState.evidenceRows,
                 missingRows = answerState.missingRows,
+                strings = strings,
             )
         }
     }
@@ -252,6 +285,7 @@ private fun AnswerCard(
     confidence: String,
     evidenceRows: List<String>,
     missingRows: List<String>,
+    strings: GrayinStrings,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -262,28 +296,28 @@ private fun AnswerCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Answer", style = MaterialTheme.typography.titleMedium)
+            Text(strings.answer, style = MaterialTheme.typography.titleMedium)
             Text(answer, style = MaterialTheme.typography.bodyLarge)
-            ConfidenceLabel(confidence)
+            ConfidenceLabel(confidence, strings)
             HorizontalDivider()
-            EvidenceSection(evidenceRows)
+            EvidenceSection(evidenceRows, strings)
             HorizontalDivider()
-            MissingDataSection(missingRows)
+            MissingDataSection(missingRows, strings)
         }
     }
 }
 
 @Composable
-private fun ConfidenceLabel(confidence: String) {
+private fun ConfidenceLabel(confidence: String, strings: GrayinStrings) {
     Text(
-        text = "Confidence: $confidence",
+        text = "${strings.confidencePrefix} $confidence",
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
     )
 }
 
 @Composable
-private fun EvidenceSection(rows: List<String>) {
+private fun EvidenceSection(rows: List<String>, strings: GrayinStrings) {
     var expanded by rememberSaveable { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -291,9 +325,9 @@ private fun EvidenceSection(rows: List<String>) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("Evidence", style = MaterialTheme.typography.titleSmall)
+            Text(strings.evidence, style = MaterialTheme.typography.titleSmall)
             TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "Hide" else "Show")
+                Text(if (expanded) strings.hide else strings.show)
             }
         }
         if (expanded) {
@@ -301,15 +335,15 @@ private fun EvidenceSection(rows: List<String>) {
                 Text("- $row", style = MaterialTheme.typography.bodyMedium)
             }
         } else {
-            Text("${rows.size} item", style = MaterialTheme.typography.bodySmall)
+            Text(strings.itemCount(rows.size), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
 
 @Composable
-private fun MissingDataSection(rows: List<String>) {
+private fun MissingDataSection(rows: List<String>, strings: GrayinStrings) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Missing data", style = MaterialTheme.typography.titleSmall)
+        Text(strings.missingData, style = MaterialTheme.typography.titleSmall)
         rows.forEach { row ->
             Text("- $row", style = MaterialTheme.typography.bodySmall)
         }
@@ -317,17 +351,17 @@ private fun MissingDataSection(rows: List<String>) {
 }
 
 @Composable
-private fun TimelineScreen(rows: List<String>) {
+private fun TimelineScreen(rows: List<String>, strings: GrayinStrings) {
     SimpleListScreen(
-        title = "Timeline",
+        title = strings.timeline,
         rows = rows,
     )
 }
 
 @Composable
-private fun PlacesScreen(rows: List<String>) {
+private fun PlacesScreen(rows: List<String>, strings: GrayinStrings) {
     SimpleListScreen(
-        title = "Places",
+        title = strings.places,
         rows = rows,
     )
 }
@@ -335,6 +369,7 @@ private fun PlacesScreen(rows: List<String>) {
 @Composable
 private fun SourcesScreen(
     sourceRows: List<ConnectorUiState>,
+    strings: GrayinStrings,
     working: Boolean,
     onAddLocalFile: () -> Unit,
     onRevokeLocalFiles: () -> Unit,
@@ -347,19 +382,20 @@ private fun SourcesScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Sources", style = MaterialTheme.typography.headlineMedium)
+            Text(strings.sources, style = MaterialTheme.typography.headlineMedium)
         }
         item {
             Button(
                 enabled = !working,
                 onClick = onAddLocalFile,
             ) {
-                Text("Add local file")
+                Text(strings.addLocalFile)
             }
         }
         items(sourceRows) { source ->
             SourceRow(
                 source = source,
+                strings = strings,
                 working = working,
                 onRevokeLocalFiles = onRevokeLocalFiles,
                 onDeleteLocalFileData = onDeleteLocalFileData,
@@ -371,6 +407,7 @@ private fun SourcesScreen(
 @Composable
 private fun SourceRow(
     source: ConnectorUiState,
+    strings: GrayinStrings,
     working: Boolean,
     onRevokeLocalFiles: () -> Unit,
     onDeleteLocalFileData: () -> Unit,
@@ -397,13 +434,13 @@ private fun SourceRow(
                     enabled = source.canRevoke && !working,
                     onClick = onRevokeLocalFiles,
                 ) {
-                    Text("Revoke")
+                    Text(strings.revoke)
                 }
                 OutlinedButton(
                     enabled = source.canDelete && !working,
                     onClick = onDeleteLocalFileData,
                 ) {
-                    Text("Delete")
+                    Text(strings.delete)
                 }
             }
         }
@@ -414,7 +451,10 @@ private fun SourceRow(
 private fun SettingsScreen(
     rows: List<String>,
     statusMessage: String,
+    languageOption: GrayinLanguageOption,
+    strings: GrayinStrings,
     working: Boolean,
+    onLanguageSelected: (GrayinLanguageOption) -> Unit,
     onIndex: () -> Unit,
 ) {
     LazyColumn(
@@ -424,14 +464,21 @@ private fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Settings", style = MaterialTheme.typography.headlineMedium)
+            Text(strings.settings, style = MaterialTheme.typography.headlineMedium)
+        }
+        item {
+            LanguageSettings(
+                languageOption = languageOption,
+                strings = strings,
+                onLanguageSelected = onLanguageSelected,
+            )
         }
         item {
             Button(
                 enabled = !working,
                 onClick = onIndex,
             ) {
-                Text(if (working) "Indexing" else "Index now")
+                Text(if (working) strings.indexing else strings.indexNow)
             }
         }
         if (statusMessage.isNotBlank()) {
@@ -465,21 +512,68 @@ private fun SimpleListScreen(
     }
 }
 
-private fun emptySnapshot(): GrayinSnapshot {
+@Composable
+private fun LanguageSettings(
+    languageOption: GrayinLanguageOption,
+    strings: GrayinStrings,
+    onLanguageSelected: (GrayinLanguageOption) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(strings.language, style = MaterialTheme.typography.titleMedium)
+            GrayinLanguageOption.entries.forEach { option ->
+                if (option == languageOption) {
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { onLanguageSelected(option) },
+                    ) {
+                        Text(strings.languageOptionLabel(option))
+                    }
+                } else {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { onLanguageSelected(option) },
+                    ) {
+                        Text(strings.languageOptionLabel(option))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun GrayinScreen.icon(): ImageVector {
+    return when (this) {
+        GrayinScreen.Ask -> Icons.Filled.Search
+        GrayinScreen.Timeline -> Icons.Filled.DateRange
+        GrayinScreen.Places -> Icons.Filled.Place
+        GrayinScreen.Sources -> Icons.Filled.Folder
+        GrayinScreen.Settings -> Icons.Filled.Settings
+    }
+}
+
+private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
     return GrayinSnapshot(
         sourceRows = emptyList(),
-        timelineRows = listOf("No derived memory events indexed."),
-        placesRows = listOf("No place clusters indexed."),
-        settingsRows = listOf("Loading local state."),
+        timelineRows = listOf(strings.noDerivedEvents),
+        placesRows = listOf(strings.noPlaceClusters),
+        settingsRows = listOf(strings.loadingLocalState),
     )
 }
 
-private fun emptyAnswerState(): AnswerUiState {
+private fun emptyAnswerState(strings: GrayinStrings): AnswerUiState {
     return AnswerUiState(
-        answer = "No answer available from indexed evidence.",
+        answer = strings.noAnswerAvailable,
         confidence = "UNKNOWN",
-        evidenceRows = listOf("No cited evidence available."),
-        missingRows = listOf("Add and index a local text or Markdown file first."),
+        evidenceRows = listOf(strings.noCitedEvidence),
+        missingRows = listOf(strings.addAndIndexLocalFileFirst),
     )
 }
 

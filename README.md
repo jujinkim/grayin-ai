@@ -4,6 +4,10 @@ Grayin AI is a local-first Android memory indexer that helps you recall your lif
 
 > Your data stays where it is. Your memory becomes searchable.
 
+## Meaning of the Name
+
+**Grayin AI** means **Gray In AI**: AI that helps bring back memories that have gone gray, vague, or blurred.
+
 ## Philosophy
 
 AI is becoming our arms and legs. Grayin AI is different: it helps humans see, remember, and decide better.
@@ -35,6 +39,8 @@ Current usable MVP path:
 - SQLCipher encrypts the local derived-memory store
 - Android Keystore protects the generated SQLCipher passphrase
 - Ask answers from indexed, cited local evidence and lists missing sources
+- Settings supports language selection: `system`, `korean`, `english`, or `japanese`
+- Bottom navigation uses icons and localized labels
 
 Planned online enrichment may fetch weather or reverse-geocode details. Network calls must go through typed internal methods (`getWeather` and `reverseGeocode`), not arbitrary URLs or endpoints. They must not upload raw/original source data or add cloud sync, accounts, telemetry, ads, or crash analytics.
 

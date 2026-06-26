@@ -2,6 +2,8 @@
 
 The Compose UI now wires Ask, Sources, Timeline, and Settings to local connector/store state.
 
+The bottom navigation bar shows icons and localized labels for all top-level screens.
+
 ## Screens
 
 - Ask
@@ -39,4 +41,11 @@ Other source rows remain disabled until their platform connectors are implemente
 
 ## Settings
 
-Settings includes a manual local-file index command, operation status, indexed counts, and local-only policy status rows.
+Settings includes language selection, a manual local-file index command, operation status, indexed counts, and local-only policy status rows.
+
+Language options are:
+
+- `system`
+- `korean`
+- `english`
+- `japanese`
