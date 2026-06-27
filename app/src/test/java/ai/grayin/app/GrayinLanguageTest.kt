@@ -1,5 +1,6 @@
 package ai.grayin.app
 
+import ai.grayin.core.ai.ModelDownloadStatus
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -115,6 +116,23 @@ class GrayinLanguageTest {
             "Download page: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
             english.localGemmaModelDownloadUrl,
         )
+    }
+
+    @Test
+    fun localizedStringsCoverRuntimeModelCatalogControls() {
+        val korean = GrayinText.forOption(GrayinLanguageOption.KOREAN)
+        val english = GrayinText.forOption(GrayinLanguageOption.ENGLISH)
+
+        assertEquals("Local model", english.localModelCatalogTitle)
+        assertEquals("Selected", english.localModelSelectedBadge)
+        assertEquals("Download", english.localModelDownload)
+        assertEquals("License: Apache-2.0", english.localModelLicense("Apache-2.0"))
+        assertEquals("Status: download required", english.localModelStatus(ModelDownloadStatus.NOT_DOWNLOADED))
+        assertEquals("Queued Gemma 4 E2B download. It runs on Wi-Fi.", english.localModelDownloadQueued("Gemma 4 E2B"))
+        assertEquals("로컬 모델", korean.localModelCatalogTitle)
+        assertEquals("선택됨", korean.localModelSelectedBadge)
+        assertEquals("다운로드", korean.localModelDownload)
+        assertEquals("상태: 준비됨", korean.localModelStatus(ModelDownloadStatus.READY))
     }
 
     @Test

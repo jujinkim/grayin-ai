@@ -13,18 +13,21 @@ Current phase status: usable local Text/Markdown MVP is complete.
 - SQLCipher-backed derived-memory store protected by Android Keystore.
 - Ask flow over cited local evidence with confidence and missing-data output.
 - Local Gemma LiteRT-LM answer adapter over retrieved `EvidencePack`, with template fallback when the model file is unavailable.
+- Runtime local-model catalog for Grayin dedicated model placeholder, official Gemma 4 E2B, and official Gemma 4 E4B.
+- WorkManager runtime model download into app-private storage; APK/AAB does not bundle model weights.
 - First-launch Sources intro explaining that user-connected sources must be indexed before Ask can use them.
 - Sources UI is backed by connector metadata and permission/index state.
 - Sources UI exposes top-level Index all now and persisted automatic indexing settings.
 - Localized UI copy for system, Korean, English, and Japanese language settings.
 - Bottom navigation with icons and localized labels.
-- Settings shows local Gemma model status, official model source, file name, current adb install path, and `.litertlm` import/delete controls.
+- Settings shows local model selection, download/cancel/delete controls, official model pages, local Gemma status, current adb install path, and `.litertlm` import/delete fallback controls.
 - INTERNET permission restricted to typed enrichment methods only: `getWeather` and `reverseGeocode`; location indexing can use Android reverse geocoding through that boundary.
 
 ## Future Work
 
 - Implement online weather provider behind `OnlineEnrichmentGateway`.
 - Add PDF/OCR local-file indexing.
-- Add signed model integrity checks for imported local Gemma weights.
+- Configure Grayin dedicated model server URL and checksum.
+- Add signed model integrity checks for downloaded/imported local model weights.
 - Implement encrypted export/import runtime.
 - Add optional screenshot blocking and biometric app lock.

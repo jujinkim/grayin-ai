@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 enum class GrayinScreen {
@@ -251,6 +252,15 @@ fun GrayinApp() {
         }
     }
 
+    LaunchedEffect(selectedScreen, controller, strings) {
+        if (selectedScreen == GrayinScreen.Settings) {
+            while (true) {
+                snapshot = controller.snapshot(strings)
+                delay(SettingsRefreshIntervalMs)
+            }
+        }
+    }
+
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = Color(0xFF245C4A),
@@ -423,6 +433,7 @@ fun GrayinApp() {
                     )
                     GrayinScreen.Settings -> SettingsScreen(
                         rows = snapshot.settingsRows,
+                        modelOptions = snapshot.modelOptions,
                         statusMessage = statusMessage,
                         languageOption = languageOption,
                         strings = strings,
@@ -433,11 +444,64 @@ fun GrayinApp() {
                             statusMessage = ""
                         },
                         onIndex = ::indexLocalFiles,
-                        onOpenModelDownload = {
+                        onOpenModelDownload = { pageUrl ->
                             try {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(LocalGemmaModelDownloadPage)))
+                                val url = pageUrl ?: LocalGemmaModelDownloadPage
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                             } catch (_: Throwable) {
                                 statusMessage = strings.localGemmaModelDownloadOpenFailed
+                            }
+                        },
+                        onSelectModel = { modelId ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.selectLocalModel(modelId, strings)
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: strings.localModelUnknown
+                                } finally {
+                                    snapshot = controller.snapshot(strings)
+                                    working = false
+                                }
+                            }
+                        },
+                        onDownloadModel = { modelId ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.downloadLocalModel(modelId, strings)
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: strings.localGemmaModelImportFailed
+                                } finally {
+                                    snapshot = controller.snapshot(strings)
+                                    working = false
+                                }
+                            }
+                        },
+                        onCancelModelDownload = { modelId ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.cancelLocalModelDownload(modelId, strings)
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: strings.deleteFailed
+                                } finally {
+                                    snapshot = controller.snapshot(strings)
+                                    working = false
+                                }
+                            }
+                        },
+                        onDeleteDownloadedModel = { modelId ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.deleteDownloadedLocalModel(modelId, strings)
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: strings.deleteFailed
+                                } finally {
+                                    snapshot = controller.snapshot(strings)
+                                    working = false
+                                }
                             }
                         },
                         onImportModel = {
@@ -929,13 +993,18 @@ private fun SourceRow(
 @Composable
 private fun SettingsScreen(
     rows: List<String>,
+    modelOptions: List<ModelOptionUiState>,
     statusMessage: String,
     languageOption: GrayinLanguageOption,
     strings: GrayinStrings,
     working: Boolean,
     onLanguageSelected: (GrayinLanguageOption) -> Unit,
     onIndex: () -> Unit,
-    onOpenModelDownload: () -> Unit,
+    onOpenModelDownload: (String?) -> Unit,
+    onSelectModel: (String) -> Unit,
+    onDownloadModel: (String) -> Unit,
+    onCancelModelDownload: (String) -> Unit,
+    onDeleteDownloadedModel: (String) -> Unit,
     onImportModel: () -> Unit,
     onDeleteModel: () -> Unit,
 ) {
@@ -964,13 +1033,25 @@ private fun SettingsScreen(
             }
         }
         item {
+            LocalModelSettings(
+                modelOptions = modelOptions,
+                strings = strings,
+                working = working,
+                onOpenModelDownload = onOpenModelDownload,
+                onSelectModel = onSelectModel,
+                onDownloadModel = onDownloadModel,
+                onCancelModelDownload = onCancelModelDownload,
+                onDeleteDownloadedModel = onDeleteDownloadedModel,
+            )
+        }
+        item {
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 OutlinedButton(
                     enabled = !working,
-                    onClick = onOpenModelDownload,
+                    onClick = { onOpenModelDownload(null) },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.Filled.Search, contentDescription = null)
@@ -1001,6 +1082,131 @@ private fun SettingsScreen(
         }
         items(rows) { row ->
             StatusRow(row)
+        }
+    }
+}
+
+@Composable
+private fun LocalModelSettings(
+    modelOptions: List<ModelOptionUiState>,
+    strings: GrayinStrings,
+    working: Boolean,
+    onOpenModelDownload: (String?) -> Unit,
+    onSelectModel: (String) -> Unit,
+    onDownloadModel: (String) -> Unit,
+    onCancelModelDownload: (String) -> Unit,
+    onDeleteDownloadedModel: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(strings.localModelCatalogTitle, style = MaterialTheme.typography.titleMedium)
+        modelOptions.forEach { option ->
+            LocalModelOption(
+                option = option,
+                strings = strings,
+                working = working,
+                onOpenModelDownload = onOpenModelDownload,
+                onSelectModel = onSelectModel,
+                onDownloadModel = onDownloadModel,
+                onCancelModelDownload = onCancelModelDownload,
+                onDeleteDownloadedModel = onDeleteDownloadedModel,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LocalModelOption(
+    option: ModelOptionUiState,
+    strings: GrayinStrings,
+    working: Boolean,
+    onOpenModelDownload: (String?) -> Unit,
+    onSelectModel: (String) -> Unit,
+    onDownloadModel: (String) -> Unit,
+    onCancelModelDownload: (String) -> Unit,
+    onDeleteDownloadedModel: (String) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(option.name, style = MaterialTheme.typography.titleSmall)
+                    Text(option.status, style = MaterialTheme.typography.bodyMedium)
+                }
+                if (option.selected) {
+                    Text(strings.localModelSelectedBadge, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            option.detailRows.forEach { row ->
+                Text(row, style = MaterialTheme.typography.bodySmall)
+            }
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (option.canSelect) {
+                    OutlinedButton(
+                        enabled = !working,
+                        onClick = { onSelectModel(option.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(strings.localModelSelect)
+                    }
+                }
+                if (option.downloadPageUrl != null) {
+                    TextButton(
+                        enabled = !working,
+                        onClick = { onOpenModelDownload(option.downloadPageUrl) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Search, contentDescription = null)
+                        Text(strings.localModelOpenDownloadPage)
+                    }
+                }
+                if (option.canDownload) {
+                    Button(
+                        enabled = !working,
+                        onClick = { onDownloadModel(option.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(strings.localModelDownload)
+                    }
+                }
+                if (option.canCancelDownload) {
+                    OutlinedButton(
+                        enabled = !working,
+                        onClick = { onCancelModelDownload(option.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(strings.localModelCancelDownload)
+                    }
+                }
+                if (option.canDeleteDownloaded) {
+                    OutlinedButton(
+                        enabled = !working,
+                        onClick = { onDeleteDownloadedModel(option.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(strings.localModelDeleteDownloaded)
+                    }
+                }
+            }
         }
     }
 }
@@ -1078,6 +1284,7 @@ private const val PhotosConnectorId = "photos"
 private const val AppUsageConnectorId = "app_usage"
 private const val NotificationConnectorId = "notification"
 private const val LocalGemmaModelDownloadPage = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm"
+private const val SettingsRefreshIntervalMs = 2_000L
 
 private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
     return GrayinSnapshot(
@@ -1085,6 +1292,7 @@ private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
         timelineRows = listOf(strings.noDerivedEvents),
         placesRows = listOf(strings.noPlaceClusters),
         settingsRows = listOf(strings.loadingLocalState),
+        modelOptions = emptyList(),
     )
 }
 

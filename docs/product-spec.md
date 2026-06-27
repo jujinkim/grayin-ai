@@ -65,6 +65,7 @@ Grayin AI is not:
 - Local-first by default.
 - Online enrichment must be explicit and limited to derived lookup inputs, such as weather or reverse-geocode requests.
 - App feature code must not call arbitrary URLs or endpoints.
+- Runtime model downloads must use fixed catalog URLs only; APK/AAB must not bundle model weights.
 - All data sources are explicit opt-in.
 - Every connector can be enabled, disabled, revoked, and deleted independently.
 - The app only reasons over locally available, user-enabled, indexed evidence.
@@ -107,7 +108,7 @@ The MVP should conceptually support these evidence sources through implemented c
 - OCR-derived text
 - future local LLM-generated summaries
 
-Current usable local MVP implementation supports user-selected `.txt` and `.md` files, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app usage summaries, and connected Android notification-derived signals after explicit permission or settings access. Ask can use a local Gemma LiteRT-LM model over retrieved `EvidencePack` data when a `.litertlm` model file is installed, with template fallback when unavailable. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
+Current usable local MVP implementation supports user-selected `.txt` and `.md` files, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app usage summaries, and connected Android notification-derived signals after explicit permission or settings access. Ask can use a local Gemma LiteRT-LM model over retrieved `EvidencePack` data when a runtime-downloaded or manually imported `.litertlm` model file is installed, with template fallback when unavailable. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
 
 ## Important Definitions
 

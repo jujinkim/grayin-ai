@@ -113,8 +113,10 @@ class Gemma4LocalLanguageModel(
 
 class Gemma4ModelPathResolver(
     private val context: Context,
+    private val modelInstallStore: ModelInstallStore = ModelInstallStore(context.applicationContext),
 ) {
     fun resolveModelPath(): String? {
+        modelInstallStore.selectedReadyModelFile()?.let { return it.absolutePath }
         return modelCandidates()
             .firstOrNull { file -> file.isFile && file.canRead() }
             ?.absolutePath
@@ -122,7 +124,9 @@ class Gemma4ModelPathResolver(
 
     fun modelCandidates(): List<File> {
         val externalFilesDir = context.getExternalFilesDir(null)
+        val selectedDownloadedModel = modelInstallStore.selectedReadyModelFile()
         return listOfNotNull(
+            selectedDownloadedModel,
             File(context.filesDir, INTERNAL_MODEL_PATH),
             externalFilesDir?.let { File(it, EXTERNAL_MODEL_PATH) },
             File(ADB_MODEL_PATH),

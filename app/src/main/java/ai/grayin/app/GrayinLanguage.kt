@@ -1,6 +1,7 @@
 package ai.grayin.app
 
 import android.content.Context
+import ai.grayin.core.ai.ModelDownloadStatus
 import java.util.Locale
 
 enum class GrayinLanguageOption(val storageKey: String) {
@@ -152,6 +153,17 @@ data class GrayinStrings(
     val localGemmaModelImportFailed: String,
     val localGemmaModelDownloadOpenFailed: String,
     val localGemmaModelInvalidFile: String,
+    val localModelCatalogTitle: String,
+    val localModelSelectedBadge: String,
+    val localModelRecommended: String,
+    val localModelSelect: String,
+    val localModelDownload: String,
+    val localModelCancelDownload: String,
+    val localModelDeleteDownloaded: String,
+    val localModelOpenDownloadPage: String,
+    val localModelDownloadUnavailable: String,
+    val localModelRequiresUnmeteredNetwork: String,
+    val localModelUnknown: String,
     val indexedSourceReferencesPrefix: String,
     val derivedMemoryEventsPrefix: String,
 ) {
@@ -252,6 +264,138 @@ data class GrayinStrings(
             GrayinLanguage.KOREAN -> "인덱싱 시간대: $windowLabel"
             GrayinLanguage.JAPANESE -> "インデックス時間帯: $windowLabel"
             GrayinLanguage.ENGLISH -> "Indexing window: $windowLabel"
+        }
+    }
+
+    fun localModelStatus(status: ModelDownloadStatus): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> when (status) {
+                ModelDownloadStatus.NOT_DOWNLOADED -> "상태: 다운로드 필요"
+                ModelDownloadStatus.QUEUED -> "상태: 다운로드 대기 중"
+                ModelDownloadStatus.DOWNLOADING -> "상태: 다운로드 중"
+                ModelDownloadStatus.READY -> "상태: 준비됨"
+                ModelDownloadStatus.FAILED -> "상태: 실패"
+            }
+
+            GrayinLanguage.JAPANESE -> when (status) {
+                ModelDownloadStatus.NOT_DOWNLOADED -> "状態: ダウンロードが必要"
+                ModelDownloadStatus.QUEUED -> "状態: ダウンロード待機中"
+                ModelDownloadStatus.DOWNLOADING -> "状態: ダウンロード中"
+                ModelDownloadStatus.READY -> "状態: 準備完了"
+                ModelDownloadStatus.FAILED -> "状態: 失敗"
+            }
+
+            GrayinLanguage.ENGLISH -> when (status) {
+                ModelDownloadStatus.NOT_DOWNLOADED -> "Status: download required"
+                ModelDownloadStatus.QUEUED -> "Status: queued"
+                ModelDownloadStatus.DOWNLOADING -> "Status: downloading"
+                ModelDownloadStatus.READY -> "Status: ready"
+                ModelDownloadStatus.FAILED -> "Status: failed"
+            }
+        }
+    }
+
+    fun localModelProvider(provider: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "제공처: $provider"
+            GrayinLanguage.JAPANESE -> "提供元: $provider"
+            GrayinLanguage.ENGLISH -> "Provider: $provider"
+        }
+    }
+
+    fun localModelApproxSize(size: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "예상 크기: $size"
+            GrayinLanguage.JAPANESE -> "推定サイズ: $size"
+            GrayinLanguage.ENGLISH -> "Approx size: $size"
+        }
+    }
+
+    fun localModelLicense(license: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "라이선스: $license"
+            GrayinLanguage.JAPANESE -> "ライセンス: $license"
+            GrayinLanguage.ENGLISH -> "License: $license"
+        }
+    }
+
+    fun localModelInstalledSize(size: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "설치 크기: $size"
+            GrayinLanguage.JAPANESE -> "インストールサイズ: $size"
+            GrayinLanguage.ENGLISH -> "Installed size: $size"
+        }
+    }
+
+    fun localModelRecommendedRam(gb: Int): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "권장 RAM: ${gb}GB 이상"
+            GrayinLanguage.JAPANESE -> "推奨RAM: ${gb}GB以上"
+            GrayinLanguage.ENGLISH -> "Recommended RAM: ${gb}GB+"
+        }
+    }
+
+    fun localModelFileName(fileName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "파일: $fileName"
+            GrayinLanguage.JAPANESE -> "ファイル: $fileName"
+            GrayinLanguage.ENGLISH -> "File: $fileName"
+        }
+    }
+
+    fun localModelProgress(progressPercent: Int): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "진행률: ${progressPercent}%"
+            GrayinLanguage.JAPANESE -> "進行率: ${progressPercent}%"
+            GrayinLanguage.ENGLISH -> "Progress: ${progressPercent}%"
+        }
+    }
+
+    fun localModelFailure(reason: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "실패 사유: $reason"
+            GrayinLanguage.JAPANESE -> "失敗理由: $reason"
+            GrayinLanguage.ENGLISH -> "Failure: $reason"
+        }
+    }
+
+    fun localModelSelected(modelName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$modelName 모델을 선택했습니다."
+            GrayinLanguage.JAPANESE -> "$modelName モデルを選択しました。"
+            GrayinLanguage.ENGLISH -> "Selected $modelName."
+        }
+    }
+
+    fun localModelDownloadQueued(modelName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$modelName 다운로드를 대기열에 추가했습니다. Wi-Fi에서 실행됩니다."
+            GrayinLanguage.JAPANESE -> "$modelName のダウンロードをキューに追加しました。Wi-Fiで実行します。"
+            GrayinLanguage.ENGLISH -> "Queued $modelName download. It runs on Wi-Fi."
+        }
+    }
+
+    fun localModelDownloadCanceled(modelName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$modelName 다운로드를 취소했습니다."
+            GrayinLanguage.JAPANESE -> "$modelName のダウンロードをキャンセルしました。"
+            GrayinLanguage.ENGLISH -> "Canceled $modelName download."
+        }
+    }
+
+    fun localModelDeleted(modelName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$modelName 다운로드 파일을 삭제했습니다."
+            GrayinLanguage.JAPANESE -> "$modelName のダウンロード済みファイルを削除しました。"
+            GrayinLanguage.ENGLISH -> "Deleted downloaded $modelName."
+        }
+    }
+
+    fun localModelDeleteMissing(modelName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$modelName 다운로드 파일이 없습니다."
+            GrayinLanguage.JAPANESE -> "$modelName のダウンロード済みファイルはありません。"
+            GrayinLanguage.ENGLISH -> "No downloaded $modelName file found."
         }
     }
 
@@ -401,6 +545,17 @@ private val EnglishStrings = GrayinStrings(
     localGemmaModelImportFailed = "Local Gemma model import failed.",
     localGemmaModelDownloadOpenFailed = "Could not open model download page.",
     localGemmaModelInvalidFile = "Select a .litertlm model file larger than 1 MB.",
+    localModelCatalogTitle = "Local model",
+    localModelSelectedBadge = "Selected",
+    localModelRecommended = "Recommended for Grayin",
+    localModelSelect = "Select",
+    localModelDownload = "Download",
+    localModelCancelDownload = "Cancel download",
+    localModelDeleteDownloaded = "Delete downloaded model",
+    localModelOpenDownloadPage = "Open page",
+    localModelDownloadUnavailable = "Download is not configured yet.",
+    localModelRequiresUnmeteredNetwork = "Downloads run only on Wi-Fi or unmetered network.",
+    localModelUnknown = "Unknown local model.",
     indexedSourceReferencesPrefix = "Indexed source references:",
     derivedMemoryEventsPrefix = "Derived memory events:",
 )
@@ -499,6 +654,17 @@ private val KoreanStrings = EnglishStrings.copy(
     localGemmaModelImportFailed = "로컬 Gemma 모델 가져오기에 실패했습니다.",
     localGemmaModelDownloadOpenFailed = "모델 다운로드 페이지를 열 수 없습니다.",
     localGemmaModelInvalidFile = "1MB보다 큰 .litertlm 모델 파일을 선택하세요.",
+    localModelCatalogTitle = "로컬 모델",
+    localModelSelectedBadge = "선택됨",
+    localModelRecommended = "Grayin 권장 모델",
+    localModelSelect = "선택",
+    localModelDownload = "다운로드",
+    localModelCancelDownload = "다운로드 취소",
+    localModelDeleteDownloaded = "다운로드된 모델 삭제",
+    localModelOpenDownloadPage = "페이지 열기",
+    localModelDownloadUnavailable = "아직 다운로드 설정이 없습니다.",
+    localModelRequiresUnmeteredNetwork = "다운로드는 Wi-Fi 또는 무제한 네트워크에서만 실행됩니다.",
+    localModelUnknown = "알 수 없는 로컬 모델입니다.",
     indexedSourceReferencesPrefix = "인덱싱된 소스 참조:",
     derivedMemoryEventsPrefix = "파생 기억 이벤트:",
 )
@@ -597,6 +763,17 @@ private val JapaneseStrings = EnglishStrings.copy(
     localGemmaModelImportFailed = "ローカルGemmaモデルのインポートに失敗しました。",
     localGemmaModelDownloadOpenFailed = "モデルダウンロードページを開けません。",
     localGemmaModelInvalidFile = "1MBを超える .litertlm モデルファイルを選択してください。",
+    localModelCatalogTitle = "ローカルモデル",
+    localModelSelectedBadge = "選択中",
+    localModelRecommended = "Grayin推奨モデル",
+    localModelSelect = "選択",
+    localModelDownload = "ダウンロード",
+    localModelCancelDownload = "ダウンロードをキャンセル",
+    localModelDeleteDownloaded = "ダウンロード済みモデルを削除",
+    localModelOpenDownloadPage = "ページを開く",
+    localModelDownloadUnavailable = "ダウンロード設定はまだありません。",
+    localModelRequiresUnmeteredNetwork = "ダウンロードはWi-Fiまたは従量制でないネットワークでのみ実行します。",
+    localModelUnknown = "不明なローカルモデルです。",
     indexedSourceReferencesPrefix = "インデックス済みソース参照:",
     derivedMemoryEventsPrefix = "派生記憶イベント:",
 )

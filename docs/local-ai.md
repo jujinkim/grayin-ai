@@ -23,15 +23,27 @@ Local model implementations set:
 
 No commercial LLM API is configured.
 
-No network dependency is added for local AI. The Gemma adapter only reads an installed local model file and an `EvidencePack`.
+The Gemma adapter does not use the network. It only reads an installed local model file and an `EvidencePack`.
+
+Runtime model download is separate from inference. It is limited to fixed catalog URLs for official Gemma LiteRT Community models and the future Grayin model server entry. Users cannot enter arbitrary model URLs.
 
 The app may request INTERNET permission for typed weather or reverse-geocode enrichment, but that permission must not be used by local model adapters. Map or place inference goes through `OnlineEnrichmentGateway.reverseGeocode` with derived coordinates only, not through arbitrary URL calls.
 
 ## Model File
 
-The app does not download or bundle model weights.
+The app does not bundle model weights in the APK/AAB.
 
-`Gemma4LocalLanguageModel` becomes ready when `gemma-4-E2B-it.litertlm` exists at one of these paths:
+Settings exposes a runtime model catalog:
+
+- `Grayin Gemma 4 E2B Q4 v1`: app-dedicated model placeholder; disabled until Grayin file-server URL and checksum exist.
+- `Gemma 4 E2B`: Google AI Edge LiteRT Community model hosted on Hugging Face.
+- `Gemma 4 E4B`: Google AI Edge LiteRT Community model hosted on Hugging Face for higher-end devices.
+
+Downloaded models are stored in app-private storage:
+
+- `files/models/{modelId}/model.litertlm`
+
+`Gemma4LocalLanguageModel` resolves the selected ready downloaded model first. If no selected download is ready, it falls back to legacy manual install paths:
 
 - app private files: `models/gemma-4-E2B-it.litertlm`
 - app external files: `models/gemma-4-E2B-it.litertlm`
@@ -39,14 +51,22 @@ The app does not download or bundle model weights.
 
 ## User Model Guide
 
-Users must obtain model weights outside the APK because Gemma model access and redistribution are controlled by upstream model terms.
+Users must obtain model weights at runtime because Gemma model access and redistribution are controlled by upstream model terms.
 
 Official source:
 
 - Google AI Edge LiteRT-LM Gemma docs: `https://developers.google.com/edge/litert-lm/models/gemma-4`
 - Hugging Face model repo: `https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm`
 
-Expected local file:
+Runtime download:
+
+- Open Settings.
+- Pick `Gemma 4 E2B` or `Gemma 4 E4B`.
+- Tap Download.
+- WorkManager downloads only on Wi-Fi or another unmetered network.
+- The model is copied to app-private storage and becomes the selected local model.
+
+Manual import fallback expected file:
 
 - `gemma-4-E2B-it.litertlm`
 
@@ -61,7 +81,7 @@ Settings also supports end-user import. The user can open the official model pag
 
 Import rejects files without a `.litertlm` extension and files smaller than 1 MB.
 
-Settings can delete app-imported model files. Development files under `/data/local/tmp/grayin/` remain developer-managed.
+Settings can delete downloaded catalog models and app-imported model files. Development files under `/data/local/tmp/grayin/` remain developer-managed.
 
 ## Current Answer Path
 

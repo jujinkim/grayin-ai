@@ -14,6 +14,12 @@ import ai.grayin.core.ai.Gemma4ModelPathResolver
 import ai.grayin.core.ai.LocalLanguageModel
 import ai.grayin.core.ai.LocalModelAnswerDraft
 import ai.grayin.core.ai.LocalModelStatus
+import ai.grayin.core.ai.ModelCatalog
+import ai.grayin.core.ai.ModelCatalogEntry
+import ai.grayin.core.ai.ModelDownloadScheduler
+import ai.grayin.core.ai.ModelDownloadStatus
+import ai.grayin.core.ai.ModelInstallRecord
+import ai.grayin.core.ai.ModelInstallStore
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.ConnectorScanResult
@@ -39,6 +45,7 @@ import ai.grayin.core.retrieval.QueryPlan
 import ai.grayin.core.store.LocalMemoryStore
 import ai.grayin.core.store.SqlCipherLocalMemoryStore
 import java.time.Instant
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -62,11 +69,26 @@ data class AnswerUiState(
     val missingRows: List<String>,
 )
 
+data class ModelOptionUiState(
+    val id: String,
+    val name: String,
+    val status: String,
+    val detailRows: List<String>,
+    val selected: Boolean,
+    val recommended: Boolean,
+    val downloadPageUrl: String?,
+    val canSelect: Boolean,
+    val canDownload: Boolean,
+    val canCancelDownload: Boolean,
+    val canDeleteDownloaded: Boolean,
+)
+
 data class GrayinSnapshot(
     val sourceRows: List<ConnectorUiState>,
     val timelineRows: List<String>,
     val placesRows: List<String>,
     val settingsRows: List<String>,
+    val modelOptions: List<ModelOptionUiState>,
 )
 
 class GrayinMemoryController(
@@ -82,7 +104,12 @@ class GrayinMemoryController(
         localFilesConnector,
     ),
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
-    private val modelPathResolver: Gemma4ModelPathResolver = Gemma4ModelPathResolver(context.applicationContext),
+    private val modelInstallStore: ModelInstallStore = ModelInstallStore(context.applicationContext),
+    private val modelDownloadScheduler: ModelDownloadScheduler = ModelDownloadScheduler(context.applicationContext),
+    private val modelPathResolver: Gemma4ModelPathResolver = Gemma4ModelPathResolver(
+        context.applicationContext,
+        modelInstallStore,
+    ),
     private val localLanguageModel: LocalLanguageModel = Gemma4LocalLanguageModel(
         context.applicationContext,
         modelPathResolver,
@@ -109,6 +136,7 @@ class GrayinMemoryController(
                 "${strings.indexedSourceReferencesPrefix} ${sourceReferences.size}",
                 "${strings.derivedMemoryEventsPrefix} ${events.size}",
             ),
+            modelOptions = localModelOptions(strings),
         )
     }
 
@@ -122,11 +150,63 @@ class GrayinMemoryController(
             strings.localGemmaModelTitle,
             statusRow,
             strings.localGemmaModelApkNotBundled,
-            strings.localGemmaModelDownloadGuide,
-            strings.localGemmaModelDownloadUrl,
-            strings.localGemmaModelFileGuide,
             strings.localGemmaModelDevInstallGuide,
         )
+    }
+
+    private fun localModelOptions(strings: GrayinStrings): List<ModelOptionUiState> {
+        val selectedModelId = modelInstallStore.selectedModelId()
+        return ModelCatalog.entries.map { entry ->
+            val record = modelInstallStore.recordFor(entry)
+            val selected = entry.id == selectedModelId
+            ModelOptionUiState(
+                id = entry.id,
+                name = entry.displayName,
+                status = strings.localModelStatus(record.status),
+                detailRows = localModelDetailRows(entry, record, strings),
+                selected = selected,
+                recommended = entry.recommended,
+                downloadPageUrl = entry.downloadPageUrl,
+                canSelect = !selected,
+                canDownload = entry.downloadUrl != null &&
+                    record.status != ModelDownloadStatus.READY &&
+                    record.status != ModelDownloadStatus.QUEUED &&
+                    record.status != ModelDownloadStatus.DOWNLOADING,
+                canCancelDownload = record.status == ModelDownloadStatus.QUEUED ||
+                    record.status == ModelDownloadStatus.DOWNLOADING,
+                canDeleteDownloaded = record.status == ModelDownloadStatus.READY,
+            )
+        }
+    }
+
+    private fun localModelDetailRows(
+        entry: ModelCatalogEntry,
+        record: ModelInstallRecord,
+        strings: GrayinStrings,
+    ): List<String> {
+        return buildList {
+            add(strings.localModelProvider(entry.providerLabel))
+            add(strings.localModelLicense(entry.licenseLabel))
+            add(strings.localModelApproxSize(formatGigabytes(entry.approxSizeBytes)))
+            add(strings.localModelRecommendedRam(entry.recommendedRamGb))
+            add(strings.localModelFileName(entry.fileName))
+            if (entry.recommended) add(strings.localModelRecommended)
+            if (entry.downloadUrl == null) add(strings.localModelDownloadUnavailable)
+            if (record.status == ModelDownloadStatus.QUEUED || record.status == ModelDownloadStatus.DOWNLOADING) {
+                add(strings.localModelRequiresUnmeteredNetwork)
+                record.progressPercent?.let { progress -> add(strings.localModelProgress(progress)) }
+            }
+            if (record.status == ModelDownloadStatus.FAILED && record.failureReason != null) {
+                add(strings.localModelFailure(record.failureReason))
+            }
+            if (record.status == ModelDownloadStatus.READY && record.installedBytes > 0L) {
+                add(strings.localModelInstalledSize(formatGigabytes(record.installedBytes)))
+            }
+        }
+    }
+
+    private fun formatGigabytes(bytes: Long): String {
+        return String.format(Locale.US, "%.2f GB", bytes / 1_000_000_000.0)
     }
 
     suspend fun indexLocalFiles(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
@@ -215,6 +295,39 @@ class GrayinMemoryController(
                     }
                 },
             )
+    }
+
+    suspend fun selectLocalModel(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
+        modelInstallStore.selectModel(entry.id)
+        strings.localModelSelected(entry.displayName)
+    }
+
+    suspend fun downloadLocalModel(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
+        if (entry.downloadUrl == null) return@withContext strings.localModelDownloadUnavailable
+        modelInstallStore.selectModel(entry.id)
+        modelInstallStore.recordQueued(entry.id)
+        modelDownloadScheduler.enqueue(entry.id)
+        strings.localModelDownloadQueued(entry.displayName)
+    }
+
+    suspend fun cancelLocalModelDownload(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
+        modelDownloadScheduler.cancel(entry.id)
+        modelInstallStore.recordNotDownloaded(entry.id)
+        strings.localModelDownloadCanceled(entry.displayName)
+    }
+
+    suspend fun deleteDownloadedLocalModel(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
+        modelDownloadScheduler.cancel(entry.id)
+        val deleted = modelInstallStore.deleteInstalledModel(entry.id)
+        if (deleted) {
+            strings.localModelDeleted(entry.displayName)
+        } else {
+            strings.localModelDeleteMissing(entry.displayName)
+        }
     }
 
     suspend fun deleteLocalGemmaModel(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
