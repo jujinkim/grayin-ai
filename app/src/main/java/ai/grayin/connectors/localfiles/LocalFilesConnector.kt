@@ -43,6 +43,7 @@ class LocalFilesConnector(
 
     override suspend fun currentState(): ConnectorState {
         val selected = selectedUriStrings()
+        val lastIndexedAt = prefs().getString(KEY_LAST_INDEXED_AT, null)?.let(Instant::parse)
         return ConnectorState(
             connectorId = metadata.connectorId,
             displayName = metadata.displayName,
@@ -51,8 +52,12 @@ class LocalFilesConnector(
             permissionGranted = selected.isNotEmpty() && selected.all { hasPersistedPermission(Uri.parse(it)) },
             capabilities = metadata.connectorCapabilities,
             sensitivity = metadata.sensitivity,
-            processingState = if (selected.isEmpty()) ProcessingState.SKIPPED else ProcessingState.STALE,
-            lastIndexedAt = prefs().getString(KEY_LAST_INDEXED_AT, null)?.let(Instant::parse),
+            processingState = when {
+                selected.isEmpty() -> ProcessingState.SKIPPED
+                lastIndexedAt != null -> ProcessingState.COMPLETED
+                else -> ProcessingState.STALE
+            },
+            lastIndexedAt = lastIndexedAt,
         )
     }
 

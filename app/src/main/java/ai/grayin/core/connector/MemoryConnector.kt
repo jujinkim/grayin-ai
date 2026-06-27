@@ -16,3 +16,7 @@ interface MemoryConnector {
     suspend fun deleteDerivedData(request: ConnectorDeleteRequest): ConnectorDeleteResult
 }
 
+interface InvokableMemoryConnector : MemoryConnector {
+    suspend fun invoke(): ConnectorPermissionState
+}
+

@@ -77,6 +77,7 @@ data class GrayinStrings(
     val sourceInvocationTitle: String,
     val sourceInvocationBody: String,
     val sourceInvocationPrivacyNote: String,
+    val invokeSource: String,
     val addLocalFile: String,
     val revoke: String,
     val delete: String,
@@ -118,6 +119,7 @@ data class GrayinStrings(
     val searchFailed: String,
     val selectedLocalFile: String,
     val unsupportedFileOrPermissionDenied: String,
+    val sourcePermissionDenied: String,
     val noLocalFilesIndexed: String,
     val revokedLocalFiles: String,
     val networkPermissionRestricted: String,
@@ -172,6 +174,62 @@ data class GrayinStrings(
             GrayinLanguage.KOREAN -> "로컬 파일 이벤트 ${count}개를 삭제했습니다."
             GrayinLanguage.JAPANESE -> "ローカルファイルイベントを${count}件削除しました。"
             GrayinLanguage.ENGLISH -> "Deleted $count local file event(s)."
+        }
+    }
+
+    fun deletedConnectorEvents(connectorName: String, count: Int): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$connectorName 파생 이벤트 ${count}개를 삭제했습니다."
+            GrayinLanguage.JAPANESE -> "$connectorName の派生イベントを${count}件削除しました。"
+            GrayinLanguage.ENGLISH -> "Deleted $count derived event(s) for $connectorName."
+        }
+    }
+
+    fun indexedConnectorEvents(connectorName: String, count: Int): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$connectorName 파생 이벤트 ${count}개를 인덱싱했습니다."
+            GrayinLanguage.JAPANESE -> "$connectorName の派生イベントを${count}件インデックスしました。"
+            GrayinLanguage.ENGLISH -> "Indexed $count derived event(s) for $connectorName."
+        }
+    }
+
+    fun invokedConnector(connectorName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$connectorName 소스를 호출했습니다. 지금 인덱싱을 실행하세요."
+            GrayinLanguage.JAPANESE -> "$connectorName ソースを呼び出しました。今すぐインデックスしてください。"
+            GrayinLanguage.ENGLISH -> "Invoked $connectorName. Run Index now."
+        }
+    }
+
+    fun connectorPermissionReadyDescription(connectorName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$connectorName 권한이 준비되었습니다. 소스를 호출한 뒤 인덱싱하세요."
+            GrayinLanguage.JAPANESE -> "$connectorName 権限は利用できます。ソースを呼び出してからインデックスしてください。"
+            GrayinLanguage.ENGLISH -> "$connectorName permission is available. Invoke this source before indexing."
+        }
+    }
+
+    fun connectorInvokedDescription(connectorName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$connectorName 소스가 호출되었습니다. 인덱싱하면 질문에서 사용할 수 있습니다."
+            GrayinLanguage.JAPANESE -> "$connectorName ソースは呼び出し済みです。インデックスすると質問で使えます。"
+            GrayinLanguage.ENGLISH -> "$connectorName is invoked. Run indexing so Ask can use it."
+        }
+    }
+
+    fun connectorIndexedDescription(connectorName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$connectorName 파생 근거가 인덱싱되었습니다. 해제하거나 파생 데이터를 삭제할 수 있습니다."
+            GrayinLanguage.JAPANESE -> "$connectorName の派生根拠がインデックス済みです。解除または派生データ削除ができます。"
+            GrayinLanguage.ENGLISH -> "$connectorName derived evidence is indexed. You can revoke or delete derived data."
+        }
+    }
+
+    fun revokedConnector(connectorName: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$connectorName 소스를 해제하고 파생 데이터를 삭제했습니다."
+            GrayinLanguage.JAPANESE -> "$connectorName ソースを解除し、派生データを削除しました。"
+            GrayinLanguage.ENGLISH -> "Revoked $connectorName and deleted derived data."
         }
     }
 
@@ -238,6 +296,7 @@ private val EnglishStrings = GrayinStrings(
     sourceInvocationTitle = "Invoke sources before asking",
     sourceInvocationBody = "Grayin can read and analyze only sources you invoke here. Select a source, then run indexing so Ask can use derived evidence.",
     sourceInvocationPrivacyNote = "Indexing reads originals transiently and stores derived memory, citations, and source references only.",
+    invokeSource = "Invoke source",
     addLocalFile = "Add local file",
     revoke = "Revoke",
     delete = "Delete",
@@ -279,6 +338,7 @@ private val EnglishStrings = GrayinStrings(
     searchFailed = "Search failed.",
     selectedLocalFile = "Selected local file. Run Index now to update evidence.",
     unsupportedFileOrPermissionDenied = "Unsupported file or read permission was not granted.",
+    sourcePermissionDenied = "Source permission was not granted.",
     noLocalFilesIndexed = "No local files indexed.",
     revokedLocalFiles = "Revoked local file access and deleted derived local file data.",
     networkPermissionRestricted = "Network permission: restricted to typed enrichment methods",
@@ -310,6 +370,7 @@ private val KoreanStrings = EnglishStrings.copy(
     sourceInvocationTitle = "질문 전 소스를 호출하세요",
     sourceInvocationBody = "Grayin은 여기서 사용자가 호출한 소스만 읽고 분석할 수 있습니다. 소스를 선택한 뒤 인덱싱을 실행해야 질문에서 파생 근거를 사용할 수 있습니다.",
     sourceInvocationPrivacyNote = "인덱싱은 원본을 일시적으로만 읽고 파생 기억, 인용, 소스 참조만 저장합니다.",
+    invokeSource = "소스 호출",
     addLocalFile = "로컬 파일 추가",
     revoke = "권한 해제",
     delete = "삭제",
@@ -351,6 +412,7 @@ private val KoreanStrings = EnglishStrings.copy(
     searchFailed = "검색에 실패했습니다.",
     selectedLocalFile = "로컬 파일을 선택했습니다. 근거를 업데이트하려면 지금 인덱싱을 실행하세요.",
     unsupportedFileOrPermissionDenied = "지원하지 않는 파일이거나 읽기 권한이 허용되지 않았습니다.",
+    sourcePermissionDenied = "소스 권한이 허용되지 않았습니다.",
     noLocalFilesIndexed = "인덱싱된 로컬 파일이 없습니다.",
     revokedLocalFiles = "로컬 파일 접근 권한을 해제하고 파생 로컬 파일 데이터를 삭제했습니다.",
     networkPermissionRestricted = "네트워크 권한: typed enrichment method로 제한됨",
@@ -382,6 +444,7 @@ private val JapaneseStrings = EnglishStrings.copy(
     sourceInvocationTitle = "質問前にソースを呼び出す",
     sourceInvocationBody = "Grayinはここで呼び出したソースだけを読み取り、分析できます。ソースを選択してからインデックスすると、質問で派生根拠を使えます。",
     sourceInvocationPrivacyNote = "インデックスは原本を一時的にだけ読み取り、派生記憶、引用、ソース参照だけを保存します。",
+    invokeSource = "ソースを呼び出す",
     addLocalFile = "ローカルファイルを追加",
     revoke = "許可を解除",
     delete = "削除",
@@ -423,6 +486,7 @@ private val JapaneseStrings = EnglishStrings.copy(
     searchFailed = "検索に失敗しました。",
     selectedLocalFile = "ローカルファイルを選択しました。根拠を更新するには今すぐインデックスしてください。",
     unsupportedFileOrPermissionDenied = "未対応のファイル、または読み取り許可がありません。",
+    sourcePermissionDenied = "ソース権限が許可されていません。",
     noLocalFilesIndexed = "インデックス済みのローカルファイルはありません。",
     revokedLocalFiles = "ローカルファイルへのアクセス許可を解除し、派生ローカルファイルデータを削除しました。",
     networkPermissionRestricted = "ネットワーク権限: typed enrichment method に制限",

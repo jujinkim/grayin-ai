@@ -14,6 +14,13 @@ class SecurityBoundaryTest {
     }
 
     @Test
+    fun manifestAllowsCalendarReadPermissionForInvokedCalendarSource() {
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+
+        assertTrue(manifest.contains("android.permission.READ_CALENDAR"))
+    }
+
+    @Test
     fun buildDoesNotAddForbiddenTelemetryOrCloudSdks() {
         val buildFile = File("build.gradle.kts").readText()
         val forbidden = listOf("Firebase", "Crashlytics", "analytics")

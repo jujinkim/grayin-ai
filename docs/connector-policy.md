@@ -48,7 +48,9 @@ MVP 6 sensitivity defaults:
 
 All connectors default OFF.
 
-Local Files is the first real connector. It supports explicit user-selected `.txt` and `.md` documents through the Android document picker. It reads source text transiently, emits only derived keyword/summary metadata, and does not store raw file contents.
+Local Files supports explicit user-selected `.txt` and `.md` documents through the Android document picker. It reads source text transiently, emits only derived keyword/summary metadata, and does not store raw file contents.
+
+Calendar supports explicit runtime calendar read permission plus app-level invocation before indexing. It reads Android calendar instances transiently, emits derived calendar events/citations/source references, and does not store raw calendar records.
 
 ## MVP API Boundary
 

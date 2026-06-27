@@ -2,7 +2,7 @@ package ai.grayin.app
 
 import android.content.Context
 import android.net.Uri
-import ai.grayin.connectors.calendar.CalendarConnectorStub
+import ai.grayin.connectors.calendar.CalendarConnector
 import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFilesConnector
 import ai.grayin.connectors.location.LocationConnectorStub
@@ -10,6 +10,8 @@ import ai.grayin.connectors.notification.NotificationConnectorStub
 import ai.grayin.connectors.photos.PhotosConnectorStub
 import ai.grayin.connectors.usagestats.AppUsageConnectorStub
 import ai.grayin.core.connector.ConnectorPermissionState
+import ai.grayin.core.connector.ConnectorScanScope
+import ai.grayin.core.connector.InvokableMemoryConnector
 import ai.grayin.core.connector.MemoryConnector
 import ai.grayin.core.grounding.GroundedAnswerRequest
 import ai.grayin.core.grounding.TemplateGroundedAnswerGenerator
@@ -38,6 +40,8 @@ data class ConnectorUiState(
     val status: String,
     val sensitivity: String,
     val description: String,
+    val canInvoke: Boolean = false,
+    val requiredPermissions: List<String> = emptyList(),
     val canAdd: Boolean = false,
     val canIndex: Boolean = false,
     val canRevoke: Boolean = false,
@@ -65,7 +69,7 @@ class GrayinMemoryController(
     private val sourceConnectors: List<MemoryConnector> = listOf(
         LocationConnectorStub(),
         PhotosConnectorStub(),
-        CalendarConnectorStub(),
+        CalendarConnector(context.applicationContext),
         NotificationConnectorStub(),
         AppUsageConnectorStub(),
         localFilesConnector,
@@ -94,7 +98,7 @@ class GrayinMemoryController(
     }
 
     suspend fun indexLocalFiles(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
-        val scanResult = localFilesConnector.scan(ai.grayin.core.connector.ConnectorScanScope(forceRefresh = true))
+        val scanResult = localFilesConnector.scan(ConnectorScanScope(forceRefresh = true))
         store.saveSourceReferences(scanResult.sourceReferences)
         store.saveDerivedMemoryEvents(scanResult.derivedEvents)
         store.saveCitations(scanResult.citations)
@@ -111,6 +115,34 @@ class GrayinMemoryController(
         }
     }
 
+    suspend fun indexConnector(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        if (connectorId == LocalFileMemoryExtractor.CONNECTOR_ID) return@withContext indexLocalFiles(strings)
+        val connector = connectorFor(connectorId)
+        val scanResult = connector.scan(ConnectorScanScope(forceRefresh = true))
+        store.saveSourceReferences(scanResult.sourceReferences)
+        store.saveDerivedMemoryEvents(scanResult.derivedEvents)
+        store.saveCitations(scanResult.citations)
+        when {
+            scanResult.derivedEvents.isNotEmpty() -> {
+                strings.indexedConnectorEvents(
+                    connectorName = strings.connectorName(connectorId, connector.metadata.displayName),
+                    count = scanResult.derivedEvents.size,
+                )
+            }
+
+            scanResult.missingSources.isNotEmpty() -> scanResult.missingSources.first().explanation
+            else -> strings.noLocalFilesIndexed
+        }
+    }
+
+    suspend fun invokeConnector(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        val connector = connectorFor(connectorId)
+        if (connector !is InvokableMemoryConnector) return@withContext strings.connectorInvocationUnavailable
+        val permissionState = connector.invoke()
+        if (!permissionState.permissionGranted) return@withContext strings.sourcePermissionDenied
+        strings.invokedConnector(strings.connectorName(connectorId, connector.metadata.displayName))
+    }
+
     suspend fun rememberSelectedLocalFile(uri: Uri, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         if (localFilesConnector.rememberSelectedFile(uri)) {
             strings.selectedLocalFile
@@ -124,10 +156,37 @@ class GrayinMemoryController(
         strings.deletedLocalFileEvents(deleteResult.deletedDerivedMemoryEventIds.size)
     }
 
+    suspend fun deleteConnectorData(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        val deleteResult = store.deleteConnectorData(connectorId)
+        if (connectorId == LocalFileMemoryExtractor.CONNECTOR_ID) {
+            strings.deletedLocalFileEvents(deleteResult.deletedDerivedMemoryEventIds.size)
+        } else {
+            strings.deletedConnectorEvents(
+                connectorName = strings.connectorName(connectorId, connectorId),
+                count = deleteResult.deletedDerivedMemoryEventIds.size,
+            )
+        }
+    }
+
     suspend fun revokeLocalFiles(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val revokeResult = localFilesConnector.revoke()
         store.deleteConnectorData(revokeResult.connectorId)
         strings.revokedLocalFiles
+    }
+
+    suspend fun revokeConnector(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        val connector = connectorFor(connectorId)
+        val revokeResult = connector.revoke()
+        store.deleteConnectorData(revokeResult.connectorId)
+        if (connectorId == LocalFileMemoryExtractor.CONNECTOR_ID) {
+            strings.revokedLocalFiles
+        } else {
+            strings.revokedConnector(strings.connectorName(connectorId, connector.metadata.displayName))
+        }
+    }
+
+    private fun connectorFor(connectorId: String): MemoryConnector {
+        return sourceConnectors.first { it.metadata.connectorId == connectorId }
     }
 
     suspend fun ask(query: String, strings: GrayinStrings): AnswerUiState = withContext(Dispatchers.IO) {
@@ -246,14 +305,17 @@ class GrayinMemoryController(
         val permissionState = connector.permissionState()
         val connectorId = connector.metadata.connectorId
         val isLocalFiles = connectorId == LocalFileMemoryExtractor.CONNECTOR_ID
+        val connectorName = strings.connectorName(connectorId, connector.metadata.displayName)
         return ConnectorUiState(
             id = connectorId,
-            name = strings.connectorName(connectorId, connector.metadata.displayName),
+            name = connectorName,
             status = sourceStatus(state, permissionState, strings),
             sensitivity = sensitivityLabel(connector.metadata.sensitivity, strings),
-            description = sourceDescription(state, permissionState, isLocalFiles, strings),
+            description = sourceDescription(state, permissionState, isLocalFiles, connectorName, strings),
+            canInvoke = !isLocalFiles && permissionState.canRequestPermission && !state.enabled,
+            requiredPermissions = permissionState.requiredPlatformPermissions,
             canAdd = isLocalFiles,
-            canIndex = isLocalFiles && state.enabled,
+            canIndex = state.enabled,
             canRevoke = state.enabled,
             canDelete = sourceReferences.any { it.connectorId == connectorId },
         )
@@ -276,10 +338,16 @@ class GrayinMemoryController(
         state: ConnectorState,
         permissionState: ConnectorPermissionState,
         isLocalFiles: Boolean,
+        connectorName: String,
         strings: GrayinStrings,
     ): String {
         if (!isLocalFiles) {
-            return permissionState.explanation ?: strings.connectorInvocationUnavailable
+            return when {
+                state.processingState == ProcessingState.COMPLETED -> strings.connectorIndexedDescription(connectorName)
+                state.enabled -> strings.connectorInvokedDescription(connectorName)
+                permissionState.permissionGranted -> strings.connectorPermissionReadyDescription(connectorName)
+                else -> permissionState.explanation ?: strings.connectorInvocationUnavailable
+            }
         }
         return when {
             state.processingState == ProcessingState.COMPLETED -> strings.localFilesIndexedDescription

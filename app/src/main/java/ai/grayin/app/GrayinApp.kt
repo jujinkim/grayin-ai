@@ -1,5 +1,6 @@
 package ai.grayin.app
 
+import android.Manifest
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -112,6 +113,25 @@ fun GrayinApp() {
             }
         }
     }
+    val calendarPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            scope.launch {
+                working = true
+                try {
+                    statusMessage = controller.invokeConnector(CalendarConnectorId, strings)
+                } catch (error: Throwable) {
+                    statusMessage = error.message ?: strings.sourcePermissionDenied
+                } finally {
+                    snapshot = controller.snapshot(strings)
+                    working = false
+                }
+            }
+        } else {
+            statusMessage = strings.sourcePermissionDenied
+        }
+    }
 
     fun refreshSnapshot() {
         scope.launch {
@@ -219,12 +239,36 @@ fun GrayinApp() {
                         onAddLocalFile = {
                             openDocumentLauncher.launch(arrayOf("text/*", "application/octet-stream"))
                         },
-                        onIndexLocalFiles = ::indexLocalFiles,
-                        onRevokeLocalFiles = {
+                        onInvokeSource = { connectorId, requiredPermissions ->
+                            when {
+                                connectorId == CalendarConnectorId &&
+                                    Manifest.permission.READ_CALENDAR in requiredPermissions -> {
+                                    calendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+                                }
+
+                                else -> {
+                                    statusMessage = strings.connectorInvocationUnavailable
+                                }
+                            }
+                        },
+                        onIndexSource = { connectorId ->
                             scope.launch {
                                 working = true
                                 try {
-                                    statusMessage = controller.revokeLocalFiles(strings)
+                                    statusMessage = controller.indexConnector(connectorId, strings)
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: strings.indexingFailed
+                                } finally {
+                                    snapshot = controller.snapshot(strings)
+                                    working = false
+                                }
+                            }
+                        },
+                        onRevokeSource = { connectorId ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.revokeConnector(connectorId, strings)
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.revokeFailed
                                 } finally {
@@ -233,11 +277,11 @@ fun GrayinApp() {
                                 }
                             }
                         },
-                        onDeleteLocalFileData = {
+                        onDeleteSourceData = { connectorId ->
                             scope.launch {
                                 working = true
                                 try {
-                                    statusMessage = controller.deleteLocalFileData(strings)
+                                    statusMessage = controller.deleteConnectorData(connectorId, strings)
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.deleteFailed
                                 } finally {
@@ -408,9 +452,10 @@ private fun SourcesScreen(
     strings: GrayinStrings,
     working: Boolean,
     onAddLocalFile: () -> Unit,
-    onIndexLocalFiles: () -> Unit,
-    onRevokeLocalFiles: () -> Unit,
-    onDeleteLocalFileData: () -> Unit,
+    onInvokeSource: (String, List<String>) -> Unit,
+    onIndexSource: (String) -> Unit,
+    onRevokeSource: (String) -> Unit,
+    onDeleteSourceData: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -434,10 +479,11 @@ private fun SourcesScreen(
                 source = source,
                 strings = strings,
                 working = working,
-                onRevokeLocalFiles = onRevokeLocalFiles,
                 onAddLocalFile = onAddLocalFile,
-                onIndexLocalFiles = onIndexLocalFiles,
-                onDeleteLocalFileData = onDeleteLocalFileData,
+                onInvokeSource = onInvokeSource,
+                onIndexSource = onIndexSource,
+                onRevokeSource = onRevokeSource,
+                onDeleteSourceData = onDeleteSourceData,
             )
         }
     }
@@ -467,9 +513,10 @@ private fun SourceRow(
     strings: GrayinStrings,
     working: Boolean,
     onAddLocalFile: () -> Unit,
-    onIndexLocalFiles: () -> Unit,
-    onRevokeLocalFiles: () -> Unit,
-    onDeleteLocalFileData: () -> Unit,
+    onInvokeSource: (String, List<String>) -> Unit,
+    onIndexSource: (String) -> Unit,
+    onRevokeSource: (String) -> Unit,
+    onDeleteSourceData: (String) -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -489,8 +536,17 @@ private fun SourceRow(
             }
             Text(source.sensitivity, style = MaterialTheme.typography.bodySmall)
             Text(source.description, style = MaterialTheme.typography.bodyMedium)
-            if (source.canAdd || source.canIndex || source.canRevoke || source.canDelete) {
+            if (source.canInvoke || source.canAdd || source.canIndex || source.canRevoke || source.canDelete) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (source.canInvoke) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !working,
+                            onClick = { onInvokeSource(source.id, source.requiredPermissions) },
+                        ) {
+                            Text(strings.invokeSource)
+                        }
+                    }
                     if (source.canAdd) {
                         Button(
                             modifier = Modifier.fillMaxWidth(),
@@ -504,7 +560,7 @@ private fun SourceRow(
                         Button(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !working,
-                            onClick = onIndexLocalFiles,
+                            onClick = { onIndexSource(source.id) },
                         ) {
                             Text(strings.indexNow)
                         }
@@ -513,7 +569,7 @@ private fun SourceRow(
                         OutlinedButton(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !working,
-                            onClick = onRevokeLocalFiles,
+                            onClick = { onRevokeSource(source.id) },
                         ) {
                             Text(strings.revoke)
                         }
@@ -522,7 +578,7 @@ private fun SourceRow(
                         OutlinedButton(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !working,
-                            onClick = onDeleteLocalFileData,
+                            onClick = { onDeleteSourceData(source.id) },
                         ) {
                             Text(strings.delete)
                         }
@@ -644,6 +700,8 @@ private fun GrayinScreen.icon(): ImageVector {
         GrayinScreen.Settings -> Icons.Filled.Settings
     }
 }
+
+private const val CalendarConnectorId = "calendar"
 
 private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
     return GrayinSnapshot(
