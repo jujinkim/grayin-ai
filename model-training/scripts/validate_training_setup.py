@@ -99,14 +99,10 @@ def validate_ignored(path: Path) -> None:
 def reference_model_ready(path: Path) -> bool:
     if not path.is_dir():
         return False
-    markers = (
-        "config.json",
-        "tokenizer.json",
-        "tokenizer.model",
-    )
-    if any((path / marker).is_file() for marker in markers):
-        return True
-    return any(path.glob("*.safetensors")) or any(path.glob("*.bin"))
+    has_config = (path / "config.json").is_file()
+    has_tokenizer = (path / "tokenizer.json").is_file() or (path / "tokenizer.model").is_file()
+    has_weights = any(path.glob("*.safetensors")) or any(path.glob("*.bin"))
+    return has_config and has_tokenizer and has_weights
 
 
 def main() -> None:

@@ -57,12 +57,15 @@ def main() -> None:
             load_in_4bit=True,
             bnb_4bit_quant_type=quant_config["bnb_4bit_quant_type"],
             bnb_4bit_compute_dtype=dtype_from_config(quant_config["bnb_4bit_compute_dtype"]),
+            bnb_4bit_use_double_quant=quant_config.get("bnb_4bit_use_double_quant", False),
         )
+
+    device_map = model_config.get("device_map", "auto")
 
     model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
-        torch_dtype=torch_dtype,
-        device_map="auto",
+        dtype=torch_dtype,
+        device_map=device_map,
         quantization_config=quantization_config,
         trust_remote_code=model_config["trust_remote_code"],
     )
@@ -79,17 +82,18 @@ def main() -> None:
 
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
         train_dataset=dataset,
         peft_config=peft_config,
+        processing_class=tokenizer,
         args=SFTConfig(
             output_dir=training_config["output_dir"],
             dataset_text_field=dataset_config["text_field"],
-            max_seq_length=dataset_config["max_seq_length"],
+            max_length=dataset_config["max_seq_length"],
             per_device_train_batch_size=training_config["per_device_train_batch_size"],
             gradient_accumulation_steps=training_config["gradient_accumulation_steps"],
             learning_rate=training_config["learning_rate"],
             num_train_epochs=training_config["num_train_epochs"],
+            max_steps=training_config.get("max_steps", -1),
             warmup_ratio=training_config["warmup_ratio"],
             logging_steps=training_config["logging_steps"],
             save_steps=training_config["save_steps"],

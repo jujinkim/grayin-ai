@@ -74,6 +74,13 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
      --config model-training/configs/grayin_gemma_lora.yaml
    ```
 
+   For environment verification on an 8 GB GPU, run the one-step smoke config:
+
+   ```bash
+   python3 model-training/scripts/train_lora.py \
+     --config model-training/configs/grayin_gemma_lora_smoke.yaml
+   ```
+
 5. Validate setup and ignored artifact paths:
 
    ```bash
@@ -103,6 +110,10 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
 - non-agentic refusals
 - no-evidence answers
 
+## Run Records
+
+Training attempts are summarized in `RUNS.md`. That file records commands, environment, metrics, and ignored artifact paths only. It must not include model weights, raw user data, private prompts, or full generated model output.
+
 ## Make Targets
 
 From repository root:
@@ -112,6 +123,7 @@ make -f model-training/Makefile corpus
 make -f model-training/Makefile validate
 make -f model-training/Makefile download-reference-dry-run
 make -f model-training/Makefile validate-strict
+make -f model-training/Makefile train-smoke
 make -f model-training/Makefile train
 make -f model-training/Makefile artifact-policy
 ```

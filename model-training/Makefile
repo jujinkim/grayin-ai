@@ -1,7 +1,8 @@
 PYTHON ?= python3
 CONFIG ?= model-training/configs/grayin_gemma_lora.yaml
+SMOKE_CONFIG ?= model-training/configs/grayin_gemma_lora_smoke.yaml
 
-.PHONY: corpus validate validate-strict download-reference-dry-run train artifact-policy
+.PHONY: corpus validate validate-strict download-reference-dry-run train train-smoke artifact-policy
 
 corpus:
 	$(PYTHON) model-training/scripts/build_training_corpus.py
@@ -17,6 +18,9 @@ download-reference-dry-run:
 
 train:
 	$(PYTHON) model-training/scripts/train_lora.py --config $(CONFIG)
+
+train-smoke:
+	$(PYTHON) model-training/scripts/train_lora.py --config $(SMOKE_CONFIG)
 
 artifact-policy:
 	$(PYTHON) model-training/scripts/check_artifact_policy.py
