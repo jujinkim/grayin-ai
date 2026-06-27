@@ -10,6 +10,7 @@ import ai.grayin.connectors.notification.NotificationConnector
 import ai.grayin.connectors.photos.PhotosConnector
 import ai.grayin.connectors.usagestats.AppUsageConnector
 import ai.grayin.core.ai.Gemma4LocalLanguageModel
+import ai.grayin.core.ai.Gemma4ModelPathResolver
 import ai.grayin.core.ai.LocalLanguageModel
 import ai.grayin.core.ai.LocalModelAnswerDraft
 import ai.grayin.core.ai.LocalModelStatus
@@ -81,7 +82,11 @@ class GrayinMemoryController(
         localFilesConnector,
     ),
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
-    private val localLanguageModel: LocalLanguageModel = Gemma4LocalLanguageModel(context.applicationContext),
+    private val modelPathResolver: Gemma4ModelPathResolver = Gemma4ModelPathResolver(context.applicationContext),
+    private val localLanguageModel: LocalLanguageModel = Gemma4LocalLanguageModel(
+        context.applicationContext,
+        modelPathResolver,
+    ),
     private val fallbackAnswerGenerator: GroundedAnswerGenerator = TemplateGroundedAnswerGenerator(),
 ) {
     suspend fun snapshot(strings: GrayinStrings): GrayinSnapshot = withContext(Dispatchers.IO) {
@@ -195,6 +200,28 @@ class GrayinMemoryController(
             strings.selectedLocalFile
         } else {
             strings.unsupportedFileOrPermissionDenied
+        }
+    }
+
+    suspend fun importLocalGemmaModel(uri: Uri, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        runCatching { modelPathResolver.installModelFromUri(uri) }
+            .fold(
+                onSuccess = { strings.localGemmaModelImported },
+                onFailure = { error ->
+                    if (error is IllegalArgumentException) {
+                        strings.localGemmaModelInvalidFile
+                    } else {
+                        strings.localGemmaModelImportFailed
+                    }
+                },
+            )
+    }
+
+    suspend fun deleteLocalGemmaModel(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        if (modelPathResolver.deleteImportedModel()) {
+            strings.localGemmaModelDeleted
+        } else {
+            strings.localGemmaModelDeleteMissing
         }
     }
 

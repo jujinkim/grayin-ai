@@ -122,6 +122,23 @@ fun GrayinApp() {
             }
         }
     }
+    val modelDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                working = true
+                try {
+                    statusMessage = controller.importLocalGemmaModel(uri, strings)
+                } catch (error: Throwable) {
+                    statusMessage = error.message ?: strings.localGemmaModelImportFailed
+                } finally {
+                    snapshot = controller.snapshot(strings)
+                    working = false
+                }
+            }
+        }
+    }
     val calendarPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -415,6 +432,22 @@ fun GrayinApp() {
                             statusMessage = ""
                         },
                         onIndex = ::indexLocalFiles,
+                        onImportModel = {
+                            modelDocumentLauncher.launch(arrayOf("application/octet-stream", "*/*"))
+                        },
+                        onDeleteModel = {
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.deleteLocalGemmaModel(strings)
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: strings.deleteFailed
+                                } finally {
+                                    snapshot = controller.snapshot(strings)
+                                    working = false
+                                }
+                            }
+                        },
                     )
                 }
             }
@@ -894,6 +927,8 @@ private fun SettingsScreen(
     working: Boolean,
     onLanguageSelected: (GrayinLanguageOption) -> Unit,
     onIndex: () -> Unit,
+    onImportModel: () -> Unit,
+    onDeleteModel: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -917,6 +952,29 @@ private fun SettingsScreen(
                 onClick = onIndex,
             ) {
                 Text(if (working) strings.indexing else strings.indexNow)
+            }
+        }
+        item {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Button(
+                    enabled = !working,
+                    onClick = onImportModel,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Text(strings.importLocalGemmaModel)
+                }
+                OutlinedButton(
+                    enabled = !working,
+                    onClick = onDeleteModel,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Filled.Remove, contentDescription = null)
+                    Text(strings.deleteLocalGemmaModel)
+                }
             }
         }
         if (statusMessage.isNotBlank()) {

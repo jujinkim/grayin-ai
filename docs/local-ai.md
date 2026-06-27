@@ -57,7 +57,9 @@ adb shell mkdir -p /data/local/tmp/grayin
 adb push gemma-4-E2B-it.litertlm /data/local/tmp/grayin/
 ```
 
-End-user import UI remains future work. Until then, normal APK installs do not have a self-service model import path.
+Settings also supports end-user import. The user selects a `.litertlm` file through Android document picker, and Grayin copies it into app-private `files/models/gemma-4-E2B-it.litertlm`.
+
+Settings can delete app-imported model files. Development files under `/data/local/tmp/grayin/` remain developer-managed.
 
 ## Current Answer Path
 

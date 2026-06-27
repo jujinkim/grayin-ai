@@ -100,6 +100,22 @@ class GrayinLanguageTest {
     }
 
     @Test
+    fun localizedStringsCoverLocalModelImportControls() {
+        val korean = GrayinText.forOption(GrayinLanguageOption.KOREAN)
+        val english = GrayinText.forOption(GrayinLanguageOption.ENGLISH)
+
+        assertEquals("Import local Gemma model", english.importLocalGemmaModel)
+        assertEquals("Delete imported Gemma model", english.deleteLocalGemmaModel)
+        assertEquals("로컬 Gemma 모델 가져오기", korean.importLocalGemmaModel)
+        assertEquals("가져온 Gemma 모델 삭제", korean.deleteLocalGemmaModel)
+        assertEquals("Select a non-empty .litertlm model file.", english.localGemmaModelInvalidFile)
+        assertEquals(
+            "Download page: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
+            english.localGemmaModelDownloadUrl,
+        )
+    }
+
+    @Test
     fun localizedStringsCoverConnectorNames() {
         assertEquals("Notifications", GrayinText.forOption(GrayinLanguageOption.ENGLISH).connectorName("notification", "x"))
         assertEquals("앱 사용", GrayinText.forOption(GrayinLanguageOption.KOREAN).connectorName("app_usage", "x"))

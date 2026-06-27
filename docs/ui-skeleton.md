@@ -42,7 +42,7 @@ Other source rows remain disabled until their platform connectors are implemente
 
 ## Settings
 
-Settings includes language selection, a manual local-file index command, operation status, indexed counts, and local-only policy status rows.
+Settings includes language selection, a manual local-file index command, local Gemma `.litertlm` import/delete controls, operation status, indexed counts, and local-only policy status rows.
 
 Language options are:
 

@@ -1,6 +1,8 @@
 package ai.grayin.core.ai
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.EvidenceItem
 import ai.grayin.core.model.EvidencePack
@@ -11,6 +13,7 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.ExperimentalApi
 import com.google.ai.edge.litertlm.SamplerConfig
 import java.io.File
+import java.io.IOException
 
 class Gemma4LocalLanguageModel(
     context: Context,
@@ -126,14 +129,84 @@ class Gemma4ModelPathResolver(
         )
     }
 
+    fun installModelFromUri(uri: Uri): Long {
+        val displayName = displayName(uri)
+        require(displayName == null || displayName.endsWith(MODEL_EXTENSION, ignoreCase = true)) {
+            "Selected model file must use $MODEL_EXTENSION extension."
+        }
+
+        val destination = File(context.filesDir, INTERNAL_MODEL_PATH)
+        val modelDir = requireNotNull(destination.parentFile) { "Model directory is unavailable." }
+        modelDir.mkdirs()
+        val tempFile = File(modelDir, "$MODEL_FILE_NAME.tmp")
+        var copiedBytes = 0L
+
+        try {
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw IOException("Selected model file cannot be opened.")
+            input.use { source ->
+                tempFile.outputStream().use { target ->
+                    val buffer = ByteArray(COPY_BUFFER_BYTES)
+                    while (true) {
+                        val read = source.read(buffer)
+                        if (read < 0) break
+                        target.write(buffer, 0, read)
+                        copiedBytes += read
+                    }
+                }
+            }
+            require(copiedBytes > 0L) { "Selected model file is empty." }
+
+            if (destination.exists() && !destination.delete()) {
+                throw IOException("Existing model file cannot be replaced.")
+            }
+            if (!tempFile.renameTo(destination)) {
+                tempFile.copyTo(destination, overwrite = true)
+                tempFile.delete()
+            }
+            return copiedBytes
+        } catch (error: Throwable) {
+            tempFile.delete()
+            throw error
+        }
+    }
+
+    fun deleteImportedModel(): Boolean {
+        return managedModelFiles().fold(false) { deletedAny, file ->
+            if (file.exists()) file.delete() || deletedAny else deletedAny
+        }
+    }
+
     fun cacheDirPath(): String {
         return File(context.cacheDir, CACHE_DIR).apply { mkdirs() }.absolutePath
     }
 
+    private fun managedModelFiles(): List<File> {
+        val externalFilesDir = context.getExternalFilesDir(null)
+        return listOfNotNull(
+            File(context.filesDir, INTERNAL_MODEL_PATH),
+            externalFilesDir?.let { File(it, EXTERNAL_MODEL_PATH) },
+        )
+    }
+
+    private fun displayName(uri: Uri): String? {
+        return runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (!cursor.moveToFirst()) return@use null
+                    val columnIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (columnIndex < 0) null else cursor.getString(columnIndex)
+                }
+        }.getOrNull()
+    }
+
     private companion object {
-        const val INTERNAL_MODEL_PATH = "models/gemma-4-E2B-it.litertlm"
-        const val EXTERNAL_MODEL_PATH = "models/gemma-4-E2B-it.litertlm"
-        const val ADB_MODEL_PATH = "/data/local/tmp/grayin/gemma-4-E2B-it.litertlm"
+        const val MODEL_FILE_NAME = "gemma-4-E2B-it.litertlm"
+        const val MODEL_EXTENSION = ".litertlm"
+        const val INTERNAL_MODEL_PATH = "models/$MODEL_FILE_NAME"
+        const val EXTERNAL_MODEL_PATH = "models/$MODEL_FILE_NAME"
+        const val ADB_MODEL_PATH = "/data/local/tmp/grayin/$MODEL_FILE_NAME"
         const val CACHE_DIR = "litertlm"
+        const val COPY_BUFFER_BYTES = 1024 * 1024
     }
 }
