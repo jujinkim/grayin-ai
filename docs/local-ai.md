@@ -101,4 +101,6 @@ Current training target:
 
 - Gemma 4 E2B instruction base as local reference weights under ignored `model-training/reference-models/`.
 - LoRA/QLoRA app-behavior tuning for evidence-grounded recall, missing-data honesty, and non-agentic refusal.
+- Synthetic training and evaluation JSONL under `model-training/data/synthetic/`.
+- Setup validation through `model-training/scripts/validate_training_setup.py`.
 - Final `.litertlm` output outside git, published through runtime model download infrastructure after checksum review.

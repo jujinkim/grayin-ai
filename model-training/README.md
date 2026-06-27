@@ -67,13 +67,34 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
      --config model-training/configs/grayin_gemma_lora.yaml
    ```
 
-5. Export or convert artifacts outside git. Generated files remain under ignored `outputs/`.
+5. Validate setup and ignored artifact paths:
 
-6. Check git artifact policy before commit:
+   ```bash
+   python3 model-training/scripts/validate_training_setup.py
+   ```
+
+   Use this stricter check before real training:
+
+   ```bash
+   python3 model-training/scripts/validate_training_setup.py --require-reference-model
+   ```
+
+6. Export or convert artifacts outside git. Generated files remain under ignored `outputs/`.
+
+7. Check git artifact policy before commit:
 
    ```bash
    python3 model-training/scripts/check_artifact_policy.py
    ```
+
+## Evaluation Seed
+
+`data/synthetic/grayin_eval.jsonl` contains synthetic evaluation prompts for:
+
+- missing source honesty
+- cited grounded answers
+- non-agentic refusals
+- no-evidence answers
 
 ## Release Rule
 
