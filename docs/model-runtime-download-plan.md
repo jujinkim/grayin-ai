@@ -22,6 +22,7 @@ APK/AAB must not include model weights. Grayin ships the LiteRT-LM runtime only.
 - Update Settings with model picker, source/size/status rows, download/cancel/delete controls, and existing import fallback.
 - Keep Grayin dedicated model catalog entry disabled until server URL/checksum are configured.
 - Keep user data out of model training and out of downloaded model state.
+- Keep Gemma reference weights and generated model outputs outside git under `model-training/` ignore rules.
 
 ## Verification
 
@@ -39,3 +40,4 @@ APK/AAB must not include model weights. Grayin ships the LiteRT-LM runtime only.
 - Implemented Settings model picker with select, open page, download, cancel, and delete controls.
 - `Gemma4ModelPathResolver` prefers the selected ready downloaded model, then legacy import/dev paths.
 - Grayin dedicated model remains a disabled catalog placeholder until URL and checksum are available.
+- App-specific training scaffold lives in `model-training/`; generated `.litertlm` files remain ignored and must be published separately.

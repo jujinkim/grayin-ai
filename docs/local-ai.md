@@ -88,3 +88,17 @@ Settings can delete downloaded catalog models and app-imported model files. Deve
 Ask builds an `EvidencePack` from SQLCipher-stored derived indexed evidence, then tries `Gemma4LocalLanguageModel` first.
 
 If the model file is unavailable or generation fails, Ask falls back to `TemplateGroundedAnswerGenerator`.
+
+## App Model Training
+
+App-specific model training assets live under `model-training/`.
+
+The repository tracks only training code, configs, synthetic policy examples, and small metadata. Gemma reference weights, checkpoints, adapters, merged weights, LiteRT exports, private/raw data, and generated output model files are ignored by git.
+
+Training data in this repo must stay synthetic or hand-authored. Real user originals, raw connector payloads, SQLCipher exports, real EvidencePack prompts, and real answers must not be used for training.
+
+Current training target:
+
+- Gemma 4 E2B instruction base as local reference weights under ignored `model-training/reference-models/`.
+- LoRA/QLoRA app-behavior tuning for evidence-grounded recall, missing-data honesty, and non-agentic refusal.
+- Final `.litertlm` output outside git, published through runtime model download infrastructure after checksum review.

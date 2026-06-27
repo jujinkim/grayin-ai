@@ -15,6 +15,7 @@ Current phase status: usable local Text/Markdown MVP is complete.
 - Local Gemma LiteRT-LM answer adapter over retrieved `EvidencePack`, with template fallback when the model file is unavailable.
 - Runtime local-model catalog for Grayin dedicated model placeholder, official Gemma 4 E2B, and official Gemma 4 E4B.
 - WorkManager runtime model download into app-private storage; APK/AAB does not bundle model weights.
+- App-specific model training scaffold under `model-training/`, with Gemma/reference/output model artifacts excluded from git.
 - First-launch Sources intro explaining that user-connected sources must be indexed before Ask can use them.
 - Sources UI is backed by connector metadata and permission/index state.
 - Sources UI exposes top-level Index all now and persisted automatic indexing settings.
@@ -28,6 +29,7 @@ Current phase status: usable local Text/Markdown MVP is complete.
 - Implement online weather provider behind `OnlineEnrichmentGateway`.
 - Add PDF/OCR local-file indexing.
 - Configure Grayin dedicated model server URL and checksum.
+- Run app-specific Gemma LoRA/QLoRA training, evaluate against grounded-answer benchmarks, and publish final `.litertlm` outside git.
 - Add signed model integrity checks for downloaded/imported local model weights.
 - Implement encrypted export/import runtime.
 - Add optional screenshot blocking and biometric app lock.

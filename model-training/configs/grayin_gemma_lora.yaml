@@ -1,0 +1,50 @@
+run:
+  name: grayin-gemma-4-e2b-lora-v1
+  seed: 42
+
+model:
+  base_model_path: model-training/reference-models/gemma-4-e2b-it
+  trust_remote_code: false
+  torch_dtype: bfloat16
+
+dataset:
+  train_jsonl: model-training/data/synthetic/grayin_app_behavior.jsonl
+  text_field: text
+  max_seq_length: 4096
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_compute_dtype: bfloat16
+
+training:
+  output_dir: model-training/outputs/adapters/grayin-gemma-4-e2b-lora-v1
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  learning_rate: 0.0002
+  num_train_epochs: 3
+  warmup_ratio: 0.03
+  logging_steps: 10
+  save_steps: 200
+  save_total_limit: 2
+  gradient_checkpointing: true
+  packing: false
+
+export:
+  merged_output_dir: model-training/outputs/merged/grayin-gemma-4-e2b-v1
+  litert_output_file: model-training/outputs/litert/grayin-gemma-4-e2b-v1.litertlm
+  model_id: grayin-gemma-4-E2B-it-q4-v1
+  runtime_catalog_target: app/src/main/java/ai/grayin/core/ai/ModelCatalog.kt

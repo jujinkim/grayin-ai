@@ -10,3 +10,28 @@ local.properties
 .cxx/
 captures/
 
+# App-model training artifacts. Keep training code/config tracked, never weights.
+model-training/reference-models/*
+!model-training/reference-models/.gitkeep
+model-training/outputs/*
+!model-training/outputs/.gitkeep
+model-training/checkpoints/*
+!model-training/checkpoints/.gitkeep
+model-training/data/private/*
+!model-training/data/private/.gitkeep
+model-training/data/raw/*
+!model-training/data/raw/.gitkeep
+model-training/**/*.safetensors
+model-training/**/*.bin
+model-training/**/*.gguf
+model-training/**/*.pt
+model-training/**/*.pth
+model-training/**/*.ckpt
+model-training/**/*.onnx
+model-training/**/*.tflite
+model-training/**/*.litertlm
+model-training/**/*.task
+model-training/**/*.mlmodel
+.venv-model-training/
+model-training/.venv/
+
