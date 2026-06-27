@@ -8,7 +8,7 @@ model:
   base_model_path: model-training/reference-models/gemma-4-e2b-it
   trust_remote_code: false
   torch_dtype: bfloat16
-  device_map: auto
+  device_map: cuda
 
 dataset:
   train_jsonl: model-training/data/synthetic/grayin_app_behavior.jsonl
