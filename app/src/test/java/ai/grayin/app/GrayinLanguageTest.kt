@@ -81,4 +81,11 @@ class GrayinLanguageTest {
             GrayinText.forOption(GrayinLanguageOption.ENGLISH).connectorInvocationUnavailable,
         )
     }
+
+    @Test
+    fun localizedStringsCoverConnectorNames() {
+        assertEquals("Notifications", GrayinText.forOption(GrayinLanguageOption.ENGLISH).connectorName("notification", "x"))
+        assertEquals("앱 사용", GrayinText.forOption(GrayinLanguageOption.KOREAN).connectorName("app_usage", "x"))
+        assertEquals("fallback", GrayinText.forOption(GrayinLanguageOption.JAPANESE).connectorName("unknown", "fallback"))
+    }
 }

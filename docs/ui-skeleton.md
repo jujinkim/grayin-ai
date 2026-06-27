@@ -29,7 +29,7 @@ The answer card starts empty, then renders grounded answers from indexed local T
 
 ## Sources
 
-The Sources screen lists connector state, sensitivity labels, and an intro explaining that sources must be explicitly invoked and indexed before Grayin can read/analyze them for Ask.
+The Sources screen lists connector-backed state, sensitivity labels, and an intro explaining that sources must be explicitly invoked and indexed before Grayin can read/analyze them for Ask.
 
 Local Files supports:
 

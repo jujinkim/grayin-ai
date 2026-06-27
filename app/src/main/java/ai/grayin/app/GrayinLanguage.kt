@@ -139,6 +139,18 @@ data class GrayinStrings(
         }
     }
 
+    fun connectorName(connectorId: String, fallback: String): String {
+        return when (connectorId) {
+            "location" -> location
+            "photos" -> photos
+            "calendar" -> calendar
+            "notification" -> notifications
+            "app_usage" -> appUsage
+            "local_files" -> localFiles
+            else -> fallback
+        }
+    }
+
     fun itemCount(count: Int): String {
         return when (languageCode) {
             GrayinLanguage.KOREAN -> "${count}개"

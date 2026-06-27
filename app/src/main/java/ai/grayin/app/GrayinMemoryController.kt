@@ -2,18 +2,28 @@ package ai.grayin.app
 
 import android.content.Context
 import android.net.Uri
+import ai.grayin.connectors.calendar.CalendarConnectorStub
 import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFilesConnector
+import ai.grayin.connectors.location.LocationConnectorStub
+import ai.grayin.connectors.notification.NotificationConnectorStub
+import ai.grayin.connectors.photos.PhotosConnectorStub
+import ai.grayin.connectors.usagestats.AppUsageConnectorStub
+import ai.grayin.core.connector.ConnectorPermissionState
+import ai.grayin.core.connector.MemoryConnector
 import ai.grayin.core.grounding.GroundedAnswerRequest
 import ai.grayin.core.grounding.TemplateGroundedAnswerGenerator
 import ai.grayin.core.model.ConfidenceLevel
+import ai.grayin.core.model.ConnectorState
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.EvidenceItem
 import ai.grayin.core.model.EvidencePack
 import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.ProcessingState
+import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceAvailability
+import ai.grayin.core.model.SourceReference
 import ai.grayin.core.retrieval.DefaultQueryPlanner
 import ai.grayin.core.retrieval.QueryPlan
 import ai.grayin.core.store.LocalMemoryStore
@@ -52,33 +62,22 @@ class GrayinMemoryController(
     context: Context,
     private val store: LocalMemoryStore = SqlCipherLocalMemoryStore(context.applicationContext),
     val localFilesConnector: LocalFilesConnector = LocalFilesConnector(context.applicationContext),
+    private val sourceConnectors: List<MemoryConnector> = listOf(
+        LocationConnectorStub(),
+        PhotosConnectorStub(),
+        CalendarConnectorStub(),
+        NotificationConnectorStub(),
+        AppUsageConnectorStub(),
+        localFilesConnector,
+    ),
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
     private val answerGenerator: TemplateGroundedAnswerGenerator = TemplateGroundedAnswerGenerator(),
 ) {
     suspend fun snapshot(strings: GrayinStrings): GrayinSnapshot = withContext(Dispatchers.IO) {
         val sourceReferences = store.loadSourceReferences()
         val events = store.loadDerivedMemoryEvents()
-        val localState = localFilesConnector.currentState()
         GrayinSnapshot(
-            sourceRows = staticConnectorRows(strings) + ConnectorUiState(
-                id = LocalFileMemoryExtractor.CONNECTOR_ID,
-                name = strings.localFiles,
-                status = when {
-                    localState.processingState == ProcessingState.COMPLETED -> strings.indexed
-                    localState.enabled -> strings.selected
-                    else -> strings.off
-                },
-                sensitivity = strings.highSensitivity,
-                description = when {
-                    localState.processingState == ProcessingState.COMPLETED -> strings.localFilesIndexedDescription
-                    localState.enabled -> strings.localFilesSelectedDescription
-                    else -> strings.localFilesOffDescription
-                },
-                canAdd = true,
-                canIndex = localState.enabled,
-                canRevoke = localState.enabled,
-                canDelete = sourceReferences.any { it.connectorId == LocalFileMemoryExtractor.CONNECTOR_ID },
-            ),
+            sourceRows = sourceConnectors.map { connector -> sourceRow(connector, sourceReferences, strings) },
             timelineRows = timelineRows(events, strings),
             placesRows = listOf(strings.noPlaceClusters),
             settingsRows = listOf(
@@ -238,44 +237,64 @@ class GrayinMemoryController(
         )
     }
 
-    private fun staticConnectorRows(strings: GrayinStrings): List<ConnectorUiState> {
-        return listOf(
-            ConnectorUiState(
-                id = "location",
-                name = strings.location,
-                status = strings.notImplemented,
-                sensitivity = strings.highSensitivity,
-                description = strings.connectorInvocationUnavailable,
-            ),
-            ConnectorUiState(
-                id = "photos",
-                name = strings.photos,
-                status = strings.notImplemented,
-                sensitivity = strings.highSensitivity,
-                description = strings.connectorInvocationUnavailable,
-            ),
-            ConnectorUiState(
-                id = "calendar",
-                name = strings.calendar,
-                status = strings.notImplemented,
-                sensitivity = strings.highSensitivity,
-                description = strings.connectorInvocationUnavailable,
-            ),
-            ConnectorUiState(
-                id = "notifications",
-                name = strings.notifications,
-                status = strings.notImplemented,
-                sensitivity = strings.veryHighSensitivity,
-                description = strings.connectorInvocationUnavailable,
-            ),
-            ConnectorUiState(
-                id = "app_usage",
-                name = strings.appUsage,
-                status = strings.notImplemented,
-                sensitivity = strings.veryHighSensitivity,
-                description = strings.connectorInvocationUnavailable,
-            ),
+    private suspend fun sourceRow(
+        connector: MemoryConnector,
+        sourceReferences: List<SourceReference>,
+        strings: GrayinStrings,
+    ): ConnectorUiState {
+        val state = connector.currentState()
+        val permissionState = connector.permissionState()
+        val connectorId = connector.metadata.connectorId
+        val isLocalFiles = connectorId == LocalFileMemoryExtractor.CONNECTOR_ID
+        return ConnectorUiState(
+            id = connectorId,
+            name = strings.connectorName(connectorId, connector.metadata.displayName),
+            status = sourceStatus(state, permissionState, strings),
+            sensitivity = sensitivityLabel(connector.metadata.sensitivity, strings),
+            description = sourceDescription(state, permissionState, isLocalFiles, strings),
+            canAdd = isLocalFiles,
+            canIndex = isLocalFiles && state.enabled,
+            canRevoke = state.enabled,
+            canDelete = sourceReferences.any { it.connectorId == connectorId },
         )
+    }
+
+    private fun sourceStatus(
+        state: ConnectorState,
+        permissionState: ConnectorPermissionState,
+        strings: GrayinStrings,
+    ): String {
+        return when {
+            state.processingState == ProcessingState.COMPLETED -> strings.indexed
+            state.enabled -> strings.selected
+            !permissionState.canRequestPermission && !permissionState.permissionGranted -> strings.notImplemented
+            else -> strings.off
+        }
+    }
+
+    private fun sourceDescription(
+        state: ConnectorState,
+        permissionState: ConnectorPermissionState,
+        isLocalFiles: Boolean,
+        strings: GrayinStrings,
+    ): String {
+        if (!isLocalFiles) {
+            return permissionState.explanation ?: strings.connectorInvocationUnavailable
+        }
+        return when {
+            state.processingState == ProcessingState.COMPLETED -> strings.localFilesIndexedDescription
+            state.enabled -> strings.localFilesSelectedDescription
+            else -> strings.localFilesOffDescription
+        }
+    }
+
+    private fun sensitivityLabel(level: SensitivityLevel, strings: GrayinStrings): String {
+        return when (level) {
+            SensitivityLevel.VERY_HIGH -> strings.veryHighSensitivity
+            SensitivityLevel.HIGH -> strings.highSensitivity
+            SensitivityLevel.MEDIUM -> "Medium sensitivity"
+            SensitivityLevel.LOW -> "Low sensitivity"
+        }
     }
 
     private fun timelineRows(events: List<DerivedMemoryEvent>, strings: GrayinStrings): List<String> {
