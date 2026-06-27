@@ -5,7 +5,7 @@ import android.net.Uri
 import ai.grayin.connectors.calendar.CalendarConnector
 import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFilesConnector
-import ai.grayin.connectors.location.LocationConnectorStub
+import ai.grayin.connectors.location.LocationConnector
 import ai.grayin.connectors.notification.NotificationConnectorStub
 import ai.grayin.connectors.photos.PhotosConnector
 import ai.grayin.connectors.usagestats.AppUsageConnectorStub
@@ -67,7 +67,7 @@ class GrayinMemoryController(
     private val store: LocalMemoryStore = SqlCipherLocalMemoryStore(context.applicationContext),
     val localFilesConnector: LocalFilesConnector = LocalFilesConnector(context.applicationContext),
     private val sourceConnectors: List<MemoryConnector> = listOf(
-        LocationConnectorStub(),
+        LocationConnector(context.applicationContext),
         PhotosConnector(context.applicationContext),
         CalendarConnector(context.applicationContext),
         NotificationConnectorStub(),

@@ -1,12 +1,12 @@
 # Connector Status
 
-Grayin AI still keeps some MVP connectors as disabled stubs. Local Files has a real Text/Markdown path. Calendar and Photos have runtime-permission indexing paths.
+Grayin AI still keeps some MVP connectors as disabled stubs. Local Files has a real Text/Markdown path. Location, Calendar, and Photos have runtime-permission indexing paths.
 
 Every connector must report metadata, permission state, scan status, missing-source explanations, and revoke/delete-derived-data contracts.
 
 ## Current Connectors
 
-- Location: high sensitivity, default OFF, pending location permission implementation.
+- Location: high sensitivity, default OFF until user grants location permission and invokes it. Reads Android last-known provider location transiently and stores only derived place-visit events, citations, and source references.
 - Photos: high sensitivity, default OFF until user grants photo permission and invokes it. Reads Android MediaStore image metadata transiently and stores only derived photo index events, citations, and source references.
 - Calendar: high sensitivity, default OFF until user grants calendar permission and invokes it. Reads Android calendar instances transiently and stores only derived calendar events, citations, and source references.
 - Notifications: very high sensitivity, default OFF, pending notification-listener implementation.
@@ -33,6 +33,17 @@ The Calendar connector:
 - emits source references, derived calendar events, and citations
 - supports app-level revoke by disabling the connector and deleting derived data
 
+## Location
+
+The Location connector:
+
+- requires explicit Android location permission
+- requires user invocation before indexing
+- reads last-known provider location only inside connector-owned scan scopes
+- stores rounded location signals in derived place-visit events
+- emits source references, derived place-visit events, and citations
+- supports app-level revoke by disabling the connector and deleting derived data
+
 ## Photos
 
 The Photos connector:
@@ -46,7 +57,6 @@ The Photos connector:
 
 ## Future Connector Work
 
-- Add Android runtime permission handling for location when real location indexing is implemented.
 - Add notification-listener settings flow when notification indexing is implemented.
 - Add usage-access settings flow when app usage indexing is implemented.
 

@@ -54,6 +54,8 @@ Calendar supports explicit runtime calendar read permission plus app-level invoc
 
 Photos supports explicit runtime media read permission plus app-level invocation before indexing. It reads Android MediaStore image metadata transiently, emits derived photo index events/citations/source references, and never reads or stores original image bytes.
 
+Location supports explicit runtime location permission plus app-level invocation before indexing. It reads last-known provider location transiently, emits rounded derived place-visit events/citations/source references, and does not store raw location provider dumps.
+
 ## MVP API Boundary
 
 The MVP connector interface exposes only:

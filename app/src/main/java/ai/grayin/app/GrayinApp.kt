@@ -151,6 +151,25 @@ fun GrayinApp() {
             statusMessage = strings.sourcePermissionDenied
         }
     }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        if (grants.values.any { it }) {
+            scope.launch {
+                working = true
+                try {
+                    statusMessage = controller.invokeConnector(LocationConnectorId, strings)
+                } catch (error: Throwable) {
+                    statusMessage = error.message ?: strings.sourcePermissionDenied
+                } finally {
+                    snapshot = controller.snapshot(strings)
+                    working = false
+                }
+            }
+        } else {
+            statusMessage = strings.sourcePermissionDenied
+        }
+    }
 
     fun refreshSnapshot() {
         scope.launch {
@@ -267,6 +286,10 @@ fun GrayinApp() {
 
                                 connectorId == PhotosConnectorId && requiredPermissions.isNotEmpty() -> {
                                     photosPermissionLauncher.launch(requiredPermissions.first())
+                                }
+
+                                connectorId == LocationConnectorId && requiredPermissions.isNotEmpty() -> {
+                                    locationPermissionLauncher.launch(requiredPermissions.toTypedArray())
                                 }
 
                                 else -> {
@@ -725,6 +748,7 @@ private fun GrayinScreen.icon(): ImageVector {
 }
 
 private const val CalendarConnectorId = "calendar"
+private const val LocationConnectorId = "location"
 private const val PhotosConnectorId = "photos"
 
 private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {

@@ -107,7 +107,7 @@ The MVP should conceptually support these evidence sources through connector stu
 - OCR-derived text
 - future local LLM-generated summaries
 
-Current usable local MVP implementation supports user-selected `.txt` and `.md` files, invoked Android calendar events, and invoked Android photo metadata after explicit runtime permission. Other evidence sources remain connector stubs until their platform permissions and zero-raw-retention processing paths are implemented.
+Current usable local MVP implementation supports user-selected `.txt` and `.md` files, invoked Android last-known location samples, invoked Android calendar events, and invoked Android photo metadata after explicit runtime permission. Other evidence sources remain connector stubs until their platform permissions and zero-raw-retention processing paths are implemented.
 
 ## Important Definitions
 

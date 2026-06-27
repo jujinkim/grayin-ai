@@ -29,6 +29,14 @@ class SecurityBoundaryTest {
     }
 
     @Test
+    fun manifestAllowsLocationPermissionsForInvokedLocationSource() {
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+
+        assertTrue(manifest.contains("android.permission.ACCESS_COARSE_LOCATION"))
+        assertTrue(manifest.contains("android.permission.ACCESS_FINE_LOCATION"))
+    }
+
+    @Test
     fun buildDoesNotAddForbiddenTelemetryOrCloudSdks() {
         val buildFile = File("build.gradle.kts").readText()
         val forbidden = listOf("Firebase", "Crashlytics", "analytics")
