@@ -27,6 +27,9 @@ data class ConnectorUiState(
     val name: String,
     val status: String,
     val sensitivity: String,
+    val description: String,
+    val canAdd: Boolean = false,
+    val canIndex: Boolean = false,
     val canRevoke: Boolean = false,
     val canDelete: Boolean = false,
 )
@@ -66,6 +69,13 @@ class GrayinMemoryController(
                     else -> strings.off
                 },
                 sensitivity = strings.highSensitivity,
+                description = when {
+                    localState.processingState == ProcessingState.COMPLETED -> strings.localFilesIndexedDescription
+                    localState.enabled -> strings.localFilesSelectedDescription
+                    else -> strings.localFilesOffDescription
+                },
+                canAdd = true,
+                canIndex = localState.enabled,
                 canRevoke = localState.enabled,
                 canDelete = sourceReferences.any { it.connectorId == LocalFileMemoryExtractor.CONNECTOR_ID },
             ),
@@ -230,11 +240,41 @@ class GrayinMemoryController(
 
     private fun staticConnectorRows(strings: GrayinStrings): List<ConnectorUiState> {
         return listOf(
-            ConnectorUiState("location", strings.location, strings.notImplemented, strings.highSensitivity),
-            ConnectorUiState("photos", strings.photos, strings.notImplemented, strings.highSensitivity),
-            ConnectorUiState("calendar", strings.calendar, strings.notImplemented, strings.highSensitivity),
-            ConnectorUiState("notifications", strings.notifications, strings.notImplemented, strings.veryHighSensitivity),
-            ConnectorUiState("app_usage", strings.appUsage, strings.notImplemented, strings.veryHighSensitivity),
+            ConnectorUiState(
+                id = "location",
+                name = strings.location,
+                status = strings.notImplemented,
+                sensitivity = strings.highSensitivity,
+                description = strings.connectorInvocationUnavailable,
+            ),
+            ConnectorUiState(
+                id = "photos",
+                name = strings.photos,
+                status = strings.notImplemented,
+                sensitivity = strings.highSensitivity,
+                description = strings.connectorInvocationUnavailable,
+            ),
+            ConnectorUiState(
+                id = "calendar",
+                name = strings.calendar,
+                status = strings.notImplemented,
+                sensitivity = strings.highSensitivity,
+                description = strings.connectorInvocationUnavailable,
+            ),
+            ConnectorUiState(
+                id = "notifications",
+                name = strings.notifications,
+                status = strings.notImplemented,
+                sensitivity = strings.veryHighSensitivity,
+                description = strings.connectorInvocationUnavailable,
+            ),
+            ConnectorUiState(
+                id = "app_usage",
+                name = strings.appUsage,
+                status = strings.notImplemented,
+                sensitivity = strings.veryHighSensitivity,
+                description = strings.connectorInvocationUnavailable,
+            ),
         )
     }
 

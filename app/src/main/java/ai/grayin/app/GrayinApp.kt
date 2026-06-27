@@ -1,5 +1,6 @@
 package ai.grayin.app
 
+import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -53,13 +54,37 @@ enum class GrayinScreen {
     Settings,
 }
 
+fun initialScreenForSourcesIntro(hasSeenSourcesIntro: Boolean): GrayinScreen {
+    return if (hasSeenSourcesIntro) GrayinScreen.Ask else GrayinScreen.Sources
+}
+
+class SourceIntroPreferenceStore(context: Context) {
+    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    fun hasSeenSourcesIntro(): Boolean {
+        return prefs.getBoolean(KEY_SOURCES_INTRO_SEEN, false)
+    }
+
+    fun markSourcesIntroSeen() {
+        prefs.edit().putBoolean(KEY_SOURCES_INTRO_SEEN, true).apply()
+    }
+
+    private companion object {
+        const val PREFS_NAME = "grayin_sources_intro"
+        const val KEY_SOURCES_INTRO_SEEN = "sources_intro_seen"
+    }
+}
+
 @Composable
 fun GrayinApp() {
     val context = LocalContext.current
     val controller = remember(context) { GrayinMemoryController(context) }
     val languageStore = remember(context) { LanguagePreferenceStore(context) }
+    val sourceIntroStore = remember(context) { SourceIntroPreferenceStore(context) }
     val scope = rememberCoroutineScope()
-    var selectedScreenName by rememberSaveable { mutableStateOf(GrayinScreen.Ask.name) }
+    var selectedScreenName by rememberSaveable {
+        mutableStateOf(initialScreenForSourcesIntro(sourceIntroStore.hasSeenSourcesIntro()).name)
+    }
     var languageOptionName by rememberSaveable { mutableStateOf(languageStore.load().name) }
     val languageOption = GrayinLanguageOption.valueOf(languageOptionName)
     val strings = remember(languageOption) { GrayinText.forOption(languageOption) }
@@ -91,6 +116,26 @@ fun GrayinApp() {
     fun refreshSnapshot() {
         scope.launch {
             snapshot = controller.snapshot(strings)
+        }
+    }
+
+    fun indexLocalFiles() {
+        scope.launch {
+            working = true
+            try {
+                statusMessage = controller.indexLocalFiles(strings)
+            } catch (error: Throwable) {
+                statusMessage = error.message ?: strings.indexingFailed
+            } finally {
+                snapshot = controller.snapshot(strings)
+                working = false
+            }
+        }
+    }
+
+    LaunchedEffect(sourceIntroStore) {
+        if (!sourceIntroStore.hasSeenSourcesIntro()) {
+            sourceIntroStore.markSourcesIntroSeen()
         }
     }
 
@@ -168,11 +213,13 @@ fun GrayinApp() {
                     GrayinScreen.Places -> PlacesScreen(snapshot.placesRows, strings)
                     GrayinScreen.Sources -> SourcesScreen(
                         sourceRows = snapshot.sourceRows,
+                        statusMessage = statusMessage,
                         strings = strings,
                         working = working,
                         onAddLocalFile = {
                             openDocumentLauncher.launch(arrayOf("text/*", "application/octet-stream"))
                         },
+                        onIndexLocalFiles = ::indexLocalFiles,
                         onRevokeLocalFiles = {
                             scope.launch {
                                 working = true
@@ -211,19 +258,7 @@ fun GrayinApp() {
                             languageOptionName = option.name
                             statusMessage = ""
                         },
-                        onIndex = {
-                            scope.launch {
-                                working = true
-                                try {
-                                    statusMessage = controller.indexLocalFiles(strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.indexingFailed
-                                } finally {
-                                    snapshot = controller.snapshot(strings)
-                                    working = false
-                                }
-                            }
-                        },
+                        onIndex = ::indexLocalFiles,
                     )
                 }
             }
@@ -369,9 +404,11 @@ private fun PlacesScreen(rows: List<String>, strings: GrayinStrings) {
 @Composable
 private fun SourcesScreen(
     sourceRows: List<ConnectorUiState>,
+    statusMessage: String,
     strings: GrayinStrings,
     working: Boolean,
     onAddLocalFile: () -> Unit,
+    onIndexLocalFiles: () -> Unit,
     onRevokeLocalFiles: () -> Unit,
     onDeleteLocalFileData: () -> Unit,
 ) {
@@ -385,11 +422,11 @@ private fun SourcesScreen(
             Text(strings.sources, style = MaterialTheme.typography.headlineMedium)
         }
         item {
-            Button(
-                enabled = !working,
-                onClick = onAddLocalFile,
-            ) {
-                Text(strings.addLocalFile)
+            SourceInvocationCard(strings)
+        }
+        if (statusMessage.isNotBlank()) {
+            item {
+                StatusRow(statusMessage)
             }
         }
         items(sourceRows) { source ->
@@ -398,8 +435,28 @@ private fun SourcesScreen(
                 strings = strings,
                 working = working,
                 onRevokeLocalFiles = onRevokeLocalFiles,
+                onAddLocalFile = onAddLocalFile,
+                onIndexLocalFiles = onIndexLocalFiles,
                 onDeleteLocalFileData = onDeleteLocalFileData,
             )
+        }
+    }
+}
+
+@Composable
+private fun SourceInvocationCard(strings: GrayinStrings) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(strings.sourceInvocationTitle, style = MaterialTheme.typography.titleMedium)
+            Text(strings.sourceInvocationBody, style = MaterialTheme.typography.bodyLarge)
+            Text(strings.sourceInvocationPrivacyNote, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -409,6 +466,8 @@ private fun SourceRow(
     source: ConnectorUiState,
     strings: GrayinStrings,
     working: Boolean,
+    onAddLocalFile: () -> Unit,
+    onIndexLocalFiles: () -> Unit,
     onRevokeLocalFiles: () -> Unit,
     onDeleteLocalFileData: () -> Unit,
 ) {
@@ -429,18 +488,45 @@ private fun SourceRow(
                 Text(source.status, style = MaterialTheme.typography.labelLarge)
             }
             Text(source.sensitivity, style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    enabled = source.canRevoke && !working,
-                    onClick = onRevokeLocalFiles,
-                ) {
-                    Text(strings.revoke)
-                }
-                OutlinedButton(
-                    enabled = source.canDelete && !working,
-                    onClick = onDeleteLocalFileData,
-                ) {
-                    Text(strings.delete)
+            Text(source.description, style = MaterialTheme.typography.bodyMedium)
+            if (source.canAdd || source.canIndex || source.canRevoke || source.canDelete) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (source.canAdd) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !working,
+                            onClick = onAddLocalFile,
+                        ) {
+                            Text(strings.addLocalFile)
+                        }
+                    }
+                    if (source.canIndex) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !working,
+                            onClick = onIndexLocalFiles,
+                        ) {
+                            Text(strings.indexNow)
+                        }
+                    }
+                    if (source.canRevoke) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !working,
+                            onClick = onRevokeLocalFiles,
+                        ) {
+                            Text(strings.revoke)
+                        }
+                    }
+                    if (source.canDelete) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !working,
+                            onClick = onDeleteLocalFileData,
+                        ) {
+                            Text(strings.delete)
+                        }
+                    }
                 }
             }
         }

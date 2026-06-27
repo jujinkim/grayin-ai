@@ -328,6 +328,8 @@ The app must use an Ask-first interface.
 
 Home is not a note list. Home is a memory question input.
 
+On first installed launch, the app may open Sources first to explain that sources must be explicitly invoked and indexed before Grayin can read, analyze, and answer from them. After that intro is marked seen, normal launches return to the Ask-first interface.
+
 The MVP UI supports English, Korean, and Japanese copy. Settings exposes language choices as `system`, `korean`, `english`, and `japanese`; `system` resolves from the Android system language and falls back to English for unsupported languages.
 
 Primary navigation uses a bottom navigation bar with icons and localized labels for Ask, Timeline, Places, Sources, and Settings.

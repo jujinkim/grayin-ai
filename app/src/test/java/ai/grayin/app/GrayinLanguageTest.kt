@@ -55,4 +55,30 @@ class GrayinLanguageTest {
             GrayinText.forOption(GrayinLanguageOption.KOREAN).capabilityUnavailable("HAS_LOCATION"),
         )
     }
+
+    @Test
+    fun sourcesIntroControlsInitialScreen() {
+        assertEquals(GrayinScreen.Sources, initialScreenForSourcesIntro(hasSeenSourcesIntro = false))
+        assertEquals(GrayinScreen.Ask, initialScreenForSourcesIntro(hasSeenSourcesIntro = true))
+    }
+
+    @Test
+    fun localizedStringsCoverSourceInvocationIntro() {
+        assertEquals(
+            "Invoke sources before asking",
+            GrayinText.forOption(GrayinLanguageOption.ENGLISH).sourceInvocationTitle,
+        )
+        assertEquals(
+            "질문 전 소스를 호출하세요",
+            GrayinText.forOption(GrayinLanguageOption.KOREAN).sourceInvocationTitle,
+        )
+        assertEquals(
+            "質問前にソースを呼び出す",
+            GrayinText.forOption(GrayinLanguageOption.JAPANESE).sourceInvocationTitle,
+        )
+        assertEquals(
+            "Source invocation is unavailable until this connector is implemented.",
+            GrayinText.forOption(GrayinLanguageOption.ENGLISH).connectorInvocationUnavailable,
+        )
+    }
 }
