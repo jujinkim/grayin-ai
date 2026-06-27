@@ -372,6 +372,8 @@ However, the model must be replaceable.
 
 The app should use `Gemma4LocalLanguageModel` when a local `.litertlm` model file is installed, and fall back to deterministic grounded templates when it is not ready.
 
+The APK must not bundle Gemma model weights. Settings should tell users that model weights come from the official Google AI Edge LiteRT-LM Gemma docs or Hugging Face repo `litert-community/gemma-4-E2B-it-litert-lm`, and that the current build requires developer installation until model import UI exists.
+
 No commercial LLM API in MVP.
 
 Local AI must not require network access.

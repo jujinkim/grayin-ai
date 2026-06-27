@@ -87,6 +87,8 @@ class GrayinMemoryController(
     suspend fun snapshot(strings: GrayinStrings): GrayinSnapshot = withContext(Dispatchers.IO) {
         val sourceReferences = store.loadSourceReferences()
         val events = store.loadDerivedMemoryEvents()
+        val localModelStatus = runCatching { localLanguageModel.status() }
+            .getOrDefault(LocalModelStatus.UNAVAILABLE)
         GrayinSnapshot(
             sourceRows = sourceConnectors.map { connector -> sourceRow(connector, sourceReferences, strings) },
             timelineRows = timelineRows(events, strings),
@@ -98,9 +100,27 @@ class GrayinMemoryController(
                 strings.telemetryAbsent,
                 strings.crashAnalyticsAbsent,
                 strings.encryptedStoreSqlCipher,
+            ) + localModelRows(localModelStatus, strings) + listOf(
                 "${strings.indexedSourceReferencesPrefix} ${sourceReferences.size}",
                 "${strings.derivedMemoryEventsPrefix} ${events.size}",
             ),
+        )
+    }
+
+    private fun localModelRows(status: LocalModelStatus, strings: GrayinStrings): List<String> {
+        val statusRow = when (status) {
+            LocalModelStatus.READY -> strings.localGemmaModelReady
+            LocalModelStatus.LOADING -> strings.localGemmaModelLoading
+            LocalModelStatus.UNAVAILABLE -> strings.localGemmaModelUnavailable
+        }
+        return listOf(
+            strings.localGemmaModelTitle,
+            statusRow,
+            strings.localGemmaModelApkNotBundled,
+            strings.localGemmaModelDownloadGuide,
+            strings.localGemmaModelDownloadUrl,
+            strings.localGemmaModelFileGuide,
+            strings.localGemmaModelDevInstallGuide,
         )
     }
 

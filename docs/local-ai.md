@@ -37,6 +37,28 @@ The app does not download or bundle model weights.
 - app external files: `models/gemma-4-E2B-it.litertlm`
 - adb development path: `/data/local/tmp/grayin/gemma-4-E2B-it.litertlm`
 
+## User Model Guide
+
+Users must obtain model weights outside the APK because Gemma model access and redistribution are controlled by upstream model terms.
+
+Official source:
+
+- Google AI Edge LiteRT-LM Gemma docs: `https://developers.google.com/edge/litert-lm/models/gemma-4`
+- Hugging Face model repo: `https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm`
+
+Expected local file:
+
+- `gemma-4-E2B-it.litertlm`
+
+Current build supports developer installation:
+
+```bash
+adb shell mkdir -p /data/local/tmp/grayin
+adb push gemma-4-E2B-it.litertlm /data/local/tmp/grayin/
+```
+
+End-user import UI remains future work. Until then, normal APK installs do not have a self-service model import path.
+
 ## Current Answer Path
 
 Ask builds an `EvidencePack` from SQLCipher-stored derived indexed evidence, then tries `Gemma4LocalLanguageModel` first.

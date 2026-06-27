@@ -18,6 +18,7 @@ Current phase status: usable local Text/Markdown MVP is complete.
 - Sources UI exposes top-level Index all now and persisted automatic indexing settings.
 - Localized UI copy for system, Korean, English, and Japanese language settings.
 - Bottom navigation with icons and localized labels.
+- Settings shows local Gemma model status, official model source, file name, and current adb install path.
 - INTERNET permission restricted to typed enrichment methods only: `getWeather` and `reverseGeocode`; location indexing can use Android reverse geocoding through that boundary.
 
 ## Future Work
