@@ -50,15 +50,15 @@ All connectors default OFF.
 
 Local Files supports explicit user-selected `.txt` and `.md` documents through the Android document picker. It reads source text transiently, emits only derived keyword/summary metadata, and does not store raw file contents.
 
-Calendar supports explicit runtime calendar read permission plus app-level invocation before indexing. It reads Android calendar instances transiently, emits derived calendar events/citations/source references, and does not store raw calendar records.
+Calendar supports explicit runtime calendar read permission plus app-level connection before indexing. It reads Android calendar instances transiently, emits derived calendar events/citations/source references, and does not store raw calendar records.
 
-Photos supports explicit runtime media read permission plus app-level invocation before indexing. It reads Android MediaStore image metadata transiently, emits derived photo index events/citations/source references, and never reads or stores original image bytes.
+Photos supports explicit runtime media read permission plus app-level connection before indexing. It reads Android MediaStore image metadata transiently, emits derived photo index events/citations/source references, and never reads or stores original image bytes.
 
-Location supports explicit runtime location permission plus app-level invocation before indexing. It reads last-known provider location transiently, emits rounded derived place-visit events/citations/source references, and does not store raw location provider dumps.
+Location supports explicit runtime location permission plus app-level connection before indexing. It reads last-known provider location transiently, emits rounded derived place-visit events/citations/source references, and does not store raw location provider dumps.
 
-App Usage supports explicit usage-access settings permission plus app-level invocation before indexing. It reads Android UsageStats transiently, emits derived app-duration events/citations/source references, and does not store raw usage event dumps.
+App Usage supports explicit usage-access settings permission plus app-level connection before indexing. It reads Android UsageStats transiently, emits derived app-duration events/citations/source references, and does not store raw usage event dumps.
 
-Notifications supports explicit notification-listener settings access plus app-level invocation before indexing future notification arrivals. It reads posted notification title/text transiently inside listener callbacks, skips security-code notifications, emits derived notification signal events/citations/source references, and does not store raw notification text.
+Notifications supports explicit notification-listener settings access plus app-level connection before indexing future notification arrivals. It reads posted notification title/text transiently inside listener callbacks, skips security-code notifications, emits derived notification signal events/citations/source references, and does not store raw notification text.
 
 ## MVP API Boundary
 

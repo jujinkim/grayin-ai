@@ -107,7 +107,7 @@ The MVP should conceptually support these evidence sources through implemented c
 - OCR-derived text
 - future local LLM-generated summaries
 
-Current usable local MVP implementation supports user-selected `.txt` and `.md` files, invoked Android last-known location samples, invoked Android calendar events, invoked Android photo metadata, invoked Android app usage summaries, and invoked Android notification-derived signals after explicit permission or settings access. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
+Current usable local MVP implementation supports user-selected `.txt` and `.md` files, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app usage summaries, and connected Android notification-derived signals after explicit permission or settings access. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
 
 ## Important Definitions
 
@@ -328,7 +328,7 @@ The app must use an Ask-first interface.
 
 Home is not a note list. Home is a memory question input.
 
-On first installed launch, the app may open Sources first to explain that sources must be explicitly invoked and indexed before Grayin can read, analyze, and answer from them. After that intro is marked seen, normal launches return to the Ask-first interface.
+On first installed launch, the app may open Sources first to explain that sources must be explicitly connected and indexed before Grayin can read, analyze, and answer from them. After that intro is marked seen, normal launches return to the Ask-first interface.
 
 The MVP UI supports English, Korean, and Japanese copy. Settings exposes language choices as `system`, `korean`, `english`, and `japanese`; `system` resolves from the Android system language and falls back to English for unsupported languages.
 

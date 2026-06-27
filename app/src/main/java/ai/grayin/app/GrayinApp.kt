@@ -359,7 +359,7 @@ fun GrayinApp() {
                                 }
 
                                 else -> {
-                                    statusMessage = strings.connectorInvocationUnavailable
+                                    statusMessage = strings.connectorConnectionUnavailable
                                 }
                             }
                         },
@@ -797,9 +797,9 @@ private fun SourceInvocationCard(strings: GrayinStrings) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(strings.sourceInvocationTitle, style = MaterialTheme.typography.titleMedium)
-            Text(strings.sourceInvocationBody, style = MaterialTheme.typography.bodyLarge)
-            Text(strings.sourceInvocationPrivacyNote, style = MaterialTheme.typography.bodySmall)
+            Text(strings.sourceConnectionTitle, style = MaterialTheme.typography.titleMedium)
+            Text(strings.sourceConnectionBody, style = MaterialTheme.typography.bodyLarge)
+            Text(strings.sourceConnectionPrivacyNote, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -832,7 +832,6 @@ private fun SourceRow(
                 Text(source.status, style = MaterialTheme.typography.labelLarge)
             }
             Text(source.sensitivity, style = MaterialTheme.typography.bodySmall)
-            Text(source.description, style = MaterialTheme.typography.bodyMedium)
             if (source.canInvoke || source.canAdd || source.canIndex || source.canRevoke || source.canDelete) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (source.canInvoke) {

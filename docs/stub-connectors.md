@@ -6,11 +6,11 @@ Every connector must report metadata, permission state, scan status, missing-sou
 
 ## Current Connectors
 
-- Location: high sensitivity, default OFF until user grants location permission and invokes it. Reads Android last-known provider location transiently and stores only derived place-visit events, citations, and source references.
-- Photos: high sensitivity, default OFF until user grants photo permission and invokes it. Reads Android MediaStore image metadata transiently and stores only derived photo index events, citations, and source references.
-- Calendar: high sensitivity, default OFF until user grants calendar permission and invokes it. Reads Android calendar instances transiently and stores only derived calendar events, citations, and source references.
-- Notifications: very high sensitivity, default OFF until user enables notification listener access and invokes it. Reads posted notifications transiently and stores only derived notification signal events, citations, and source references.
-- App Usage: very high sensitivity, default OFF until user grants usage access and invokes it. Reads Android usage stats transiently and stores only derived app-usage events, citations, and source references.
+- Location: high sensitivity, default OFF until user grants location permission and connects it. Reads Android last-known provider location transiently and stores only derived place-visit events, citations, and source references.
+- Photos: high sensitivity, default OFF until user grants photo permission and connects it. Reads Android MediaStore image metadata transiently and stores only derived photo index events, citations, and source references.
+- Calendar: high sensitivity, default OFF until user grants calendar permission and connects it. Reads Android calendar instances transiently and stores only derived calendar events, citations, and source references.
+- Notifications: very high sensitivity, default OFF until user enables notification listener access and connects it. Reads posted notifications transiently and stores only derived notification signal events, citations, and source references.
+- App Usage: very high sensitivity, default OFF until user grants usage access and connects it. Reads Android usage stats transiently and stores only derived app-usage events, citations, and source references.
 - Local Files: high sensitivity, default OFF until user selects files. Supports user-selected `.txt` and `.md` documents through Android's document picker.
 
 ## Local Files
@@ -28,7 +28,7 @@ The Local Files connector:
 The Calendar connector:
 
 - requires explicit Android calendar read permission
-- requires user invocation before indexing
+- requires user connection before indexing
 - reads calendar instances only inside connector-owned scan scopes
 - emits source references, derived calendar events, and citations
 - supports app-level revoke by disabling the connector and deleting derived data
@@ -38,7 +38,7 @@ The Calendar connector:
 The Location connector:
 
 - requires explicit Android location permission
-- requires user invocation before indexing
+- requires user connection before indexing
 - reads last-known provider location only inside connector-owned scan scopes
 - stores rounded location signals in derived place-visit events
 - emits source references, derived place-visit events, and citations
@@ -49,7 +49,7 @@ The Location connector:
 The Photos connector:
 
 - requires explicit Android photo/media read permission
-- requires user invocation before indexing
+- requires user connection before indexing
 - reads MediaStore image metadata only inside connector-owned scan scopes
 - never reads or copies original image bytes
 - emits source references, derived photo index events, and citations
@@ -60,7 +60,7 @@ The Photos connector:
 The App Usage connector:
 
 - requires explicit Android usage-access settings permission
-- requires user invocation before indexing
+- requires user connection before indexing
 - reads UsageStats only inside connector-owned scan scopes
 - stores only derived app-duration summaries and source references
 - does not store raw usage event dumps
@@ -71,7 +71,7 @@ The App Usage connector:
 The Notifications connector:
 
 - requires explicit Android notification-listener settings access
-- requires user invocation before indexing
+- requires user connection before indexing
 - reads posted notification title/text only transiently inside listener callbacks
 - skips security-code notifications
 - stores only derived notification signal events and source references

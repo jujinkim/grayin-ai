@@ -63,22 +63,22 @@ class GrayinLanguageTest {
     }
 
     @Test
-    fun localizedStringsCoverSourceInvocationIntro() {
+    fun localizedStringsCoverSourceConnectionIntro() {
         assertEquals(
-            "Invoke sources before asking",
-            GrayinText.forOption(GrayinLanguageOption.ENGLISH).sourceInvocationTitle,
+            "Connect sources before asking",
+            GrayinText.forOption(GrayinLanguageOption.ENGLISH).sourceConnectionTitle,
         )
         assertEquals(
-            "질문 전 소스를 호출하세요",
-            GrayinText.forOption(GrayinLanguageOption.KOREAN).sourceInvocationTitle,
+            "질문 전 소스를 연결하세요",
+            GrayinText.forOption(GrayinLanguageOption.KOREAN).sourceConnectionTitle,
         )
         assertEquals(
-            "質問前にソースを呼び出す",
-            GrayinText.forOption(GrayinLanguageOption.JAPANESE).sourceInvocationTitle,
+            "質問前にソースを接続",
+            GrayinText.forOption(GrayinLanguageOption.JAPANESE).sourceConnectionTitle,
         )
         assertEquals(
-            "Source invocation is unavailable until this connector is implemented.",
-            GrayinText.forOption(GrayinLanguageOption.ENGLISH).connectorInvocationUnavailable,
+            "Source connection is unavailable until this connector is implemented.",
+            GrayinText.forOption(GrayinLanguageOption.ENGLISH).connectorConnectionUnavailable,
         )
     }
 
@@ -94,7 +94,7 @@ class GrayinLanguageTest {
             korean.automaticIndexingSummary(AutomaticIndexingUiState(enabled = true)),
         )
         assertEquals(
-            "No invoked sources are ready to index.",
+            "No connected sources are ready to index.",
             english.noSourcesReadyToIndex,
         )
     }

@@ -74,9 +74,9 @@ data class GrayinStrings(
     val show: String,
     val hide: String,
     val missingData: String,
-    val sourceInvocationTitle: String,
-    val sourceInvocationBody: String,
-    val sourceInvocationPrivacyNote: String,
+    val sourceConnectionTitle: String,
+    val sourceConnectionBody: String,
+    val sourceConnectionPrivacyNote: String,
     val invokeSource: String,
     val addLocalFile: String,
     val revoke: String,
@@ -102,10 +102,7 @@ data class GrayinStrings(
     val selected: String,
     val indexed: String,
     val notImplemented: String,
-    val connectorInvocationUnavailable: String,
-    val localFilesOffDescription: String,
-    val localFilesSelectedDescription: String,
-    val localFilesIndexedDescription: String,
+    val connectorConnectionUnavailable: String,
     val highSensitivity: String,
     val veryHighSensitivity: String,
     val noDerivedEvents: String,
@@ -202,35 +199,11 @@ data class GrayinStrings(
         }
     }
 
-    fun invokedConnector(connectorName: String): String {
+    fun connectedConnector(connectorName: String): String {
         return when (languageCode) {
-            GrayinLanguage.KOREAN -> "$connectorName 소스를 호출했습니다. 지금 인덱싱을 실행하세요."
-            GrayinLanguage.JAPANESE -> "$connectorName ソースを呼び出しました。今すぐインデックスしてください。"
-            GrayinLanguage.ENGLISH -> "Invoked $connectorName. Run Index now."
-        }
-    }
-
-    fun connectorPermissionReadyDescription(connectorName: String): String {
-        return when (languageCode) {
-            GrayinLanguage.KOREAN -> "$connectorName 권한이 준비되었습니다. 소스를 호출한 뒤 인덱싱하세요."
-            GrayinLanguage.JAPANESE -> "$connectorName 権限は利用できます。ソースを呼び出してからインデックスしてください。"
-            GrayinLanguage.ENGLISH -> "$connectorName permission is available. Invoke this source before indexing."
-        }
-    }
-
-    fun connectorInvokedDescription(connectorName: String): String {
-        return when (languageCode) {
-            GrayinLanguage.KOREAN -> "$connectorName 소스가 호출되었습니다. 인덱싱하면 질문에서 사용할 수 있습니다."
-            GrayinLanguage.JAPANESE -> "$connectorName ソースは呼び出し済みです。インデックスすると質問で使えます。"
-            GrayinLanguage.ENGLISH -> "$connectorName is invoked. Run indexing so Ask can use it."
-        }
-    }
-
-    fun connectorIndexedDescription(connectorName: String): String {
-        return when (languageCode) {
-            GrayinLanguage.KOREAN -> "$connectorName 파생 근거가 인덱싱되었습니다. 해제하거나 파생 데이터를 삭제할 수 있습니다."
-            GrayinLanguage.JAPANESE -> "$connectorName の派生根拠がインデックス済みです。解除または派生データ削除ができます。"
-            GrayinLanguage.ENGLISH -> "$connectorName derived evidence is indexed. You can revoke or delete derived data."
+            GrayinLanguage.KOREAN -> "$connectorName 소스를 연결했습니다. 지금 인덱싱을 실행하세요."
+            GrayinLanguage.JAPANESE -> "$connectorName ソースを接続しました。今すぐインデックスしてください。"
+            GrayinLanguage.ENGLISH -> "Connected $connectorName. Run Index now."
         }
     }
 
@@ -332,10 +305,10 @@ private val EnglishStrings = GrayinStrings(
     show = "Show",
     hide = "Hide",
     missingData = "Missing data",
-    sourceInvocationTitle = "Invoke sources before asking",
-    sourceInvocationBody = "Grayin can read and analyze only sources you invoke here. Select a source, then run indexing so Ask can use derived evidence.",
-    sourceInvocationPrivacyNote = "Indexing reads originals transiently and stores derived memory, citations, and source references only.",
-    invokeSource = "Invoke source",
+    sourceConnectionTitle = "Connect sources before asking",
+    sourceConnectionBody = "Grayin can read and analyze only sources you connect here. Select a source, then run indexing so Ask can use derived evidence.",
+    sourceConnectionPrivacyNote = "Indexing reads originals transiently and stores derived memory, citations, and source references only.",
+    invokeSource = "Connect source",
     addLocalFile = "Add local file",
     revoke = "Revoke",
     delete = "Delete",
@@ -357,13 +330,10 @@ private val EnglishStrings = GrayinStrings(
     notifications = "Notifications",
     appUsage = "App usage",
     off = "Off",
-    selected = "Selected",
+    selected = "Connected",
     indexed = "Indexed",
     notImplemented = "Not implemented",
-    connectorInvocationUnavailable = "Source invocation is unavailable until this connector is implemented.",
-    localFilesOffDescription = "Invoke local Text or Markdown files by selecting them here.",
-    localFilesSelectedDescription = "Source selected. Run indexing so Grayin can analyze it for Ask.",
-    localFilesIndexedDescription = "Indexed derived evidence is available for Ask. Revoke access or delete derived data anytime.",
+    connectorConnectionUnavailable = "Source connection is unavailable until this connector is implemented.",
     highSensitivity = "High sensitivity",
     veryHighSensitivity = "Very high sensitivity",
     noDerivedEvents = "No derived memory events indexed.",
@@ -383,11 +353,11 @@ private val EnglishStrings = GrayinStrings(
     deleteFailed = "Delete failed.",
     indexingFailed = "Indexing failed.",
     searchFailed = "Search failed.",
-    selectedLocalFile = "Selected local file. Run Index now to update evidence.",
+    selectedLocalFile = "Connected local file. Run Index now to update evidence.",
     unsupportedFileOrPermissionDenied = "Unsupported file or read permission was not granted.",
     sourcePermissionDenied = "Source permission was not granted.",
     noLocalFilesIndexed = "No local files indexed.",
-    noSourcesReadyToIndex = "No invoked sources are ready to index.",
+    noSourcesReadyToIndex = "No connected sources are ready to index.",
     revokedLocalFiles = "Revoked local file access and deleted derived local file data.",
     networkPermissionRestricted = "Network permission: restricted to typed enrichment methods",
     accountAbsent = "Account: absent",
@@ -415,10 +385,10 @@ private val KoreanStrings = EnglishStrings.copy(
     show = "보기",
     hide = "숨기기",
     missingData = "부족한 데이터",
-    sourceInvocationTitle = "질문 전 소스를 호출하세요",
-    sourceInvocationBody = "Grayin은 여기서 사용자가 호출한 소스만 읽고 분석할 수 있습니다. 소스를 선택한 뒤 인덱싱을 실행해야 질문에서 파생 근거를 사용할 수 있습니다.",
-    sourceInvocationPrivacyNote = "인덱싱은 원본을 일시적으로만 읽고 파생 기억, 인용, 소스 참조만 저장합니다.",
-    invokeSource = "소스 호출",
+    sourceConnectionTitle = "질문 전 소스를 연결하세요",
+    sourceConnectionBody = "Grayin은 여기서 사용자가 연결한 소스만 읽고 분석할 수 있습니다. 소스를 선택한 뒤 인덱싱을 실행해야 질문에서 파생 근거를 사용할 수 있습니다.",
+    sourceConnectionPrivacyNote = "인덱싱은 원본을 일시적으로만 읽고 파생 기억, 인용, 소스 참조만 저장합니다.",
+    invokeSource = "소스 연결",
     addLocalFile = "로컬 파일 추가",
     revoke = "권한 해제",
     delete = "삭제",
@@ -440,13 +410,10 @@ private val KoreanStrings = EnglishStrings.copy(
     notifications = "알림",
     appUsage = "앱 사용",
     off = "꺼짐",
-    selected = "선택됨",
+    selected = "연결됨",
     indexed = "인덱싱됨",
     notImplemented = "미구현",
-    connectorInvocationUnavailable = "이 커넥터가 구현될 때까지 소스 호출을 사용할 수 없습니다.",
-    localFilesOffDescription = "로컬 Text 또는 Markdown 파일을 선택해 소스를 호출하세요.",
-    localFilesSelectedDescription = "소스가 선택되었습니다. Grayin이 분석할 수 있게 인덱싱을 실행하세요.",
-    localFilesIndexedDescription = "질문에서 사용할 파생 근거가 인덱싱되었습니다. 언제든 접근 권한 해제 또는 파생 데이터 삭제가 가능합니다.",
+    connectorConnectionUnavailable = "이 커넥터가 구현될 때까지 소스 연결을 사용할 수 없습니다.",
     highSensitivity = "높은 민감도",
     veryHighSensitivity = "매우 높은 민감도",
     noDerivedEvents = "인덱싱된 파생 기억 이벤트가 없습니다.",
@@ -466,11 +433,11 @@ private val KoreanStrings = EnglishStrings.copy(
     deleteFailed = "삭제에 실패했습니다.",
     indexingFailed = "인덱싱에 실패했습니다.",
     searchFailed = "검색에 실패했습니다.",
-    selectedLocalFile = "로컬 파일을 선택했습니다. 근거를 업데이트하려면 지금 인덱싱을 실행하세요.",
+    selectedLocalFile = "로컬 파일을 연결했습니다. 근거를 업데이트하려면 지금 인덱싱을 실행하세요.",
     unsupportedFileOrPermissionDenied = "지원하지 않는 파일이거나 읽기 권한이 허용되지 않았습니다.",
     sourcePermissionDenied = "소스 권한이 허용되지 않았습니다.",
     noLocalFilesIndexed = "인덱싱된 로컬 파일이 없습니다.",
-    noSourcesReadyToIndex = "인덱싱할 수 있는 호출된 소스가 없습니다.",
+    noSourcesReadyToIndex = "인덱싱할 수 있는 연결된 소스가 없습니다.",
     revokedLocalFiles = "로컬 파일 접근 권한을 해제하고 파생 로컬 파일 데이터를 삭제했습니다.",
     networkPermissionRestricted = "네트워크 권한: typed enrichment method로 제한됨",
     accountAbsent = "계정: 없음",
@@ -498,10 +465,10 @@ private val JapaneseStrings = EnglishStrings.copy(
     show = "表示",
     hide = "非表示",
     missingData = "不足データ",
-    sourceInvocationTitle = "質問前にソースを呼び出す",
-    sourceInvocationBody = "Grayinはここで呼び出したソースだけを読み取り、分析できます。ソースを選択してからインデックスすると、質問で派生根拠を使えます。",
-    sourceInvocationPrivacyNote = "インデックスは原本を一時的にだけ読み取り、派生記憶、引用、ソース参照だけを保存します。",
-    invokeSource = "ソースを呼び出す",
+    sourceConnectionTitle = "質問前にソースを接続",
+    sourceConnectionBody = "Grayinはここで接続したソースだけを読み取り、分析できます。ソースを選択してからインデックスすると、質問で派生根拠を使えます。",
+    sourceConnectionPrivacyNote = "インデックスは原本を一時的にだけ読み取り、派生記憶、引用、ソース参照だけを保存します。",
+    invokeSource = "ソースを接続",
     addLocalFile = "ローカルファイルを追加",
     revoke = "許可を解除",
     delete = "削除",
@@ -523,13 +490,10 @@ private val JapaneseStrings = EnglishStrings.copy(
     notifications = "通知",
     appUsage = "アプリ使用",
     off = "オフ",
-    selected = "選択済み",
+    selected = "接続済み",
     indexed = "インデックス済み",
     notImplemented = "未実装",
-    connectorInvocationUnavailable = "このコネクタが実装されるまで、ソース呼び出しは利用できません。",
-    localFilesOffDescription = "ローカルのTextまたはMarkdownファイルを選択してソースを呼び出します。",
-    localFilesSelectedDescription = "ソースが選択されています。Grayinが分析できるようにインデックスしてください。",
-    localFilesIndexedDescription = "質問で使える派生根拠がインデックス済みです。アクセス許可の解除や派生データ削除はいつでもできます。",
+    connectorConnectionUnavailable = "このコネクタが実装されるまで、ソース接続は利用できません。",
     highSensitivity = "高い機密性",
     veryHighSensitivity = "非常に高い機密性",
     noDerivedEvents = "インデックス済みの派生記憶イベントはありません。",
@@ -549,11 +513,11 @@ private val JapaneseStrings = EnglishStrings.copy(
     deleteFailed = "削除に失敗しました。",
     indexingFailed = "インデックスに失敗しました。",
     searchFailed = "検索に失敗しました。",
-    selectedLocalFile = "ローカルファイルを選択しました。根拠を更新するには今すぐインデックスしてください。",
+    selectedLocalFile = "ローカルファイルを接続しました。根拠を更新するには今すぐインデックスしてください。",
     unsupportedFileOrPermissionDenied = "未対応のファイル、または読み取り許可がありません。",
     sourcePermissionDenied = "ソース権限が許可されていません。",
     noLocalFilesIndexed = "インデックス済みのローカルファイルはありません。",
-    noSourcesReadyToIndex = "インデックス可能な呼び出し済みソースがありません。",
+    noSourcesReadyToIndex = "インデックス可能な接続済みソースがありません。",
     revokedLocalFiles = "ローカルファイルへのアクセス許可を解除し、派生ローカルファイルデータを削除しました。",
     networkPermissionRestricted = "ネットワーク権限: typed enrichment method に制限",
     accountAbsent = "アカウント: なし",

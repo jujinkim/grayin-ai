@@ -40,7 +40,6 @@ data class ConnectorUiState(
     val name: String,
     val status: String,
     val sensitivity: String,
-    val description: String,
     val canInvoke: Boolean = false,
     val requiredPermissions: List<String> = emptyList(),
     val canAdd: Boolean = false,
@@ -158,10 +157,10 @@ class GrayinMemoryController(
 
     suspend fun invokeConnector(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val connector = connectorFor(connectorId)
-        if (connector !is InvokableMemoryConnector) return@withContext strings.connectorInvocationUnavailable
+        if (connector !is InvokableMemoryConnector) return@withContext strings.connectorConnectionUnavailable
         val permissionState = connector.invoke()
         if (!permissionState.permissionGranted) return@withContext strings.sourcePermissionDenied
-        strings.invokedConnector(strings.connectorName(connectorId, connector.metadata.displayName))
+        strings.connectedConnector(strings.connectorName(connectorId, connector.metadata.displayName))
     }
 
     suspend fun rememberSelectedLocalFile(uri: Uri, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
@@ -340,7 +339,6 @@ class GrayinMemoryController(
             name = connectorName,
             status = sourceStatus(state, permissionState, strings),
             sensitivity = sensitivityLabel(connector.metadata.sensitivity, strings),
-            description = sourceDescription(state, permissionState, isLocalFiles, connectorName, strings),
             canInvoke = !isLocalFiles && permissionState.canRequestPermission && !state.enabled,
             requiredPermissions = permissionState.requiredPlatformPermissions,
             canAdd = isLocalFiles,
@@ -360,28 +358,6 @@ class GrayinMemoryController(
             state.enabled -> strings.selected
             !permissionState.canRequestPermission && !permissionState.permissionGranted -> strings.notImplemented
             else -> strings.off
-        }
-    }
-
-    private fun sourceDescription(
-        state: ConnectorState,
-        permissionState: ConnectorPermissionState,
-        isLocalFiles: Boolean,
-        connectorName: String,
-        strings: GrayinStrings,
-    ): String {
-        if (!isLocalFiles) {
-            return when {
-                state.processingState == ProcessingState.COMPLETED -> strings.connectorIndexedDescription(connectorName)
-                state.enabled -> strings.connectorInvokedDescription(connectorName)
-                permissionState.permissionGranted -> strings.connectorPermissionReadyDescription(connectorName)
-                else -> permissionState.explanation ?: strings.connectorInvocationUnavailable
-            }
-        }
-        return when {
-            state.processingState == ProcessingState.COMPLETED -> strings.localFilesIndexedDescription
-            state.enabled -> strings.localFilesSelectedDescription
-            else -> strings.localFilesOffDescription
         }
     }
 
