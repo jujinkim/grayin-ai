@@ -21,6 +21,14 @@ class SecurityBoundaryTest {
     }
 
     @Test
+    fun manifestAllowsPhotoReadPermissionsForInvokedPhotosSource() {
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+
+        assertTrue(manifest.contains("android.permission.READ_MEDIA_IMAGES"))
+        assertTrue(manifest.contains("android.permission.READ_EXTERNAL_STORAGE"))
+    }
+
+    @Test
     fun buildDoesNotAddForbiddenTelemetryOrCloudSdks() {
         val buildFile = File("build.gradle.kts").readText()
         val forbidden = listOf("Firebase", "Crashlytics", "analytics")

@@ -1,13 +1,13 @@
 # Connector Status
 
-Grayin AI still keeps most MVP connectors as disabled stubs. Local Files has a real Text/Markdown path, and Calendar has a runtime-permission indexing path.
+Grayin AI still keeps some MVP connectors as disabled stubs. Local Files has a real Text/Markdown path. Calendar and Photos have runtime-permission indexing paths.
 
 Every connector must report metadata, permission state, scan status, missing-source explanations, and revoke/delete-derived-data contracts.
 
 ## Current Connectors
 
 - Location: high sensitivity, default OFF, pending location permission implementation.
-- Photos: high sensitivity, default OFF, pending media permission implementation.
+- Photos: high sensitivity, default OFF until user grants photo permission and invokes it. Reads Android MediaStore image metadata transiently and stores only derived photo index events, citations, and source references.
 - Calendar: high sensitivity, default OFF until user grants calendar permission and invokes it. Reads Android calendar instances transiently and stores only derived calendar events, citations, and source references.
 - Notifications: very high sensitivity, default OFF, pending notification-listener implementation.
 - App Usage: very high sensitivity, default OFF, pending usage-access implementation.
@@ -33,10 +33,20 @@ The Calendar connector:
 - emits source references, derived calendar events, and citations
 - supports app-level revoke by disabling the connector and deleting derived data
 
+## Photos
+
+The Photos connector:
+
+- requires explicit Android photo/media read permission
+- requires user invocation before indexing
+- reads MediaStore image metadata only inside connector-owned scan scopes
+- never reads or copies original image bytes
+- emits source references, derived photo index events, and citations
+- supports app-level revoke by disabling the connector and deleting derived data
+
 ## Future Connector Work
 
 - Add Android runtime permission handling for location when real location indexing is implemented.
-- Add Android media permission handling for photos when real photo indexing is implemented.
 - Add notification-listener settings flow when notification indexing is implemented.
 - Add usage-access settings flow when app usage indexing is implemented.
 

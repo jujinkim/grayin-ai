@@ -132,6 +132,25 @@ fun GrayinApp() {
             statusMessage = strings.sourcePermissionDenied
         }
     }
+    val photosPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            scope.launch {
+                working = true
+                try {
+                    statusMessage = controller.invokeConnector(PhotosConnectorId, strings)
+                } catch (error: Throwable) {
+                    statusMessage = error.message ?: strings.sourcePermissionDenied
+                } finally {
+                    snapshot = controller.snapshot(strings)
+                    working = false
+                }
+            }
+        } else {
+            statusMessage = strings.sourcePermissionDenied
+        }
+    }
 
     fun refreshSnapshot() {
         scope.launch {
@@ -244,6 +263,10 @@ fun GrayinApp() {
                                 connectorId == CalendarConnectorId &&
                                     Manifest.permission.READ_CALENDAR in requiredPermissions -> {
                                     calendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+                                }
+
+                                connectorId == PhotosConnectorId && requiredPermissions.isNotEmpty() -> {
+                                    photosPermissionLauncher.launch(requiredPermissions.first())
                                 }
 
                                 else -> {
@@ -702,6 +725,7 @@ private fun GrayinScreen.icon(): ImageVector {
 }
 
 private const val CalendarConnectorId = "calendar"
+private const val PhotosConnectorId = "photos"
 
 private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
     return GrayinSnapshot(

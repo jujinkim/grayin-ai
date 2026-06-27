@@ -7,7 +7,7 @@ import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFilesConnector
 import ai.grayin.connectors.location.LocationConnectorStub
 import ai.grayin.connectors.notification.NotificationConnectorStub
-import ai.grayin.connectors.photos.PhotosConnectorStub
+import ai.grayin.connectors.photos.PhotosConnector
 import ai.grayin.connectors.usagestats.AppUsageConnectorStub
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorScanScope
@@ -68,7 +68,7 @@ class GrayinMemoryController(
     val localFilesConnector: LocalFilesConnector = LocalFilesConnector(context.applicationContext),
     private val sourceConnectors: List<MemoryConnector> = listOf(
         LocationConnectorStub(),
-        PhotosConnectorStub(),
+        PhotosConnector(context.applicationContext),
         CalendarConnector(context.applicationContext),
         NotificationConnectorStub(),
         AppUsageConnectorStub(),
