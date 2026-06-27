@@ -15,6 +15,8 @@ DEFAULT_CONFIG = REPO_ROOT / "model-training/configs/grayin_gemma_lora.yaml"
 DEFAULT_EVAL = REPO_ROOT / "model-training/data/synthetic/grayin_eval.jsonl"
 
 REQUIRED_SCALAR_KEYS = (
+    "source_model_id",
+    "source_model_revision",
     "base_model_path",
     "train_jsonl",
     "output_dir",
@@ -118,6 +120,8 @@ def main() -> None:
     eval_path = args.eval_jsonl if args.eval_jsonl.is_absolute() else REPO_ROOT / args.eval_jsonl
 
     values = read_scalar_config(config_path)
+    source_model_id = values["source_model_id"]
+    source_model_revision = values["source_model_revision"]
     base_model_path = repo_path(values["base_model_path"])
     train_jsonl = repo_path(values["train_jsonl"])
     output_dir = repo_path(values["output_dir"])
@@ -141,7 +145,11 @@ def main() -> None:
         sys.exit(2)
 
     status = "ready" if ready else "missing"
-    print(f"training setup ok: train={train_count} eval={eval_count} reference_model={status}")
+    print(
+        "training setup ok: "
+        f"source_model={source_model_id}@{source_model_revision} "
+        f"train={train_count} eval={eval_count} reference_model={status}",
+    )
 
 
 if __name__ == "__main__":

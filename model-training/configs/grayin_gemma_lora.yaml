@@ -3,6 +3,8 @@ run:
   seed: 42
 
 model:
+  source_model_id: google/gemma-4-E2B-it
+  source_model_revision: 70af34e20bd4b7a91f0de6b22675850c43922a03
   base_model_path: model-training/reference-models/gemma-4-e2b-it
   trust_remote_code: false
   torch_dtype: bfloat16

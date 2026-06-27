@@ -52,6 +52,13 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
    model-training/reference-models/gemma-4-e2b-it/
    ```
 
+   Or use the download helper:
+
+   ```bash
+   python3 model-training/scripts/download_reference_model.py --dry-run
+   python3 model-training/scripts/download_reference_model.py
+   ```
+
 3. Install training dependencies in separate environment:
 
    ```bash
@@ -95,6 +102,19 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
 - cited grounded answers
 - non-agentic refusals
 - no-evidence answers
+
+## Make Targets
+
+From repository root:
+
+```bash
+make -f model-training/Makefile corpus
+make -f model-training/Makefile validate
+make -f model-training/Makefile download-reference-dry-run
+make -f model-training/Makefile validate-strict
+make -f model-training/Makefile train
+make -f model-training/Makefile artifact-policy
+```
 
 ## Release Rule
 
