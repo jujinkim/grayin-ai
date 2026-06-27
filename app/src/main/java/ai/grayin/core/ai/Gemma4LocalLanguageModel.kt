@@ -155,7 +155,7 @@ class Gemma4ModelPathResolver(
                     }
                 }
             }
-            require(copiedBytes > 0L) { "Selected model file is empty." }
+            require(copiedBytes >= MIN_MODEL_BYTES) { "Selected model file is too small." }
 
             if (destination.exists() && !destination.delete()) {
                 throw IOException("Existing model file cannot be replaced.")
@@ -208,5 +208,6 @@ class Gemma4ModelPathResolver(
         const val ADB_MODEL_PATH = "/data/local/tmp/grayin/$MODEL_FILE_NAME"
         const val CACHE_DIR = "litertlm"
         const val COPY_BUFFER_BYTES = 1024 * 1024
+        const val MIN_MODEL_BYTES = 1024 * 1024
     }
 }

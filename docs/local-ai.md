@@ -57,7 +57,9 @@ adb shell mkdir -p /data/local/tmp/grayin
 adb push gemma-4-E2B-it.litertlm /data/local/tmp/grayin/
 ```
 
-Settings also supports end-user import. The user selects a `.litertlm` file through Android document picker, and Grayin copies it into app-private `files/models/gemma-4-E2B-it.litertlm`.
+Settings also supports end-user import. The user can open the official model page, select a `.litertlm` file through Android document picker, and Grayin copies it into app-private `files/models/gemma-4-E2B-it.litertlm`.
+
+Import rejects files without a `.litertlm` extension and files smaller than 1 MB.
 
 Settings can delete app-imported model files. Development files under `/data/local/tmp/grayin/` remain developer-managed.
 

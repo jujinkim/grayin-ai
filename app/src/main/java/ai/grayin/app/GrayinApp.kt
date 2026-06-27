@@ -3,6 +3,7 @@ package ai.grayin.app
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -432,6 +433,13 @@ fun GrayinApp() {
                             statusMessage = ""
                         },
                         onIndex = ::indexLocalFiles,
+                        onOpenModelDownload = {
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(LocalGemmaModelDownloadPage)))
+                            } catch (_: Throwable) {
+                                statusMessage = strings.localGemmaModelDownloadOpenFailed
+                            }
+                        },
                         onImportModel = {
                             modelDocumentLauncher.launch(arrayOf("application/octet-stream", "*/*"))
                         },
@@ -927,6 +935,7 @@ private fun SettingsScreen(
     working: Boolean,
     onLanguageSelected: (GrayinLanguageOption) -> Unit,
     onIndex: () -> Unit,
+    onOpenModelDownload: () -> Unit,
     onImportModel: () -> Unit,
     onDeleteModel: () -> Unit,
 ) {
@@ -959,6 +968,14 @@ private fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
+                OutlinedButton(
+                    enabled = !working,
+                    onClick = onOpenModelDownload,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Filled.Search, contentDescription = null)
+                    Text(strings.openLocalGemmaModelDownloadPage)
+                }
                 Button(
                     enabled = !working,
                     onClick = onImportModel,
@@ -1060,6 +1077,7 @@ private const val LocationConnectorId = "location"
 private const val PhotosConnectorId = "photos"
 private const val AppUsageConnectorId = "app_usage"
 private const val NotificationConnectorId = "notification"
+private const val LocalGemmaModelDownloadPage = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm"
 
 private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
     return GrayinSnapshot(

@@ -106,9 +106,11 @@ class GrayinLanguageTest {
 
         assertEquals("Import local Gemma model", english.importLocalGemmaModel)
         assertEquals("Delete imported Gemma model", english.deleteLocalGemmaModel)
+        assertEquals("Open model download page", english.openLocalGemmaModelDownloadPage)
         assertEquals("로컬 Gemma 모델 가져오기", korean.importLocalGemmaModel)
         assertEquals("가져온 Gemma 모델 삭제", korean.deleteLocalGemmaModel)
-        assertEquals("Select a non-empty .litertlm model file.", english.localGemmaModelInvalidFile)
+        assertEquals("모델 다운로드 페이지 열기", korean.openLocalGemmaModelDownloadPage)
+        assertEquals("Select a .litertlm model file larger than 1 MB.", english.localGemmaModelInvalidFile)
         assertEquals(
             "Download page: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
             english.localGemmaModelDownloadUrl,
