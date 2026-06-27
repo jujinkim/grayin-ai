@@ -37,6 +37,14 @@ class SecurityBoundaryTest {
     }
 
     @Test
+    fun manifestAllowsUsageStatsPermissionForInvokedAppUsageSource() {
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+
+        assertTrue(manifest.contains("android.permission.PACKAGE_USAGE_STATS"))
+        assertTrue(manifest.contains("ProtectedPermissions"))
+    }
+
+    @Test
     fun buildDoesNotAddForbiddenTelemetryOrCloudSdks() {
         val buildFile = File("build.gradle.kts").readText()
         val forbidden = listOf("Firebase", "Crashlytics", "analytics")

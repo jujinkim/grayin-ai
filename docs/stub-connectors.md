@@ -1,6 +1,6 @@
 # Connector Status
 
-Grayin AI still keeps some MVP connectors as disabled stubs. Local Files has a real Text/Markdown path. Location, Calendar, and Photos have runtime-permission indexing paths.
+Grayin AI still keeps notifications as a disabled stub. Local Files has a real Text/Markdown path. Location, Calendar, Photos, and App Usage have permission-backed indexing paths.
 
 Every connector must report metadata, permission state, scan status, missing-source explanations, and revoke/delete-derived-data contracts.
 
@@ -10,7 +10,7 @@ Every connector must report metadata, permission state, scan status, missing-sou
 - Photos: high sensitivity, default OFF until user grants photo permission and invokes it. Reads Android MediaStore image metadata transiently and stores only derived photo index events, citations, and source references.
 - Calendar: high sensitivity, default OFF until user grants calendar permission and invokes it. Reads Android calendar instances transiently and stores only derived calendar events, citations, and source references.
 - Notifications: very high sensitivity, default OFF, pending notification-listener implementation.
-- App Usage: very high sensitivity, default OFF, pending usage-access implementation.
+- App Usage: very high sensitivity, default OFF until user grants usage access and invokes it. Reads Android usage stats transiently and stores only derived app-usage events, citations, and source references.
 - Local Files: high sensitivity, default OFF until user selects files. Supports user-selected `.txt` and `.md` documents through Android's document picker.
 
 ## Local Files
@@ -55,10 +55,20 @@ The Photos connector:
 - emits source references, derived photo index events, and citations
 - supports app-level revoke by disabling the connector and deleting derived data
 
+## App Usage
+
+The App Usage connector:
+
+- requires explicit Android usage-access settings permission
+- requires user invocation before indexing
+- reads UsageStats only inside connector-owned scan scopes
+- stores only derived app-duration summaries and source references
+- does not store raw usage event dumps
+- supports app-level revoke by disabling the connector and deleting derived data
+
 ## Future Connector Work
 
 - Add notification-listener settings flow when notification indexing is implemented.
-- Add usage-access settings flow when app usage indexing is implemented.
 
 Connectors must not read or store source originals outside transient connector processing.
 

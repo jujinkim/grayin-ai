@@ -2,6 +2,8 @@ package ai.grayin.app
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -290,6 +292,23 @@ fun GrayinApp() {
 
                                 connectorId == LocationConnectorId && requiredPermissions.isNotEmpty() -> {
                                     locationPermissionLauncher.launch(requiredPermissions.toTypedArray())
+                                }
+
+                                connectorId == AppUsageConnectorId -> {
+                                    scope.launch {
+                                        working = true
+                                        try {
+                                            statusMessage = controller.invokeConnector(connectorId, strings)
+                                            if (statusMessage == strings.sourcePermissionDenied) {
+                                                context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                            }
+                                        } catch (error: Throwable) {
+                                            statusMessage = error.message ?: strings.sourcePermissionDenied
+                                        } finally {
+                                            snapshot = controller.snapshot(strings)
+                                            working = false
+                                        }
+                                    }
                                 }
 
                                 else -> {
@@ -750,6 +769,7 @@ private fun GrayinScreen.icon(): ImageVector {
 private const val CalendarConnectorId = "calendar"
 private const val LocationConnectorId = "location"
 private const val PhotosConnectorId = "photos"
+private const val AppUsageConnectorId = "app_usage"
 
 private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
     return GrayinSnapshot(

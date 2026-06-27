@@ -56,6 +56,8 @@ Photos supports explicit runtime media read permission plus app-level invocation
 
 Location supports explicit runtime location permission plus app-level invocation before indexing. It reads last-known provider location transiently, emits rounded derived place-visit events/citations/source references, and does not store raw location provider dumps.
 
+App Usage supports explicit usage-access settings permission plus app-level invocation before indexing. It reads Android UsageStats transiently, emits derived app-duration events/citations/source references, and does not store raw usage event dumps.
+
 ## MVP API Boundary
 
 The MVP connector interface exposes only:

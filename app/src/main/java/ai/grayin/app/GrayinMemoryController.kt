@@ -8,7 +8,7 @@ import ai.grayin.connectors.localfiles.LocalFilesConnector
 import ai.grayin.connectors.location.LocationConnector
 import ai.grayin.connectors.notification.NotificationConnectorStub
 import ai.grayin.connectors.photos.PhotosConnector
-import ai.grayin.connectors.usagestats.AppUsageConnectorStub
+import ai.grayin.connectors.usagestats.AppUsageConnector
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.InvokableMemoryConnector
@@ -71,7 +71,7 @@ class GrayinMemoryController(
         PhotosConnector(context.applicationContext),
         CalendarConnector(context.applicationContext),
         NotificationConnectorStub(),
-        AppUsageConnectorStub(),
+        AppUsageConnector(context.applicationContext),
         localFilesConnector,
     ),
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
