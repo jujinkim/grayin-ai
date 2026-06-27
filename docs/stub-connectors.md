@@ -1,6 +1,6 @@
 # Connector Status
 
-Grayin AI still keeps notifications as a disabled stub. Local Files has a real Text/Markdown path. Location, Calendar, Photos, and App Usage have permission-backed indexing paths.
+Grayin AI has real source paths for Local Files, Location, Calendar, Photos, Notifications, and App Usage.
 
 Every connector must report metadata, permission state, scan status, missing-source explanations, and revoke/delete-derived-data contracts.
 
@@ -9,7 +9,7 @@ Every connector must report metadata, permission state, scan status, missing-sou
 - Location: high sensitivity, default OFF until user grants location permission and invokes it. Reads Android last-known provider location transiently and stores only derived place-visit events, citations, and source references.
 - Photos: high sensitivity, default OFF until user grants photo permission and invokes it. Reads Android MediaStore image metadata transiently and stores only derived photo index events, citations, and source references.
 - Calendar: high sensitivity, default OFF until user grants calendar permission and invokes it. Reads Android calendar instances transiently and stores only derived calendar events, citations, and source references.
-- Notifications: very high sensitivity, default OFF, pending notification-listener implementation.
+- Notifications: very high sensitivity, default OFF until user enables notification listener access and invokes it. Reads posted notifications transiently and stores only derived notification signal events, citations, and source references.
 - App Usage: very high sensitivity, default OFF until user grants usage access and invokes it. Reads Android usage stats transiently and stores only derived app-usage events, citations, and source references.
 - Local Files: high sensitivity, default OFF until user selects files. Supports user-selected `.txt` and `.md` documents through Android's document picker.
 
@@ -66,9 +66,17 @@ The App Usage connector:
 - does not store raw usage event dumps
 - supports app-level revoke by disabling the connector and deleting derived data
 
-## Future Connector Work
+## Notifications
 
-- Add notification-listener settings flow when notification indexing is implemented.
+The Notifications connector:
+
+- requires explicit Android notification-listener settings access
+- requires user invocation before indexing
+- reads posted notification title/text only transiently inside listener callbacks
+- skips security-code notifications
+- stores only derived notification signal events and source references
+- does not store raw notification text
+- supports app-level revoke by disabling the connector and deleting derived data
 
 Connectors must not read or store source originals outside transient connector processing.
 

@@ -45,6 +45,14 @@ class SecurityBoundaryTest {
     }
 
     @Test
+    fun manifestDeclaresNotificationListenerForInvokedNotificationSource() {
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+
+        assertTrue(manifest.contains("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"))
+        assertTrue(manifest.contains("android.service.notification.NotificationListenerService"))
+    }
+
+    @Test
     fun buildDoesNotAddForbiddenTelemetryOrCloudSdks() {
         val buildFile = File("build.gradle.kts").readText()
         val forbidden = listOf("Firebase", "Crashlytics", "analytics")

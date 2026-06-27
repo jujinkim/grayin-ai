@@ -58,6 +58,8 @@ Location supports explicit runtime location permission plus app-level invocation
 
 App Usage supports explicit usage-access settings permission plus app-level invocation before indexing. It reads Android UsageStats transiently, emits derived app-duration events/citations/source references, and does not store raw usage event dumps.
 
+Notifications supports explicit notification-listener settings access plus app-level invocation before indexing future notification arrivals. It reads posted notification title/text transiently inside listener callbacks, skips security-code notifications, emits derived notification signal events/citations/source references, and does not store raw notification text.
+
 ## MVP API Boundary
 
 The MVP connector interface exposes only:

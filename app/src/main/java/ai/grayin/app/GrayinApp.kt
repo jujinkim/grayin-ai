@@ -311,6 +311,23 @@ fun GrayinApp() {
                                     }
                                 }
 
+                                connectorId == NotificationConnectorId -> {
+                                    scope.launch {
+                                        working = true
+                                        try {
+                                            statusMessage = controller.invokeConnector(connectorId, strings)
+                                            if (statusMessage == strings.sourcePermissionDenied) {
+                                                context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                            }
+                                        } catch (error: Throwable) {
+                                            statusMessage = error.message ?: strings.sourcePermissionDenied
+                                        } finally {
+                                            snapshot = controller.snapshot(strings)
+                                            working = false
+                                        }
+                                    }
+                                }
+
                                 else -> {
                                     statusMessage = strings.connectorInvocationUnavailable
                                 }
@@ -770,6 +787,7 @@ private const val CalendarConnectorId = "calendar"
 private const val LocationConnectorId = "location"
 private const val PhotosConnectorId = "photos"
 private const val AppUsageConnectorId = "app_usage"
+private const val NotificationConnectorId = "notification"
 
 private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
     return GrayinSnapshot(

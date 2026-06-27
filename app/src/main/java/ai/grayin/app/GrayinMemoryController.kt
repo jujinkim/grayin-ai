@@ -6,7 +6,7 @@ import ai.grayin.connectors.calendar.CalendarConnector
 import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFilesConnector
 import ai.grayin.connectors.location.LocationConnector
-import ai.grayin.connectors.notification.NotificationConnectorStub
+import ai.grayin.connectors.notification.NotificationConnector
 import ai.grayin.connectors.photos.PhotosConnector
 import ai.grayin.connectors.usagestats.AppUsageConnector
 import ai.grayin.core.connector.ConnectorPermissionState
@@ -70,7 +70,7 @@ class GrayinMemoryController(
         LocationConnector(context.applicationContext),
         PhotosConnector(context.applicationContext),
         CalendarConnector(context.applicationContext),
-        NotificationConnectorStub(),
+        NotificationConnector(context.applicationContext),
         AppUsageConnector(context.applicationContext),
         localFilesConnector,
     ),

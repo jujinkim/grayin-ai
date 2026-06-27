@@ -9,6 +9,7 @@ Current phase status: usable local Text/Markdown MVP is complete.
 - User-invoked Android calendar events through runtime calendar read permission.
 - User-invoked Android photo metadata through runtime media read permission.
 - User-invoked Android app usage summaries through usage-access settings.
+- User-invoked Android notification-derived signals through notification-listener settings access.
 - SQLCipher-backed derived-memory store protected by Android Keystore.
 - Ask flow over cited local evidence with confidence and missing-data output.
 - First-launch Sources intro explaining that user-invoked sources must be indexed before Ask can use them.
@@ -19,7 +20,6 @@ Current phase status: usable local Text/Markdown MVP is complete.
 
 ## Future Work
 
-- Implement real notification connector.
 - Implement online weather and reverse-geocode providers behind `OnlineEnrichmentGateway`.
 - Add PDF/OCR local-file indexing.
 - Add real on-device Gemma adapter.
