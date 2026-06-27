@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.clickable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -16,9 +17,11 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -31,6 +34,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
@@ -43,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -84,6 +89,7 @@ fun GrayinApp() {
     val controller = remember(context) { GrayinMemoryController(context) }
     val languageStore = remember(context) { LanguagePreferenceStore(context) }
     val sourceIntroStore = remember(context) { SourceIntroPreferenceStore(context) }
+    val automaticIndexingStore = remember(context) { AutomaticIndexingPreferenceStore(context) }
     val scope = rememberCoroutineScope()
     var selectedScreenName by rememberSaveable {
         mutableStateOf(initialScreenForSourcesIntro(sourceIntroStore.hasSeenSourcesIntro()).name)
@@ -96,6 +102,7 @@ fun GrayinApp() {
     var statusMessage by remember { mutableStateOf("") }
     var hasAsked by rememberSaveable { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
+    var automaticIndexingState by remember { mutableStateOf(automaticIndexingStore.load()) }
     val selectedScreen = GrayinScreen.valueOf(selectedScreenName)
     val screens = GrayinScreen.entries
     val openDocumentLauncher = rememberLauncherForActivityResult(
@@ -193,6 +200,26 @@ fun GrayinApp() {
         }
     }
 
+    fun indexAllSources() {
+        scope.launch {
+            working = true
+            try {
+                statusMessage = controller.indexAllEnabledSources(strings)
+            } catch (error: Throwable) {
+                statusMessage = error.message ?: strings.indexingFailed
+            } finally {
+                snapshot = controller.snapshot(strings)
+                working = false
+            }
+        }
+    }
+
+    fun updateAutomaticIndexing(state: AutomaticIndexingUiState) {
+        automaticIndexingStore.save(state)
+        automaticIndexingState = state
+        statusMessage = strings.automaticIndexingSaved(state.enabled)
+    }
+
     LaunchedEffect(sourceIntroStore) {
         if (!sourceIntroStore.hasSeenSourcesIntro()) {
             sourceIntroStore.markSourcesIntroSeen()
@@ -273,9 +300,12 @@ fun GrayinApp() {
                     GrayinScreen.Places -> PlacesScreen(snapshot.placesRows, strings)
                     GrayinScreen.Sources -> SourcesScreen(
                         sourceRows = snapshot.sourceRows,
+                        automaticIndexingState = automaticIndexingState,
                         statusMessage = statusMessage,
                         strings = strings,
                         working = working,
+                        onIndexAllSources = ::indexAllSources,
+                        onAutomaticIndexingChanged = ::updateAutomaticIndexing,
                         onAddLocalFile = {
                             openDocumentLauncher.launch(arrayOf("text/*", "application/octet-stream"))
                         },
@@ -530,9 +560,12 @@ private fun PlacesScreen(rows: List<String>, strings: GrayinStrings) {
 @Composable
 private fun SourcesScreen(
     sourceRows: List<ConnectorUiState>,
+    automaticIndexingState: AutomaticIndexingUiState,
     statusMessage: String,
     strings: GrayinStrings,
     working: Boolean,
+    onIndexAllSources: () -> Unit,
+    onAutomaticIndexingChanged: (AutomaticIndexingUiState) -> Unit,
     onAddLocalFile: () -> Unit,
     onInvokeSource: (String, List<String>) -> Unit,
     onIndexSource: (String) -> Unit,
@@ -547,6 +580,15 @@ private fun SourcesScreen(
     ) {
         item {
             Text(strings.sources, style = MaterialTheme.typography.headlineMedium)
+        }
+        item {
+            SourceIndexingControls(
+                automaticIndexingState = automaticIndexingState,
+                strings = strings,
+                working = working,
+                onIndexAllSources = onIndexAllSources,
+                onAutomaticIndexingChanged = onAutomaticIndexingChanged,
+            )
         }
         item {
             SourceInvocationCard(strings)
@@ -567,6 +609,179 @@ private fun SourcesScreen(
                 onRevokeSource = onRevokeSource,
                 onDeleteSourceData = onDeleteSourceData,
             )
+        }
+    }
+}
+
+@Composable
+private fun SourceIndexingControls(
+    automaticIndexingState: AutomaticIndexingUiState,
+    strings: GrayinStrings,
+    working: Boolean,
+    onIndexAllSources: () -> Unit,
+    onAutomaticIndexingChanged: (AutomaticIndexingUiState) -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !working,
+                onClick = onIndexAllSources,
+            ) {
+                Text(if (working) strings.indexing else strings.indexAllNow)
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = !working) {
+                        onAutomaticIndexingChanged(
+                            automaticIndexingState.copy(enabled = !automaticIndexingState.enabled),
+                        )
+                    },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(strings.automaticIndexing, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        strings.automaticIndexingSummary(automaticIndexingState),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = automaticIndexingState.enabled,
+                    enabled = !working,
+                    onCheckedChange = { checked ->
+                        onAutomaticIndexingChanged(automaticIndexingState.copy(enabled = checked))
+                    },
+                )
+            }
+            TextButton(
+                enabled = !working,
+                onClick = { expanded = !expanded },
+            ) {
+                Text(if (expanded) strings.hide else strings.automaticIndexingSettings)
+            }
+            if (expanded) {
+                AutomaticIndexingDetails(
+                    automaticIndexingState = automaticIndexingState,
+                    strings = strings,
+                    working = working,
+                    onAutomaticIndexingChanged = onAutomaticIndexingChanged,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutomaticIndexingDetails(
+    automaticIndexingState: AutomaticIndexingUiState,
+    strings: GrayinStrings,
+    working: Boolean,
+    onAutomaticIndexingChanged: (AutomaticIndexingUiState) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = !working) {
+                    onAutomaticIndexingChanged(
+                        automaticIndexingState.copy(requireCharging = !automaticIndexingState.requireCharging),
+                    )
+                },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(strings.chargingOnly, style = MaterialTheme.typography.bodyLarge)
+            Switch(
+                checked = automaticIndexingState.requireCharging,
+                enabled = !working,
+                onCheckedChange = { checked ->
+                    onAutomaticIndexingChanged(automaticIndexingState.copy(requireCharging = checked))
+                },
+            )
+        }
+        HourStepper(
+            label = strings.startHour,
+            hour = automaticIndexingState.startHour,
+            working = working,
+            onDecrease = {
+                onAutomaticIndexingChanged(automaticIndexingState.shiftedStartHour(-1))
+            },
+            onIncrease = {
+                onAutomaticIndexingChanged(automaticIndexingState.shiftedStartHour(1))
+            },
+        )
+        HourStepper(
+            label = strings.endHour,
+            hour = automaticIndexingState.endHour,
+            working = working,
+            onDecrease = {
+                onAutomaticIndexingChanged(automaticIndexingState.shiftedEndHour(-1))
+            },
+            onIncrease = {
+                onAutomaticIndexingChanged(automaticIndexingState.shiftedEndHour(1))
+            },
+        )
+        Text(
+            strings.automaticIndexingWindow(automaticIndexingState.windowLabel()),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun HourStepper(
+    label: String,
+    hour: Int,
+    working: Boolean,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(AutomaticIndexingUiState.formatHour(hour), style = MaterialTheme.typography.bodySmall)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                enabled = !working,
+                onClick = onDecrease,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Remove,
+                    contentDescription = "$label -",
+                )
+            }
+            Button(
+                enabled = !working,
+                onClick = onIncrease,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = "$label +",
+                )
+            }
         }
     }
 }

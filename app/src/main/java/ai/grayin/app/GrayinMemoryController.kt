@@ -11,6 +11,7 @@ import ai.grayin.connectors.photos.PhotosConnector
 import ai.grayin.connectors.usagestats.AppUsageConnector
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorScanScope
+import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.InvokableMemoryConnector
 import ai.grayin.core.connector.MemoryConnector
 import ai.grayin.core.grounding.GroundedAnswerRequest
@@ -118,10 +119,7 @@ class GrayinMemoryController(
     suspend fun indexConnector(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         if (connectorId == LocalFileMemoryExtractor.CONNECTOR_ID) return@withContext indexLocalFiles(strings)
         val connector = connectorFor(connectorId)
-        val scanResult = connector.scan(ConnectorScanScope(forceRefresh = true))
-        store.saveSourceReferences(scanResult.sourceReferences)
-        store.saveDerivedMemoryEvents(scanResult.derivedEvents)
-        store.saveCitations(scanResult.citations)
+        val scanResult = scanAndStore(connector)
         when {
             scanResult.derivedEvents.isNotEmpty() -> {
                 strings.indexedConnectorEvents(
@@ -132,6 +130,29 @@ class GrayinMemoryController(
 
             scanResult.missingSources.isNotEmpty() -> scanResult.missingSources.first().explanation
             else -> strings.noLocalFilesIndexed
+        }
+    }
+
+    suspend fun indexAllEnabledSources(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        var scannedSources = 0
+        var indexedEvents = 0
+        var skippedSources = 0
+
+        sourceConnectors.forEach { connector ->
+            val state = connector.currentState()
+            if (state.enabled) {
+                scannedSources += 1
+                val scanResult = scanAndStore(connector)
+                indexedEvents += scanResult.derivedEvents.size
+                if (scanResult.derivedEvents.isEmpty() && scanResult.missingSources.isNotEmpty()) {
+                    skippedSources += 1
+                }
+            }
+        }
+
+        when {
+            scannedSources == 0 -> strings.noSourcesReadyToIndex
+            else -> strings.indexedAllSources(indexedEvents, scannedSources, skippedSources)
         }
     }
 
@@ -187,6 +208,14 @@ class GrayinMemoryController(
 
     private fun connectorFor(connectorId: String): MemoryConnector {
         return sourceConnectors.first { it.metadata.connectorId == connectorId }
+    }
+
+    private suspend fun scanAndStore(connector: MemoryConnector): ConnectorScanResult {
+        val scanResult = connector.scan(ConnectorScanScope(forceRefresh = true))
+        store.saveSourceReferences(scanResult.sourceReferences)
+        store.saveDerivedMemoryEvents(scanResult.derivedEvents)
+        store.saveCitations(scanResult.citations)
+        return scanResult
     }
 
     suspend fun ask(query: String, strings: GrayinStrings): AnswerUiState = withContext(Dispatchers.IO) {

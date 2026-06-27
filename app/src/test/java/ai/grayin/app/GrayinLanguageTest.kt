@@ -83,6 +83,23 @@ class GrayinLanguageTest {
     }
 
     @Test
+    fun localizedStringsCoverSourceIndexingControls() {
+        val korean = GrayinText.forOption(GrayinLanguageOption.KOREAN)
+        val english = GrayinText.forOption(GrayinLanguageOption.ENGLISH)
+
+        assertEquals("지금 모두 인덱싱", korean.indexAllNow)
+        assertEquals("Automatic indexing", english.automaticIndexing)
+        assertEquals(
+            "켜짐 · 02:00-05:00 · 충전 중일 때만",
+            korean.automaticIndexingSummary(AutomaticIndexingUiState(enabled = true)),
+        )
+        assertEquals(
+            "No invoked sources are ready to index.",
+            english.noSourcesReadyToIndex,
+        )
+    }
+
+    @Test
     fun localizedStringsCoverConnectorNames() {
         assertEquals("Notifications", GrayinText.forOption(GrayinLanguageOption.ENGLISH).connectorName("notification", "x"))
         assertEquals("앱 사용", GrayinText.forOption(GrayinLanguageOption.KOREAN).connectorName("app_usage", "x"))

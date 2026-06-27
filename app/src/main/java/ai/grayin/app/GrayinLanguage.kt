@@ -82,7 +82,15 @@ data class GrayinStrings(
     val revoke: String,
     val delete: String,
     val indexNow: String,
+    val indexAllNow: String,
     val indexing: String,
+    val automaticIndexing: String,
+    val automaticIndexingSettings: String,
+    val automaticIndexingOn: String,
+    val automaticIndexingOff: String,
+    val chargingOnly: String,
+    val startHour: String,
+    val endHour: String,
     val language: String,
     val localFiles: String,
     val location: String,
@@ -121,6 +129,7 @@ data class GrayinStrings(
     val unsupportedFileOrPermissionDenied: String,
     val sourcePermissionDenied: String,
     val noLocalFilesIndexed: String,
+    val noSourcesReadyToIndex: String,
     val revokedLocalFiles: String,
     val networkPermissionRestricted: String,
     val accountAbsent: String,
@@ -225,6 +234,36 @@ data class GrayinStrings(
         }
     }
 
+    fun indexedAllSources(eventCount: Int, sourceCount: Int, skippedCount: Int): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "소스 ${sourceCount}개에서 파생 이벤트 ${eventCount}개를 인덱싱했습니다. 건너뜀 ${skippedCount}개."
+            GrayinLanguage.JAPANESE -> "ソース${sourceCount}件から派生イベント${eventCount}件をインデックスしました。スキップ${skippedCount}件。"
+            GrayinLanguage.ENGLISH -> "Indexed $eventCount derived event(s) from $sourceCount source(s). Skipped $skippedCount."
+        }
+    }
+
+    fun automaticIndexingSaved(enabled: Boolean): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> if (enabled) "자동 인덱싱 설정을 켰습니다." else "자동 인덱싱 설정을 껐습니다."
+            GrayinLanguage.JAPANESE -> if (enabled) "自動インデックス設定をオンにしました。" else "自動インデックス設定をオフにしました。"
+            GrayinLanguage.ENGLISH -> if (enabled) "Automatic indexing settings enabled." else "Automatic indexing settings disabled."
+        }
+    }
+
+    fun automaticIndexingSummary(state: AutomaticIndexingUiState): String {
+        val enabledLabel = if (state.enabled) automaticIndexingOn else automaticIndexingOff
+        val chargingLabel = if (state.requireCharging) " · $chargingOnly" else ""
+        return "$enabledLabel · ${state.windowLabel()}$chargingLabel"
+    }
+
+    fun automaticIndexingWindow(windowLabel: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "인덱싱 시간대: $windowLabel"
+            GrayinLanguage.JAPANESE -> "インデックス時間帯: $windowLabel"
+            GrayinLanguage.ENGLISH -> "Indexing window: $windowLabel"
+        }
+    }
+
     fun revokedConnector(connectorName: String): String {
         return when (languageCode) {
             GrayinLanguage.KOREAN -> "$connectorName 소스를 해제하고 파생 데이터를 삭제했습니다."
@@ -301,7 +340,15 @@ private val EnglishStrings = GrayinStrings(
     revoke = "Revoke",
     delete = "Delete",
     indexNow = "Index now",
+    indexAllNow = "Index all now",
     indexing = "Indexing",
+    automaticIndexing = "Automatic indexing",
+    automaticIndexingSettings = "Automatic indexing settings",
+    automaticIndexingOn = "On",
+    automaticIndexingOff = "Off",
+    chargingOnly = "Only while charging",
+    startHour = "Start hour",
+    endHour = "End hour",
     language = "Language",
     localFiles = "Local files",
     location = "Location",
@@ -340,6 +387,7 @@ private val EnglishStrings = GrayinStrings(
     unsupportedFileOrPermissionDenied = "Unsupported file or read permission was not granted.",
     sourcePermissionDenied = "Source permission was not granted.",
     noLocalFilesIndexed = "No local files indexed.",
+    noSourcesReadyToIndex = "No invoked sources are ready to index.",
     revokedLocalFiles = "Revoked local file access and deleted derived local file data.",
     networkPermissionRestricted = "Network permission: restricted to typed enrichment methods",
     accountAbsent = "Account: absent",
@@ -375,7 +423,15 @@ private val KoreanStrings = EnglishStrings.copy(
     revoke = "권한 해제",
     delete = "삭제",
     indexNow = "지금 인덱싱",
+    indexAllNow = "지금 모두 인덱싱",
     indexing = "인덱싱 중",
+    automaticIndexing = "자동 인덱싱",
+    automaticIndexingSettings = "자동 인덱싱 세부 설정",
+    automaticIndexingOn = "켜짐",
+    automaticIndexingOff = "꺼짐",
+    chargingOnly = "충전 중일 때만",
+    startHour = "시작 시간",
+    endHour = "종료 시간",
     language = "언어",
     localFiles = "로컬 파일",
     location = "위치",
@@ -414,6 +470,7 @@ private val KoreanStrings = EnglishStrings.copy(
     unsupportedFileOrPermissionDenied = "지원하지 않는 파일이거나 읽기 권한이 허용되지 않았습니다.",
     sourcePermissionDenied = "소스 권한이 허용되지 않았습니다.",
     noLocalFilesIndexed = "인덱싱된 로컬 파일이 없습니다.",
+    noSourcesReadyToIndex = "인덱싱할 수 있는 호출된 소스가 없습니다.",
     revokedLocalFiles = "로컬 파일 접근 권한을 해제하고 파생 로컬 파일 데이터를 삭제했습니다.",
     networkPermissionRestricted = "네트워크 권한: typed enrichment method로 제한됨",
     accountAbsent = "계정: 없음",
@@ -449,7 +506,15 @@ private val JapaneseStrings = EnglishStrings.copy(
     revoke = "許可を解除",
     delete = "削除",
     indexNow = "今すぐインデックス",
+    indexAllNow = "今すぐすべてインデックス",
     indexing = "インデックス中",
+    automaticIndexing = "自動インデックス",
+    automaticIndexingSettings = "自動インデックス詳細設定",
+    automaticIndexingOn = "オン",
+    automaticIndexingOff = "オフ",
+    chargingOnly = "充電中のみ",
+    startHour = "開始時間",
+    endHour = "終了時間",
     language = "言語",
     localFiles = "ローカルファイル",
     location = "位置",
@@ -488,6 +553,7 @@ private val JapaneseStrings = EnglishStrings.copy(
     unsupportedFileOrPermissionDenied = "未対応のファイル、または読み取り許可がありません。",
     sourcePermissionDenied = "ソース権限が許可されていません。",
     noLocalFilesIndexed = "インデックス済みのローカルファイルはありません。",
+    noSourcesReadyToIndex = "インデックス可能な呼び出し済みソースがありません。",
     revokedLocalFiles = "ローカルファイルへのアクセス許可を解除し、派生ローカルファイルデータを削除しました。",
     networkPermissionRestricted = "ネットワーク権限: typed enrichment method に制限",
     accountAbsent = "アカウント: なし",

@@ -1,6 +1,6 @@
 # Indexing Policy
 
-MVP 5 defines indexing queue contracts and policy models only. It does not add a background scheduler.
+MVP defines indexing queue contracts, policy models, manual source indexing controls, and persisted automatic indexing settings. It does not add a background scheduler.
 
 ## Processing States
 
@@ -24,11 +24,20 @@ Automatic indexing is allowed only when the policy and current device conditions
 
 Hot or critical thermal states block automatic indexing.
 
+The Sources page lets the user persist automatic indexing preferences:
+
+- automatic indexing enabled or disabled
+- charging-only requirement
+- low-usage start and end hour
+
+Future background schedulers must read these preferences before indexing. Manual indexing is still available even when automatic indexing is off.
+
 ## Manual Commands
 
 Manual indexing command models support:
 
 - index now
+- index all enabled sources
 - index one connector
 - index one date range, optionally scoped to one connector
 
