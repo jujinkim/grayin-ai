@@ -1,6 +1,6 @@
 # Local AI Adapter
 
-MVP 9 adds local-only language model contracts.
+MVP 9 added local-only language model contracts. The current app wires Ask to a local Gemma LiteRT-LM adapter when a model file is installed.
 
 ## Interface
 
@@ -10,10 +10,10 @@ The interface does not accept source connectors, store handles, files, URIs, not
 
 ## Implementations
 
-- `Gemma4LocalLanguageModelPlaceholder`: replaceable placeholder for a future on-device Gemma 4 adapter.
+- `Gemma4LocalLanguageModel`: on-device LiteRT-LM adapter for a local Gemma 4 E2B `.litertlm` model file.
 - `FakeLocalLanguageModel`: deterministic fake model for local tests and UI wiring.
 
-Both implementations set:
+Local model implementations set:
 
 - `localOnly = true`
 - `commercialApi = false`
@@ -21,14 +21,24 @@ Both implementations set:
 
 ## Boundary
 
-No commercial LLM API is configured in MVP.
+No commercial LLM API is configured.
 
-No network dependency is added for local AI in MVP.
+No network dependency is added for local AI. The Gemma adapter only reads an installed local model file and an `EvidencePack`.
 
-The app may request INTERNET permission for typed weather or reverse-geocode enrichment, but that permission must not be used by local model adapters.
+The app may request INTERNET permission for typed weather or reverse-geocode enrichment, but that permission must not be used by local model adapters. Map or place inference goes through `OnlineEnrichmentGateway.reverseGeocode` with derived coordinates only, not through arbitrary URL calls.
+
+## Model File
+
+The app does not download or bundle model weights.
+
+`Gemma4LocalLanguageModel` becomes ready when `gemma-4-E2B-it.litertlm` exists at one of these paths:
+
+- app private files: `models/gemma-4-E2B-it.litertlm`
+- app external files: `models/gemma-4-E2B-it.litertlm`
+- adb development path: `/data/local/tmp/grayin/gemma-4-E2B-it.litertlm`
 
 ## Current Answer Path
 
-Ask uses `TemplateGroundedAnswerGenerator` over an `EvidencePack` built from SQLCipher-stored derived local-file evidence.
+Ask builds an `EvidencePack` from SQLCipher-stored derived indexed evidence, then tries `Gemma4LocalLanguageModel` first.
 
-The Gemma placeholder remains unavailable until a real on-device model adapter is added.
+If the model file is unavailable or generation fails, Ask falls back to `TemplateGroundedAnswerGenerator`.

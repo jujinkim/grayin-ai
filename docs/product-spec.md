@@ -107,7 +107,7 @@ The MVP should conceptually support these evidence sources through implemented c
 - OCR-derived text
 - future local LLM-generated summaries
 
-Current usable local MVP implementation supports user-selected `.txt` and `.md` files, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app usage summaries, and connected Android notification-derived signals after explicit permission or settings access. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
+Current usable local MVP implementation supports user-selected `.txt` and `.md` files, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app usage summaries, and connected Android notification-derived signals after explicit permission or settings access. Ask can use a local Gemma LiteRT-LM model over retrieved `EvidencePack` data when a `.litertlm` model file is installed, with template fallback when unavailable. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
 
 ## Important Definitions
 
@@ -225,7 +225,9 @@ Rules:
 
 - no offline map data in MVP
 - no online map SDK in MVP
-- weather and reverse-geocode lookups may use network permission through typed enrichment methods when implemented
+- weather lookups may use network permission through typed enrichment methods when implemented
+- reverse-geocode lookup may use Android's geocoder through the typed enrichment gateway
+- the local LLM must not call map APIs directly; map/place enrichment must go through the typed `OnlineEnrichmentGateway.reverseGeocode` boundary with derived coordinates only
 - exact business names are not required
 - focus on region, movement, stay duration, and user-defined place labels
 
@@ -364,11 +366,11 @@ Rules:
 
 ## Local AI Strategy
 
-MVP target model: Gemma 4 on-device.
+MVP target model: Gemma 4 on-device through LiteRT-LM.
 
 However, the model must be replaceable.
 
-MVP should start with a stub LocalLanguageModel implementation.
+The app should use `Gemma4LocalLanguageModel` when a local `.litertlm` model file is installed, and fall back to deterministic grounded templates when it is not ready.
 
 No commercial LLM API in MVP.
 

@@ -9,18 +9,24 @@ import ai.grayin.connectors.location.LocationConnector
 import ai.grayin.connectors.notification.NotificationConnector
 import ai.grayin.connectors.photos.PhotosConnector
 import ai.grayin.connectors.usagestats.AppUsageConnector
+import ai.grayin.core.ai.Gemma4LocalLanguageModel
+import ai.grayin.core.ai.LocalLanguageModel
+import ai.grayin.core.ai.LocalModelAnswerDraft
+import ai.grayin.core.ai.LocalModelStatus
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.InvokableMemoryConnector
 import ai.grayin.core.connector.MemoryConnector
 import ai.grayin.core.grounding.GroundedAnswerRequest
+import ai.grayin.core.grounding.GroundedAnswerGenerator
 import ai.grayin.core.grounding.TemplateGroundedAnswerGenerator
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.ConnectorState
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.EvidenceItem
 import ai.grayin.core.model.EvidencePack
+import ai.grayin.core.model.MemoryCitation
 import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.ProcessingState
@@ -75,7 +81,8 @@ class GrayinMemoryController(
         localFilesConnector,
     ),
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
-    private val answerGenerator: TemplateGroundedAnswerGenerator = TemplateGroundedAnswerGenerator(),
+    private val localLanguageModel: LocalLanguageModel = Gemma4LocalLanguageModel(context.applicationContext),
+    private val fallbackAnswerGenerator: GroundedAnswerGenerator = TemplateGroundedAnswerGenerator(),
 ) {
     suspend fun snapshot(strings: GrayinStrings): GrayinSnapshot = withContext(Dispatchers.IO) {
         val sourceReferences = store.loadSourceReferences()
@@ -235,7 +242,12 @@ class GrayinMemoryController(
             citations = citations,
             missingSources = missingSources,
         )
-        val answer = answerGenerator.generate(GroundedAnswerRequest(evidencePack))
+        val localDraft = localAnswerDraft(evidencePack)
+        if (localDraft != null) {
+            return@withContext localDraft.toAnswerUiState(evidenceItems, citations, strings)
+        }
+
+        val answer = fallbackAnswerGenerator.generate(GroundedAnswerRequest(evidencePack))
 
         AnswerUiState(
             answer = if (answer.evidence.isEmpty()) strings.cannotAnswerFromIndexedEvidence else answer.answer,
@@ -254,6 +266,37 @@ class GrayinMemoryController(
                 listOf(strings.noMissingSources)
             } else {
                 answer.missingData.map { missingSourceRow(it, strings) }
+            },
+        )
+    }
+
+    private suspend fun localAnswerDraft(evidencePack: EvidencePack): LocalModelAnswerDraft? {
+        if (evidencePack.evidenceItems.isEmpty() || evidencePack.citations.isEmpty()) return null
+        if (localLanguageModel.status() != LocalModelStatus.READY) return null
+        return runCatching { localLanguageModel.generate(evidencePack) }.getOrNull()
+            ?.takeIf { draft -> draft.usedEvidenceItemIds.isNotEmpty() && draft.answer.isNotBlank() }
+    }
+
+    private fun LocalModelAnswerDraft.toAnswerUiState(
+        evidenceItems: List<EvidenceItem>,
+        citations: List<MemoryCitation>,
+        strings: GrayinStrings,
+    ): AnswerUiState {
+        val usedEvidenceIds = usedEvidenceItemIds.toSet()
+        val usedEvidence = evidenceItems.filter { it.id in usedEvidenceIds }.ifEmpty { evidenceItems }
+        return AnswerUiState(
+            answer = answer,
+            confidence = confidence.name,
+            evidenceRows = usedEvidence.map { item ->
+                val labels = citations
+                    .filter { it.id in item.citationIds }
+                    .joinToString { it.label }
+                "${item.summary} ($labels)"
+            },
+            missingRows = if (missingSources.isEmpty()) {
+                listOf(strings.noMissingSources)
+            } else {
+                missingSources.map { missingSourceRow(it, strings) }
             },
         )
     }

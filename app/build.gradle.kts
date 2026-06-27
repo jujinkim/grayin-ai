@@ -33,6 +33,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.sqlite:sqlite:2.6.2")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
     implementation("net.zetetic:sqlcipher-android:4.16.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 

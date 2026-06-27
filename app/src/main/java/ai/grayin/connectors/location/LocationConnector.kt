@@ -13,6 +13,13 @@ import ai.grayin.core.connector.ConnectorRevokeResult
 import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.InvokableMemoryConnector
+import ai.grayin.core.enrichment.AndroidOnlineEnrichmentGateway
+import ai.grayin.core.enrichment.GeoCoordinate
+import ai.grayin.core.enrichment.OnlineEnrichmentFeature
+import ai.grayin.core.enrichment.OnlineEnrichmentGateway
+import ai.grayin.core.enrichment.OnlineEnrichmentPolicy
+import ai.grayin.core.enrichment.PlaceLookupResult
+import ai.grayin.core.enrichment.ReverseGeocodeRequest
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.ConnectorCapability
 import ai.grayin.core.model.ConnectorState
@@ -32,6 +39,7 @@ import kotlin.math.roundToInt
 
 class LocationConnector(
     private val context: Context,
+    private val enrichmentGateway: OnlineEnrichmentGateway = AndroidOnlineEnrichmentGateway(context.applicationContext),
 ) : InvokableMemoryConnector {
     override val metadata: ConnectorMetadata = METADATA
 
@@ -98,7 +106,10 @@ class LocationConnector(
 
         val location = lastKnownLocation()
             ?: return skipped(now, SourceAvailability.NOT_INDEXED, "No last known location sample is available.")
-        val result = location.toExtractionResult(now)
+        val sampleAt = location.sampleAt(now)
+        val coordinate = location.roundedCoordinate()
+        val placeLookup = placeLookup(coordinate, sampleAt)
+        val result = location.toExtractionResult(now, sampleAt, coordinate, placeLookup)
         prefs().edit().putString(KEY_LAST_INDEXED_AT, now.toString()).apply()
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
@@ -140,13 +151,30 @@ class LocationConnector(
             .maxByOrNull { it.time }
     }
 
-    private fun Location.toExtractionResult(observedAt: Instant): LocationExtractionResult {
-        val sampleAt = if (time > 0L) Instant.ofEpochMilli(time) else observedAt
-        val sourceHash = sha256("${provider.orEmpty()}:$time:${round(latitude)}:${round(longitude)}")
+    private suspend fun placeLookup(coordinate: GeoCoordinate, observedAt: Instant): PlaceLookupResult? {
+        return runCatching {
+            OnlineEnrichmentPolicy.requireAllowed(OnlineEnrichmentFeature.REVERSE_GEOCODE_LOOKUP)
+            enrichmentGateway.reverseGeocode(
+                ReverseGeocodeRequest(
+                    coordinate = coordinate,
+                    observedAt = observedAt,
+                ),
+            )
+        }.getOrNull()
+    }
+
+    private fun Location.toExtractionResult(
+        observedAt: Instant,
+        sampleAt: Instant,
+        coordinate: GeoCoordinate,
+        placeLookup: PlaceLookupResult?,
+    ): LocationExtractionResult {
+        val sourceHash = sha256("${provider.orEmpty()}:$time:${coordinate.latitude}:${coordinate.longitude}")
         val sourceId = "source:$CONNECTOR_ID:$sourceHash"
         val eventId = "event:$CONNECTOR_ID:$sourceHash"
         val citationId = "citation:$CONNECTOR_ID:$sourceHash"
-        val region = "lat ${round(latitude)}, lon ${round(longitude)}"
+        val region = placeLookup?.displayLabel() ?: "lat ${coordinate.latitude}, lon ${coordinate.longitude}"
+        val placeKeywords = placeLookup?.keywords().orEmpty()
         return LocationExtractionResult(
             sourceReference = SourceReference(
                 id = sourceId,
@@ -164,8 +192,12 @@ class LocationConnector(
                 sourceReferenceIds = listOf(sourceId),
                 summary = "Location sample indexed near $region at $sampleAt.",
                 startedAt = sampleAt,
-                keywords = listOf("location", "place", provider.orEmpty()).filter { it.isNotBlank() },
-                labels = listOf("location", "place-visit", provider.orEmpty()).filter { it.isNotBlank() },
+                keywords = listOf("location", "place", provider.orEmpty())
+                    .plus(placeKeywords)
+                    .filter { it.isNotBlank() },
+                labels = listOf("location", "place-visit", provider.orEmpty())
+                    .plus(placeKeywords)
+                    .filter { it.isNotBlank() },
                 confidence = if (accuracy <= 250f) ConfidenceLevel.MEDIUM else ConfidenceLevel.LOW,
                 sensitivity = SensitivityLevel.HIGH,
                 citationIds = listOf(citationId),
@@ -180,6 +212,28 @@ class LocationConnector(
                 confidence = if (accuracy <= 250f) ConfidenceLevel.MEDIUM else ConfidenceLevel.LOW,
             ),
         )
+    }
+
+    private fun Location.sampleAt(observedAt: Instant): Instant {
+        return if (time > 0L) Instant.ofEpochMilli(time) else observedAt
+    }
+
+    private fun Location.roundedCoordinate(): GeoCoordinate {
+        return GeoCoordinate(
+            latitude = round(latitude),
+            longitude = round(longitude),
+        )
+    }
+
+    private fun PlaceLookupResult.displayLabel(): String? {
+        return listOf(localityLabel, regionLabel, countryCode)
+            .mapNotNull { it?.takeIf(String::isNotBlank) }
+            .joinToString(", ")
+            .takeIf { it.isNotBlank() }
+    }
+
+    private fun PlaceLookupResult.keywords(): List<String> {
+        return listOf(localityLabel, regionLabel, countryCode).mapNotNull { it?.takeIf(String::isNotBlank) }
     }
 
     private fun skipped(

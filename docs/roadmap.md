@@ -12,17 +12,18 @@ Current phase status: usable local Text/Markdown MVP is complete.
 - User-connected Android notification-derived signals through notification-listener settings access.
 - SQLCipher-backed derived-memory store protected by Android Keystore.
 - Ask flow over cited local evidence with confidence and missing-data output.
+- Local Gemma LiteRT-LM answer adapter over retrieved `EvidencePack`, with template fallback when the model file is unavailable.
 - First-launch Sources intro explaining that user-connected sources must be indexed before Ask can use them.
 - Sources UI is backed by connector metadata and permission/index state.
 - Sources UI exposes top-level Index all now and persisted automatic indexing settings.
 - Localized UI copy for system, Korean, English, and Japanese language settings.
 - Bottom navigation with icons and localized labels.
-- INTERNET permission restricted to typed enrichment methods only: `getWeather` and `reverseGeocode`.
+- INTERNET permission restricted to typed enrichment methods only: `getWeather` and `reverseGeocode`; location indexing can use Android reverse geocoding through that boundary.
 
 ## Future Work
 
-- Implement online weather and reverse-geocode providers behind `OnlineEnrichmentGateway`.
+- Implement online weather provider behind `OnlineEnrichmentGateway`.
 - Add PDF/OCR local-file indexing.
-- Add real on-device Gemma adapter.
+- Add in-app model file import and readiness UI for local Gemma weights.
 - Implement encrypted export/import runtime.
 - Add optional screenshot blocking and biometric app lock.
