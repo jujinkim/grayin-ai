@@ -90,7 +90,7 @@ Grayin AI should answer these questions using indexed local evidence.
 
 ## Supported Evidence Types in MVP
 
-The MVP should conceptually support these evidence sources through connector stubs or partial implementations:
+The MVP should conceptually support these evidence sources through implemented connectors or future indexing paths:
 
 - location clusters
 - place visits
