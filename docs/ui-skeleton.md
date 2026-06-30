@@ -1,8 +1,8 @@
 # UI
 
-The Compose UI now wires Ask, Sources, Timeline, and Settings to local connector/store state.
+The Compose UI wires Ask, Sources, Timeline, Places, and Settings to local connector/store state.
 
-The bottom navigation bar shows icons and localized labels for all top-level screens.
+The production UI uses consistent 8dp cards, outlined status rows, compact badges, full-width action buttons with icons, and a bottom navigation bar with localized labels.
 
 ## Screens
 
@@ -25,7 +25,7 @@ The Ask screen includes:
 - expandable evidence section
 - missing-data section
 
-The answer card starts empty, then renders grounded answers from indexed evidence across connected sources.
+The answer card starts empty, then renders grounded answers from indexed evidence across connected sources. Confidence is shown as a badge, evidence rows expand into dense supporting cards, and missing data stays visible.
 
 ## Timeline and Places
 
@@ -33,7 +33,7 @@ Timeline renders typed event kind, local date/time interval, and confidence in t
 
 ## Sources
 
-The Sources screen lists connector-backed state, sensitivity labels, and an intro explaining that sources must be explicitly connected and indexed before Grayin can read/analyze them for Ask.
+The Sources screen lists connector-backed state, sensitivity badges, indexed-reference counts, and an intro explaining that sources must be explicitly connected and indexed before Grayin can read/analyze them for Ask.
 
 Local Files supports:
 
@@ -56,7 +56,7 @@ The indexing-status card refreshes only while Sources and its Activity lifecycle
 
 ## Settings
 
-Settings includes language selection, optional app-security controls, manual indexing, encrypted derived-memory export/import, OCR language-data controls, runtime local-model selection and official-page controls, local Gemma `.litertlm` import/delete fallback controls, operation status, indexed counts, and local-first/network-boundary policy status rows. Model and OCR sizes use the selected locale, and closed model-download failure codes are translated rather than exposing storage keys. Model download/cancel/delete actions are conditional and currently hidden because no catalog entry has complete transport metadata.
+Settings includes language selection, optional app-security controls, grouped manual actions, encrypted derived-memory export/import, OCR language-data controls, runtime local-model selection and official-page controls, local Gemma `.litertlm` import/delete fallback controls, operation status, indexed counts, and local-first/network-boundary policy status rows. Model and OCR sizes use the selected locale, and closed model-download failure codes are translated rather than exposing storage keys. Model download/cancel/delete actions are conditional and currently hidden because no catalog entry has complete transport metadata.
 
 The app-security card provides separate screenshot-blocking and app-lock toggles plus concise disclosure that Android handles biometric/device credentials and Grayin stores none. Screenshot preference changes persist synchronously. App-lock enable and disable changes require successful system authentication before they persist; enabling app lock forces `FLAG_SECURE` regardless of the screenshot toggle. Persistence failure leaves the prior toggle state and window policy unchanged.
 

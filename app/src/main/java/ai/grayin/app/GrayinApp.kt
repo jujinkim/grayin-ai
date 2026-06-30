@@ -5,30 +5,46 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.selection.toggleable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -56,12 +72,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -535,6 +552,9 @@ fun GrayinApp(
             tertiary = Color(0xFF7E3F4F),
             surface = Color(0xFFFCFCF8),
             background = Color(0xFFF7F8F4),
+            surfaceVariant = Color(0xFFE7ECE4),
+            outline = Color(0xFF7B867E),
+            outlineVariant = Color(0xFFC9D2CB),
         ),
     ) {
         if (!appSecurityState.protectedContentVisible) {
@@ -550,7 +570,10 @@ fun GrayinApp(
                     .fillMaxSize()
                     .safeDrawingPadding(),
                 bottomBar = {
-                    NavigationBar {
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 2.dp,
+                    ) {
                         screens.forEach { screen ->
                             NavigationBarItem(
                                 selected = screen == selectedScreen,
@@ -1208,32 +1231,18 @@ private fun AskScreen(
 ) {
     var query by remember { mutableStateOf("") }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    ProductionLazyColumn {
         item {
-            Text(strings.ask, style = MaterialTheme.typography.headlineMedium)
+            ScreenHeader(strings.ask)
         }
         item {
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
-                value = query,
-                onValueChange = { query = it },
-                label = { Text(strings.memoryQuestion) },
-                singleLine = false,
-                minLines = 3,
+            QueryComposer(
+                query = query,
+                strings = strings,
+                working = working,
+                onQueryChange = { query = it },
+                onAsk = onAsk,
             )
-        }
-        item {
-            Button(
-                enabled = query.isNotBlank() && !working,
-                onClick = { onAsk(query) },
-            ) {
-                Text(if (working) strings.searching else strings.search)
-            }
         }
         item {
             AnswerCard(
@@ -1248,6 +1257,65 @@ private fun AskScreen(
 }
 
 @Composable
+private fun QueryComposer(
+    query: String,
+    strings: GrayinStrings,
+    working: Boolean,
+    onQueryChange: (String) -> Unit,
+    onAsk: (String) -> Unit,
+) {
+    GrayinCard {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = query,
+                onValueChange = onQueryChange,
+                label = { Text(strings.memoryQuestion) },
+                singleLine = false,
+                minLines = 4,
+                shape = CardShape,
+            )
+            Button(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp),
+                enabled = query.isNotBlank() && !working,
+                onClick = { onAsk(query) },
+                shape = CardShape,
+            ) {
+                IconText(
+                    icon = Icons.Filled.Search,
+                    text = if (working) strings.searching else strings.search,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductionLazyColumn(
+    content: LazyListScope.() -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun ScreenHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.headlineMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onBackground,
+    )
+}
+
+@Composable
 private fun AnswerCard(
     answer: String,
     confidence: String,
@@ -1255,18 +1323,24 @@ private fun AnswerCard(
     missingRows: List<String>,
     strings: GrayinStrings,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 1.dp,
-        shape = MaterialTheme.shapes.small,
-    ) {
+    GrayinCard {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(strings.answer, style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    text = strings.answer,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                ConfidenceLabel(confidence, strings)
+            }
             Text(answer, style = MaterialTheme.typography.bodyLarge)
-            ConfidenceLabel(confidence, strings)
             HorizontalDivider()
             EvidenceSection(evidenceRows, strings)
             HorizontalDivider()
@@ -1277,10 +1351,14 @@ private fun AnswerCard(
 
 @Composable
 private fun ConfidenceLabel(confidence: String, strings: GrayinStrings) {
-    Text(
+    StatusPill(
         text = "${strings.confidencePrefix} $confidence",
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
+        tone = when (confidence.uppercase()) {
+            "HIGH" -> PillTone.Success
+            "MEDIUM" -> PillTone.Info
+            "LOW" -> PillTone.Warning
+            else -> PillTone.Neutral
+        },
     )
 }
 
@@ -1292,18 +1370,23 @@ private fun EvidenceSection(rows: List<String>, strings: GrayinStrings) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(strings.evidence, style = MaterialTheme.typography.titleSmall)
             TextButton(onClick = { expanded = !expanded }) {
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                )
                 Text(if (expanded) strings.hide else strings.show)
             }
         }
         if (expanded) {
             rows.forEach { row ->
-                Text("- $row", style = MaterialTheme.typography.bodyMedium)
+                EvidenceRow(row)
             }
         } else {
-            Text(strings.itemCount(rows.size), style = MaterialTheme.typography.bodySmall)
+            StatusPill(text = strings.itemCount(rows.size), tone = PillTone.Neutral)
         }
     }
 }
@@ -1313,7 +1396,7 @@ private fun MissingDataSection(rows: List<String>, strings: GrayinStrings) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(strings.missingData, style = MaterialTheme.typography.titleSmall)
         rows.forEach { row ->
-            Text("- $row", style = MaterialTheme.typography.bodySmall)
+            SupportingRow(row)
         }
     }
 }
@@ -1354,14 +1437,9 @@ private fun SourcesScreen(
     onSaveNotificationAllowlist: (String) -> Unit,
     onOnlineEnrichmentChanged: (Boolean) -> Unit,
 ) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    ProductionLazyColumn {
         item {
-            Text(strings.sources, style = MaterialTheme.typography.headlineMedium)
+            ScreenHeader(strings.sources)
         }
         item {
             SourceIndexingControls(
@@ -1450,21 +1528,20 @@ private fun SourceIndexingControls(
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 1.dp,
-        shape = MaterialTheme.shapes.small,
-    ) {
+    GrayinCard {
         Column(
-            modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !working,
                 onClick = onIndexAllSources,
+                shape = CardShape,
             ) {
-                Text(if (working) strings.indexing else strings.indexAllNow)
+                IconText(
+                    icon = Icons.Filled.Refresh,
+                    text = if (working) strings.indexing else strings.indexAllNow,
+                )
             }
             Row(
                 modifier = Modifier
@@ -1485,10 +1562,7 @@ private fun SourceIndexingControls(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(strings.automaticIndexing, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        strings.automaticIndexingSummary(automaticIndexingState),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    SupportingText(strings.automaticIndexingSummary(automaticIndexingState))
                 }
                 Switch(
                     checked = automaticIndexingState.enabled,
@@ -1500,6 +1574,10 @@ private fun SourceIndexingControls(
                 enabled = !working,
                 onClick = { expanded = !expanded },
             ) {
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                )
                 Text(if (expanded) strings.hide else strings.automaticIndexingSettings)
             }
             if (expanded) {
@@ -1611,7 +1689,7 @@ private fun HourStepper(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text(AutomaticIndexingUiState.formatHour(hour), style = MaterialTheme.typography.bodySmall)
+            SupportingText(AutomaticIndexingUiState.formatHour(hour))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
@@ -1621,6 +1699,7 @@ private fun HourStepper(
                 Icon(
                     imageVector = Icons.Filled.Remove,
                     contentDescription = decreaseDescription,
+                    modifier = Modifier.size(18.dp),
                 )
             }
             Button(
@@ -1630,6 +1709,7 @@ private fun HourStepper(
                 Icon(
                     imageVector = Icons.Filled.Add,
                     contentDescription = increaseDescription,
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
@@ -1638,18 +1718,26 @@ private fun HourStepper(
 
 @Composable
 private fun SourceInvocationCard(strings: GrayinStrings) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 1.dp,
-        shape = MaterialTheme.shapes.small,
+    GrayinCard(
+        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+        borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(strings.sourceConnectionTitle, style = MaterialTheme.typography.titleMedium)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(strings.sourceConnectionTitle, style = MaterialTheme.typography.titleMedium)
+            }
             Text(strings.sourceConnectionBody, style = MaterialTheme.typography.bodyLarge)
-            Text(strings.sourceConnectionPrivacyNote, style = MaterialTheme.typography.bodySmall)
+            SupportingText(strings.sourceConnectionPrivacyNote)
         }
     }
 }
@@ -1675,36 +1763,54 @@ private fun SourceRow(
         notificationAllowlistText = source.notificationAllowedPackages.joinToString("\n")
     }
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 1.dp,
-        shape = MaterialTheme.shapes.small,
-    ) {
+    GrayinCard {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
             ) {
-                Text(source.name, style = MaterialTheme.typography.titleMedium)
-                Text(source.status, style = MaterialTheme.typography.labelLarge)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = source.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        StatusPill(
+                            text = source.sensitivity,
+                            tone = if (source.sensitivity == strings.veryHighSensitivity) {
+                                PillTone.Warning
+                            } else {
+                                PillTone.Neutral
+                            },
+                        )
+                        StatusPill(
+                            text = strings.itemCount(source.indexedSourceReferenceCount),
+                            tone = PillTone.Neutral,
+                        )
+                    }
+                }
+                StatusPill(text = source.status, tone = sourceStatusTone(source, strings))
             }
-            Text(source.sensitivity, style = MaterialTheme.typography.bodySmall)
             source.detailRows.forEach { detail ->
-                Text(detail, style = MaterialTheme.typography.bodySmall)
+                SupportingRow(detail)
             }
             source.lastRequestedScanRange?.let { range ->
-                Text(strings.requestedScanDateRangeLabel(range), style = MaterialTheme.typography.bodySmall)
+                SupportingRow(strings.requestedScanDateRangeLabel(range))
             }
             if (source.id == LocalFilesConnectorId) {
-                Text(strings.localDocumentSupportDisclosure(), style = MaterialTheme.typography.bodySmall)
+                SupportingText(strings.localDocumentSupportDisclosure())
             }
             source.onlineEnrichmentEnabled?.let { enabled ->
                 Text(strings.onlineEnrichmentTitle, style = MaterialTheme.typography.titleSmall)
-                Text(strings.onlineEnrichmentDisclosure, style = MaterialTheme.typography.bodySmall)
-                Text(strings.onlineEnrichmentProviderCredit, style = MaterialTheme.typography.bodySmall)
+                SupportingText(strings.onlineEnrichmentDisclosure)
+                SupportingText(strings.onlineEnrichmentProviderCredit)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1744,8 +1850,9 @@ private fun SourceRow(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !working,
                             onClick = { onInvokeSource(source.id, source.requiredPermissions) },
+                            shape = CardShape,
                         ) {
-                            Text(source.invokeLabel)
+                            IconText(Icons.AutoMirrored.Filled.ArrowForward, source.invokeLabel)
                         }
                     }
                     if (source.canAdd) {
@@ -1753,8 +1860,9 @@ private fun SourceRow(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !working,
                             onClick = onAddLocalFile,
+                            shape = CardShape,
                         ) {
-                            Text(strings.addLocalFile)
+                            IconText(Icons.Filled.Add, strings.addLocalFile)
                         }
                     }
                     if (source.canIndex) {
@@ -1762,8 +1870,9 @@ private fun SourceRow(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !working,
                             onClick = { onIndexSource(source.id) },
+                            shape = CardShape,
                         ) {
-                            Text(strings.indexNow)
+                            IconText(Icons.Filled.PlayArrow, strings.indexNow)
                         }
                     }
                     if (source.canIndex && source.supportsDateRangeIndexing) {
@@ -1783,9 +1892,11 @@ private fun SourceRow(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !working,
                             onClick = { onRevokeSource(source.id) },
+                            shape = CardShape,
                         ) {
-                            Text(
-                                if (source.id == LocalFilesConnectorId) {
+                            IconText(
+                                icon = Icons.Filled.Remove,
+                                text = if (source.id == LocalFilesConnectorId) {
                                     strings.localDocumentRevokeAllAction()
                                 } else {
                                     strings.revoke
@@ -1798,8 +1909,9 @@ private fun SourceRow(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !working,
                             onClick = { onDeleteSourceData(source.id) },
+                            shape = CardShape,
                         ) {
-                            Text(strings.delete)
+                            IconText(Icons.Filled.Delete, strings.delete)
                         }
                     }
                 }
@@ -1836,14 +1948,14 @@ private fun SettingsScreen(
     onImportModel: () -> Unit,
     onDeleteModel: () -> Unit,
 ) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    ProductionLazyColumn {
         item {
-            Text(strings.settings, style = MaterialTheme.typography.headlineMedium)
+            ScreenHeader(strings.settings)
+        }
+        if (statusMessage.isNotBlank()) {
+            item {
+                StatusRow(statusMessage, tone = PillTone.Info)
+            }
         }
         item {
             LanguageSettings(
@@ -1871,12 +1983,14 @@ private fun SettingsScreen(
             )
         }
         item {
-            Button(
-                enabled = !working,
-                onClick = onIndex,
-            ) {
-                Text(if (working) strings.indexing else strings.indexNow)
-            }
+            SettingsActionCard(
+                strings = strings,
+                working = working,
+                onIndex = onIndex,
+                onOpenModelDownload = onOpenModelDownload,
+                onImportModel = onImportModel,
+                onDeleteModel = onDeleteModel,
+            )
         }
         item {
             OcrLanguagePackSettings(
@@ -1899,42 +2013,6 @@ private fun SettingsScreen(
                 onCancelModelDownload = onCancelModelDownload,
                 onDeleteDownloadedModel = onDeleteDownloadedModel,
             )
-        }
-        item {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                OutlinedButton(
-                    enabled = !working,
-                    onClick = { onOpenModelDownload(null) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.Search, contentDescription = null)
-                    Text(strings.openLocalGemmaModelDownloadPage)
-                }
-                Button(
-                    enabled = !working,
-                    onClick = onImportModel,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Text(strings.importLocalGemmaModel)
-                }
-                OutlinedButton(
-                    enabled = !working,
-                    onClick = onDeleteModel,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.Remove, contentDescription = null)
-                    Text(strings.deleteLocalGemmaModel)
-                }
-            }
-        }
-        if (statusMessage.isNotBlank()) {
-            item {
-                StatusRow(statusMessage)
-            }
         }
         items(rows) { row ->
             StatusRow(row)
@@ -2148,9 +2226,9 @@ private fun LocalModelSettings(
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(strings.localModelCatalogTitle, style = MaterialTheme.typography.titleMedium)
+        SectionTitle(strings.localModelCatalogTitle)
         modelOptions.forEach { option ->
             LocalModelOption(
                 option = option,
@@ -2177,14 +2255,9 @@ private fun LocalModelOption(
     onCancelModelDownload: (String) -> Unit,
     onDeleteDownloadedModel: (String) -> Unit,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 1.dp,
-        shape = MaterialTheme.shapes.small,
-    ) {
+    GrayinCard {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2195,15 +2268,19 @@ private fun LocalModelOption(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(option.name, style = MaterialTheme.typography.titleSmall)
-                    Text(option.status, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = option.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    SupportingText(option.status)
                 }
                 if (option.selected) {
-                    Text(strings.localModelSelectedBadge, style = MaterialTheme.typography.labelMedium)
+                    StatusPill(strings.localModelSelectedBadge, PillTone.Success)
                 }
             }
             option.detailRows.forEach { row ->
-                Text(row, style = MaterialTheme.typography.bodySmall)
+                SupportingRow(row)
             }
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -2224,8 +2301,7 @@ private fun LocalModelOption(
                         onClick = { onOpenModelDownload(option.downloadPageUrl) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Icon(Icons.Filled.Search, contentDescription = null)
-                        Text(strings.localModelOpenDownloadPage)
+                        IconText(Icons.Filled.Search, strings.localModelOpenDownloadPage)
                     }
                 }
                 if (option.canDownload) {
@@ -2234,7 +2310,7 @@ private fun LocalModelOption(
                         onClick = { onDownloadModel(option.id) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(strings.localModelDownload)
+                        IconText(Icons.Filled.Refresh, strings.localModelDownload)
                     }
                 }
                 if (option.canCancelDownload) {
@@ -2252,7 +2328,7 @@ private fun LocalModelOption(
                         onClick = { onDeleteDownloadedModel(option.id) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(strings.localModelDeleteDownloaded)
+                        IconText(Icons.Filled.Delete, strings.localModelDeleteDownloaded)
                     }
                 }
             }
@@ -2265,14 +2341,9 @@ private fun SimpleListScreen(
     title: String,
     rows: List<String>,
 ) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    ProductionLazyColumn {
         item {
-            Text(title, style = MaterialTheme.typography.headlineMedium)
+            ScreenHeader(title)
         }
         items(rows) { row ->
             StatusRow(row)
@@ -2286,28 +2357,25 @@ private fun LanguageSettings(
     strings: GrayinStrings,
     onLanguageSelected: (GrayinLanguageOption) -> Unit,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        tonalElevation = 1.dp,
-        shape = MaterialTheme.shapes.small,
-    ) {
+    GrayinCard {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(strings.language, style = MaterialTheme.typography.titleMedium)
+            SectionTitle(strings.language)
             GrayinLanguageOption.entries.forEach { option ->
                 if (option == languageOption) {
                     Button(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { onLanguageSelected(option) },
+                        shape = CardShape,
                     ) {
-                        Text(strings.languageOptionLabel(option))
+                        IconText(Icons.Filled.CheckCircle, strings.languageOptionLabel(option))
                     }
                 } else {
                     OutlinedButton(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { onLanguageSelected(option) },
+                        shape = CardShape,
                     ) {
                         Text(strings.languageOptionLabel(option))
                     }
@@ -2367,13 +2435,23 @@ private fun emptyAnswerState(strings: GrayinStrings): AnswerUiState {
 }
 
 @Composable
-private fun StatusRow(row: String) {
+private fun StatusRow(
+    row: String,
+    tone: PillTone = PillTone.Neutral,
+) {
+    val background = when (tone) {
+        PillTone.Success -> Color(0xFFE8F4ED)
+        PillTone.Info -> Color(0xFFEAF0F4)
+        PillTone.Warning -> Color(0xFFFFF2D8)
+        PillTone.Neutral -> MaterialTheme.colorScheme.surface
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .semantics { liveRegion = LiveRegionMode.Polite },
-        tonalElevation = 1.dp,
-        shape = MaterialTheme.shapes.small,
+        color = background,
+        shape = CardShape,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Text(
             modifier = Modifier.padding(16.dp),
@@ -2382,3 +2460,208 @@ private fun StatusRow(row: String) {
         )
     }
 }
+
+@Composable
+private fun SettingsActionCard(
+    strings: GrayinStrings,
+    working: Boolean,
+    onIndex: () -> Unit,
+    onOpenModelDownload: (String?) -> Unit,
+    onImportModel: () -> Unit,
+    onDeleteModel: () -> Unit,
+) {
+    GrayinCard {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                enabled = !working,
+                onClick = onIndex,
+                modifier = Modifier.fillMaxWidth(),
+                shape = CardShape,
+            ) {
+                IconText(
+                    icon = Icons.Filled.PlayArrow,
+                    text = if (working) strings.indexing else strings.indexNow,
+                )
+            }
+            OutlinedButton(
+                enabled = !working,
+                onClick = { onOpenModelDownload(null) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = CardShape,
+            ) {
+                IconText(Icons.Filled.Search, strings.openLocalGemmaModelDownloadPage)
+            }
+            Button(
+                enabled = !working,
+                onClick = onImportModel,
+                modifier = Modifier.fillMaxWidth(),
+                shape = CardShape,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+            ) {
+                IconText(Icons.Filled.Add, strings.importLocalGemmaModel)
+            }
+            OutlinedButton(
+                enabled = !working,
+                onClick = onDeleteModel,
+                modifier = Modifier.fillMaxWidth(),
+                shape = CardShape,
+            ) {
+                IconText(Icons.Filled.Delete, strings.deleteLocalGemmaModel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun GrayinCard(
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surface,
+    borderColor: Color = MaterialTheme.colorScheme.outlineVariant,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = containerColor,
+        shape = CardShape,
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
+        border = BorderStroke(1.dp, borderColor),
+    ) {
+        Box(modifier = Modifier.padding(16.dp)) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
+@Composable
+private fun SupportingText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun EvidenceRow(text: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .size(6.dp),
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.primary,
+                shape = RoundedCornerShape(50.dp),
+                content = {},
+            )
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun SupportingRow(text: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 7.dp)
+                .size(5.dp),
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(50.dp),
+                content = {},
+            )
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun IconText(
+    icon: ImageVector,
+    text: String,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(text)
+    }
+}
+
+private enum class PillTone {
+    Success,
+    Info,
+    Warning,
+    Neutral,
+}
+
+@Composable
+private fun StatusPill(
+    text: String,
+    tone: PillTone,
+) {
+    val (background, foreground) = when (tone) {
+        PillTone.Success -> Color(0xFFDFF3E7) to Color(0xFF145534)
+        PillTone.Info -> Color(0xFFE3EEF4) to Color(0xFF174A63)
+        PillTone.Warning -> Color(0xFFFFEAC2) to Color(0xFF684600)
+        PillTone.Neutral -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        color = background,
+        contentColor = foreground,
+        shape = RoundedCornerShape(100.dp),
+    ) {
+        Text(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+private fun sourceStatusTone(
+    source: ConnectorUiState,
+    strings: GrayinStrings,
+): PillTone {
+    return when (source.status) {
+        strings.indexed -> PillTone.Success
+        strings.selected -> PillTone.Info
+        strings.notImplemented -> PillTone.Warning
+        else -> PillTone.Neutral
+    }
+}
+
+private val CardShape = RoundedCornerShape(8.dp)

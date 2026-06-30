@@ -92,6 +92,7 @@ data class ConnectorUiState(
     val name: String,
     val status: String,
     val sensitivity: String,
+    val indexedSourceReferenceCount: Int = 0,
     val canInvoke: Boolean = false,
     val invokeLabel: String,
     val requiredPermissions: List<String> = emptyList(),
@@ -974,6 +975,7 @@ class GrayinMemoryController(
                 strings = strings,
             ),
             sensitivity = strings.sensitivityLabel(connector.metadata.sensitivity),
+            indexedSourceReferenceCount = sourceReferences.count { it.connectorId == connectorId },
             canInvoke = !isLocalFiles && permissionState.canRequestPermission &&
                 (
                     !state.consentEnabled ||
