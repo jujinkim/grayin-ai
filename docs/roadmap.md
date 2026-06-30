@@ -28,7 +28,8 @@ Current phase status: usable local Text/Markdown MVP is complete.
 
 - Implement online weather provider behind `OnlineEnrichmentGateway`.
 - Add PDF/OCR local-file indexing.
-- Configure Grayin dedicated model server URL and checksum.
+- Set up Grayin dedicated model hosting on object storage/CDN, with fixed download URL, immutable release path, manifest, file size, SHA-256 checksum, and license/terms URL.
+- Configure Grayin dedicated model catalog URL and checksum after hosted release artifact is available.
 - Run app-specific Gemma LoRA/QLoRA training, evaluate against grounded-answer benchmarks, and publish final `.litertlm` outside git.
 - Add signed model integrity checks for downloaded/imported local model weights.
 - Implement encrypted export/import runtime.
