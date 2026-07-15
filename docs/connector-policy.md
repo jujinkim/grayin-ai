@@ -60,6 +60,14 @@ App Usage supports explicit usage-access settings permission plus app-level conn
 
 Notifications supports explicit notification-listener settings access plus app-level connection before indexing future notification arrivals. Its application-package allowlist is empty by default, so no notification content is read until the user adds an exact Android package name. The listener checks the package before reading notification extras, reads allowed title/text transiently, skips security-code notifications, emits derived notification signal events/citations/source references, and does not store raw notification text. Revocation clears both source enablement and the allowlist.
 
+## Indexing Modes
+
+- Calendar, Photos, App Usage, and user-selected Local Files are background-scannable after their existing consent is valid.
+- Location is foreground-only. Grayin does not request background-location permission, so WorkManager must never invoke the location connector.
+- Notifications are event-driven. The listener derives and stores allowed arrivals immediately; Grayin cannot reconstruct notifications that arrived before listener consent and must not retain raw notification text for later scheduled processing.
+
+Automatic indexing plans only background-scannable connectors. Foreground-only connectors remain available through explicit user actions, and event-driven connectors do not show a misleading manual historical-index action.
+
 ## MVP API Boundary
 
 The MVP connector interface exposes only:

@@ -8,6 +8,7 @@ import android.provider.CalendarContract
 import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorDeleteResult
 import ai.grayin.core.connector.ConnectorMetadata
+import ai.grayin.core.connector.ConnectorIndexingMode
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorRevokeResult
 import ai.grayin.core.connector.ConnectorScanResult
@@ -293,6 +294,7 @@ class CalendarConnector(
             sourceKinds = setOf(SourceKind.CALENDAR),
             connectorCapabilities = setOf(ConnectorCapability.CALENDAR),
             memoryCapabilities = setOf(MemoryCapability.HAS_TIME, MemoryCapability.HAS_CALENDAR),
+            indexingMode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
             defaultEnabled = false,
             sensitivity = SensitivityLevel.HIGH,
         )

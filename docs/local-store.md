@@ -37,6 +37,6 @@ Index invalidation must run after connector-level delete so retrieval cannot cit
 
 - SQLCipher encrypts derived memory at rest.
 - Android Keystore protects the SQLCipher passphrase.
-- The database uses an explicit `PRAGMA user_version` migration boundary and rejects schemas newer than this app understands.
+- The database uses explicit `PRAGMA user_version` migrations: v1 creates derived-memory tables and v2 adds the encrypted indexing queue/runtime tables. It rejects schemas newer than this app understands.
 - Android backup remains disabled in the manifest.
 - Export/import must use a separately documented encrypted envelope before backup or transfer is added.

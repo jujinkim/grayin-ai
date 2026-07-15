@@ -10,6 +10,7 @@ import android.os.Process
 import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorDeleteResult
 import ai.grayin.core.connector.ConnectorMetadata
+import ai.grayin.core.connector.ConnectorIndexingMode
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorRevokeResult
 import ai.grayin.core.connector.ConnectorScanResult
@@ -283,6 +284,7 @@ class AppUsageConnector(
             sourceKinds = setOf(SourceKind.APP_USAGE),
             connectorCapabilities = setOf(ConnectorCapability.APP_USAGE),
             memoryCapabilities = setOf(MemoryCapability.HAS_TIME, MemoryCapability.HAS_APP_USAGE),
+            indexingMode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
             defaultEnabled = false,
             sensitivity = SensitivityLevel.VERY_HIGH,
         )

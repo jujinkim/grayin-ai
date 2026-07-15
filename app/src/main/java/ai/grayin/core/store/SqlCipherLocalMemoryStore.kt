@@ -4,6 +4,19 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import ai.grayin.core.connector.ConnectorScanResult
+import ai.grayin.core.indexing.IndexingFailureCode
+import ai.grayin.core.indexing.AutomaticIndexingOutcome
+import ai.grayin.core.indexing.AutomaticIndexingRuntimeStatus
+import ai.grayin.core.indexing.AutomaticIndexingRuntimeStore
+import ai.grayin.core.indexing.IndexingQueue
+import ai.grayin.core.indexing.IndexingQueueItem
+import ai.grayin.core.indexing.IndexingQueueSnapshot
+import ai.grayin.core.indexing.IndexingQueueState
+import ai.grayin.core.indexing.IndexingQueueValidator
+import ai.grayin.core.indexing.IndexingSkipReason
+import ai.grayin.core.indexing.IndexingTask
+import ai.grayin.core.indexing.IndexingTrigger
+import ai.grayin.core.indexing.LeaseRecoveryResult
 import ai.grayin.core.model.AppUsageSummary
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.DailyMemorySummary
@@ -23,7 +36,7 @@ class SqlCipherLocalMemoryStore(
     private val context: Context,
     private val passphraseProvider: StorePassphraseProvider = AndroidKeystorePassphraseProvider(),
     private val databaseName: String = DB_NAME,
-) : LocalMemoryStore {
+) : LocalMemoryStore, IndexingQueue, AutomaticIndexingRuntimeStore {
     override suspend fun saveConnectorScan(scanResult: ConnectorScanResult): StoreWriteResult = withDatabase { db ->
         db.beginTransaction()
         try {
@@ -248,6 +261,333 @@ class SqlCipherLocalMemoryStore(
         }
     }
 
+    override suspend fun enqueue(tasks: List<IndexingTask>): List<IndexingQueueItem> = withDatabase { db ->
+        db.beginTransaction()
+        try {
+            val items = tasks.map { task ->
+                val item = IndexingQueueItem(task = task)
+                val inserted = db.insertWithOnConflict(
+                    TABLE_INDEXING_QUEUE,
+                    null,
+                    item.toValues(),
+                    SQLiteDatabase.CONFLICT_IGNORE,
+                ) >= 0L
+                if (inserted) {
+                    item
+                } else {
+                    val existing = when (task.trigger) {
+                        IndexingTrigger.MANUAL -> readQueueItem(db, task.id)
+                        IndexingTrigger.AUTOMATIC -> readAutomaticQueueItem(
+                            db = db,
+                            connectorId = task.connectorId,
+                            automaticWindowKey = checkNotNull(task.automaticWindowKey),
+                        )
+                    }
+                    checkNotNull(existing) { "Could not resolve an indexing queue conflict." }
+                    if (existing.id == task.id) {
+                        require(existing.task == task) { "An indexing task ID already belongs to different work." }
+                    }
+                    existing
+                }
+            }
+            db.setTransactionSuccessful()
+            items
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    override suspend fun claimNextAtomically(
+        leaseOwner: String,
+        claimedAt: Instant,
+        leaseUntil: Instant,
+    ): IndexingQueueItem? = withDatabase { db ->
+        require(leaseOwner.isNotBlank()) { "Lease owner must not be blank." }
+        require(leaseUntil.isAfter(claimedAt)) { "Lease expiry must be after claim time." }
+        db.beginTransaction()
+        try {
+            val pending = readQueueItems(
+                db = db,
+                selection = "state = ?",
+                selectionArgs = arrayOf(IndexingQueueState.PENDING.name),
+                orderBy = "requested_at_ms ASC, id ASC",
+                limit = 1,
+            ).firstOrNull()
+            val claimed = pending?.let { item ->
+                val updated = item.copy(
+                    state = IndexingQueueState.RUNNING,
+                    attemptCount = item.attemptCount + 1,
+                    lastAttemptAt = claimedAt,
+                    startedAt = claimedAt,
+                    leaseOwner = leaseOwner,
+                    leaseUntil = leaseUntil,
+                )
+                val count = db.update(
+                    TABLE_INDEXING_QUEUE,
+                    updated.toValues(),
+                    "id = ? AND state = ?",
+                    arrayOf(item.id, IndexingQueueState.PENDING.name),
+                )
+                if (count == 1) updated else null
+            }
+            db.setTransactionSuccessful()
+            claimed
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    override suspend fun complete(
+        itemId: String,
+        leaseOwner: String,
+        attemptCount: Int,
+        completedAt: Instant,
+        indexedEventCount: Int,
+    ): IndexingQueueItem {
+        require(indexedEventCount >= 0) { "Indexed event count must not be negative." }
+        return transitionTerminal(itemId, leaseOwner, attemptCount, IndexingQueueState.COMPLETED) { current ->
+            current.copy(
+                state = IndexingQueueState.COMPLETED,
+                indexedEventCount = indexedEventCount,
+                completedAt = completedAt,
+                leaseOwner = null,
+                leaseUntil = null,
+            )
+        }
+    }
+
+    override suspend fun skip(
+        itemId: String,
+        leaseOwner: String,
+        attemptCount: Int,
+        completedAt: Instant,
+        reason: IndexingSkipReason,
+    ): IndexingQueueItem {
+        return transitionTerminal(itemId, leaseOwner, attemptCount, IndexingQueueState.SKIPPED) { current ->
+            current.copy(
+                state = IndexingQueueState.SKIPPED,
+                completedAt = completedAt,
+                leaseOwner = null,
+                leaseUntil = null,
+                skipReason = reason,
+            )
+        }
+    }
+
+    override suspend fun fail(
+        itemId: String,
+        leaseOwner: String,
+        attemptCount: Int,
+        completedAt: Instant,
+        code: IndexingFailureCode,
+    ): IndexingQueueItem {
+        return transitionTerminal(itemId, leaseOwner, attemptCount, IndexingQueueState.FAILED) { current ->
+            current.copy(
+                state = IndexingQueueState.FAILED,
+                completedAt = completedAt,
+                leaseOwner = null,
+                leaseUntil = null,
+                failureCode = code,
+            )
+        }
+    }
+
+    override suspend fun recoverExpiredLeases(
+        now: Instant,
+        maxAttempts: Int,
+    ): LeaseRecoveryResult = withDatabase { db ->
+        require(maxAttempts > 0) { "Maximum attempts must be positive." }
+        var requeuedCount = 0
+        var failedCount = 0
+        db.beginTransaction()
+        try {
+            val expired = readQueueItems(
+                db = db,
+                selection = "state = ? AND lease_until_ms <= ?",
+                selectionArgs = arrayOf(IndexingQueueState.RUNNING.name, now.toEpochMilli().toString()),
+                orderBy = "lease_until_ms ASC, id ASC",
+            )
+            expired.forEach { item ->
+                val updated = if (item.attemptCount >= maxAttempts) {
+                    failedCount += 1
+                    item.copy(
+                        state = IndexingQueueState.FAILED,
+                        completedAt = now,
+                        leaseOwner = null,
+                        leaseUntil = null,
+                        failureCode = IndexingFailureCode.ATTEMPT_LIMIT_REACHED,
+                    )
+                } else {
+                    requeuedCount += 1
+                    item.copy(
+                        state = IndexingQueueState.PENDING,
+                        startedAt = null,
+                        leaseOwner = null,
+                        leaseUntil = null,
+                    )
+                }
+                val count = db.update(
+                    TABLE_INDEXING_QUEUE,
+                    updated.toValues(),
+                    "id = ? AND state = ? AND lease_until_ms <= ?",
+                    arrayOf(item.id, IndexingQueueState.RUNNING.name, now.toEpochMilli().toString()),
+                )
+                check(count == 1) { "An expired indexing lease changed concurrently." }
+            }
+            db.setTransactionSuccessful()
+            LeaseRecoveryResult(requeuedCount = requeuedCount, failedCount = failedCount)
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    override suspend fun snapshot(limit: Int): IndexingQueueSnapshot = withDatabase { db ->
+        require(limit in 1..MAX_QUEUE_SNAPSHOT_ITEMS) { "Queue snapshot limit is out of range." }
+        db.beginTransaction()
+        try {
+            val items = readQueueItems(
+                db = db,
+                orderBy = "requested_at_ms DESC, id DESC",
+                limit = limit,
+            )
+            val queueDepth = countQueueRows(db, "state = ?", arrayOf(IndexingQueueState.PENDING.name))
+            val runningConnectorIds = readQueueItems(
+                db = db,
+                selection = "state = ?",
+                selectionArgs = arrayOf(IndexingQueueState.RUNNING.name),
+                orderBy = "requested_at_ms ASC, id ASC",
+            ).mapTo(mutableSetOf()) { it.connectorId }
+            val lastCompletedAt = db.rawQuery(
+                "SELECT MAX(completed_at_ms) FROM $TABLE_INDEXING_QUEUE WHERE completed_at_ms IS NOT NULL",
+                null,
+            ).use { cursor ->
+                if (cursor.moveToFirst() && !cursor.isNull(0)) Instant.ofEpochMilli(cursor.getLong(0)) else null
+            }
+            val snapshot = IndexingQueueSnapshot(
+                items = items,
+                queueDepth = queueDepth,
+                runningConnectorIds = runningConnectorIds,
+                lastCompletedAt = lastCompletedAt,
+            )
+            db.setTransactionSuccessful()
+            snapshot
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    override suspend fun pruneTerminalItems(
+        completedBefore: Instant,
+        keepLatest: Int,
+    ): Int = withDatabase { db ->
+        require(keepLatest >= 0) { "Latest-item retention must not be negative." }
+        db.beginTransaction()
+        try {
+            val terminalItems = readQueueItems(
+                db = db,
+                selection = "state IN (?, ?, ?)",
+                selectionArgs = arrayOf(
+                    IndexingQueueState.COMPLETED.name,
+                    IndexingQueueState.SKIPPED.name,
+                    IndexingQueueState.FAILED.name,
+                ),
+                orderBy = "completed_at_ms DESC, id DESC",
+            )
+            val idsToDelete = terminalItems.drop(keepLatest)
+                .filter { item -> item.completedAt?.isBefore(completedBefore) == true }
+                .map { it.id }
+            deleteIn(db, TABLE_INDEXING_QUEUE, "id", idsToDelete)
+            db.setTransactionSuccessful()
+            idsToDelete.size
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    override suspend fun loadAutomaticIndexingRuntime(): AutomaticIndexingRuntimeStatus = withDatabase { db ->
+        db.query(
+            TABLE_AUTOMATIC_INDEXING_RUNTIME,
+            null,
+            "singleton_id = 1",
+            null,
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) {
+                AutomaticIndexingRuntimeStatus()
+            } else {
+                AutomaticIndexingRuntimeStatus(
+                    lastCheckedAt = cursor.nullableInstantFromMillis("last_checked_at_ms"),
+                    lastStartedAt = cursor.nullableInstantFromMillis("last_started_at_ms"),
+                    lastCompletedAt = cursor.nullableInstantFromMillis("last_completed_at_ms"),
+                    lastOutcome = cursor.nullableString("last_outcome")
+                        ?.let { enumValueOf<AutomaticIndexingOutcome>(it) },
+                    lastSkipReason = cursor.nullableString("last_skip_reason")
+                        ?.let { enumValueOf<IndexingSkipReason>(it) },
+                    lastFailureCode = cursor.nullableString("last_failure_code")
+                        ?.let { enumValueOf<IndexingFailureCode>(it) },
+                    lastIndexedEventCount = cursor.int("last_indexed_event_count"),
+                )
+            }
+        }
+    }
+
+    override suspend fun saveAutomaticIndexingRuntime(status: AutomaticIndexingRuntimeStatus) {
+        withDatabase { db ->
+            val values = ContentValues().apply {
+                put("singleton_id", 1)
+                putNullableLong("last_checked_at_ms", status.lastCheckedAt?.toEpochMilli())
+                putNullableLong("last_started_at_ms", status.lastStartedAt?.toEpochMilli())
+                putNullableLong("last_completed_at_ms", status.lastCompletedAt?.toEpochMilli())
+                put("last_outcome", status.lastOutcome?.name)
+                put("last_skip_reason", status.lastSkipReason?.name)
+                put("last_failure_code", status.lastFailureCode?.name)
+                put("last_indexed_event_count", status.lastIndexedEventCount)
+            }
+            check(
+                db.insertWithOnConflict(
+                    TABLE_AUTOMATIC_INDEXING_RUNTIME,
+                    null,
+                    values,
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                ) >= 0L,
+            ) { "Could not persist automatic indexing status." }
+        }
+    }
+
+    private fun transitionTerminal(
+        itemId: String,
+        leaseOwner: String,
+        attemptCount: Int,
+        targetState: IndexingQueueState,
+        transition: (IndexingQueueItem) -> IndexingQueueItem,
+    ): IndexingQueueItem = withDatabase { db ->
+        require(itemId.isNotBlank()) { "Indexing item ID must not be blank." }
+        require(leaseOwner.isNotBlank()) { "Lease owner must not be blank." }
+        require(attemptCount > 0) { "Attempt count must be positive." }
+        db.beginTransaction()
+        try {
+            val current = checkNotNull(readQueueItem(db, itemId)) { "Indexing queue item was not found." }
+            IndexingQueueValidator.requireValidTransition(current.state, targetState)
+            require(current.leaseOwner == leaseOwner) { "Indexing lease owner does not match." }
+            require(current.attemptCount == attemptCount) { "Indexing attempt does not match." }
+            val updated = transition(current)
+            check(updated.state == targetState) { "Indexing transition produced the wrong state." }
+            val count = db.update(
+                TABLE_INDEXING_QUEUE,
+                updated.toValues(),
+                "id = ? AND state = ? AND lease_owner = ? AND attempt_count = ?",
+                arrayOf(itemId, current.state.name, leaseOwner, attemptCount.toString()),
+            )
+            check(count == 1) { "Indexing queue item changed concurrently." }
+            db.setTransactionSuccessful()
+            updated
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     private fun <T> writeRows(
         rows: List<T>,
         insert: (SQLiteDatabase, T) -> Long,
@@ -296,10 +636,30 @@ class SqlCipherLocalMemoryStore(
         check(version <= SCHEMA_VERSION) {
             "Local-store schema version $version is newer than supported version $SCHEMA_VERSION."
         }
-        if (version >= SCHEMA_VERSION) return
+        if (version < CORE_SCHEMA_VERSION) {
+            runMigration(db, CORE_SCHEMA_VERSION, ::createCoreTables)
+        }
+        if (version < INDEXING_SCHEMA_VERSION) {
+            runMigration(db, INDEXING_SCHEMA_VERSION, ::createIndexingTables)
+        }
+    }
 
+    private fun runMigration(
+        db: SQLiteDatabase,
+        targetVersion: Int,
+        migrate: (SQLiteDatabase) -> Unit,
+    ) {
         db.beginTransaction()
         try {
+            migrate(db)
+            db.execSQL("PRAGMA user_version = $targetVersion")
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    private fun createCoreTables(db: SQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS $TABLE_SOURCE_REFERENCES (
@@ -394,10 +754,167 @@ class SqlCipherLocalMemoryStore(
             )
             """.trimIndent(),
         )
-            db.execSQL("PRAGMA user_version = $SCHEMA_VERSION")
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
+    }
+
+    private fun createIndexingTables(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_INDEXING_QUEUE (
+                id TEXT PRIMARY KEY NOT NULL,
+                connector_id TEXT NOT NULL,
+                trigger TEXT NOT NULL,
+                requested_at_ms INTEGER NOT NULL,
+                from_at_ms INTEGER,
+                until_at_ms INTEGER,
+                force_refresh INTEGER NOT NULL,
+                automatic_window_key TEXT,
+                state TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                indexed_event_count INTEGER NOT NULL DEFAULT 0,
+                last_attempt_at_ms INTEGER,
+                started_at_ms INTEGER,
+                completed_at_ms INTEGER,
+                lease_owner TEXT,
+                lease_until_ms INTEGER,
+                skip_reason TEXT,
+                failure_code TEXT
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE INDEX IF NOT EXISTS indexing_queue_claim_idx
+            ON $TABLE_INDEXING_QUEUE(state, requested_at_ms, id)
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS indexing_queue_automatic_window_idx
+            ON $TABLE_INDEXING_QUEUE(automatic_window_key, connector_id)
+            WHERE trigger = 'AUTOMATIC'
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_AUTOMATIC_INDEXING_RUNTIME (
+                singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+                last_checked_at_ms INTEGER,
+                last_started_at_ms INTEGER,
+                last_completed_at_ms INTEGER,
+                last_outcome TEXT,
+                last_skip_reason TEXT,
+                last_failure_code TEXT,
+                last_indexed_event_count INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun IndexingQueueItem.toValues(): ContentValues = ContentValues().apply {
+        put("id", task.id)
+        put("connector_id", task.connectorId)
+        put("trigger", task.trigger.name)
+        put("requested_at_ms", task.requestedAt.toEpochMilli())
+        putNullableLong("from_at_ms", task.from?.toEpochMilli())
+        putNullableLong("until_at_ms", task.until?.toEpochMilli())
+        put("force_refresh", if (task.forceRefresh) 1 else 0)
+        put("automatic_window_key", task.automaticWindowKey)
+        put("state", state.name)
+        put("attempt_count", attemptCount)
+        put("indexed_event_count", indexedEventCount)
+        putNullableLong("last_attempt_at_ms", lastAttemptAt?.toEpochMilli())
+        putNullableLong("started_at_ms", startedAt?.toEpochMilli())
+        putNullableLong("completed_at_ms", completedAt?.toEpochMilli())
+        put("lease_owner", leaseOwner)
+        putNullableLong("lease_until_ms", leaseUntil?.toEpochMilli())
+        put("skip_reason", skipReason?.name)
+        put("failure_code", failureCode?.name)
+    }
+
+    private fun ContentValues.putNullableLong(key: String, value: Long?) {
+        if (value == null) putNull(key) else put(key, value)
+    }
+
+    private fun readQueueItem(db: SQLiteDatabase, itemId: String): IndexingQueueItem? {
+        return readQueueItems(
+            db = db,
+            selection = "id = ?",
+            selectionArgs = arrayOf(itemId),
+            orderBy = "requested_at_ms ASC",
+            limit = 1,
+        ).firstOrNull()
+    }
+
+    private fun readAutomaticQueueItem(
+        db: SQLiteDatabase,
+        connectorId: String,
+        automaticWindowKey: String,
+    ): IndexingQueueItem? {
+        return readQueueItems(
+            db = db,
+            selection = "trigger = ? AND connector_id = ? AND automatic_window_key = ?",
+            selectionArgs = arrayOf(IndexingTrigger.AUTOMATIC.name, connectorId, automaticWindowKey),
+            orderBy = "requested_at_ms ASC",
+            limit = 1,
+        ).firstOrNull()
+    }
+
+    private fun readQueueItems(
+        db: SQLiteDatabase,
+        selection: String? = null,
+        selectionArgs: Array<String>? = null,
+        orderBy: String,
+        limit: Int? = null,
+    ): List<IndexingQueueItem> {
+        return db.query(
+            TABLE_INDEXING_QUEUE,
+            null,
+            selection,
+            selectionArgs,
+            null,
+            null,
+            orderBy,
+            limit?.toString(),
+        ).useRows { row -> row.toIndexingQueueItem() }
+    }
+
+    private fun Cursor.toIndexingQueueItem(): IndexingQueueItem {
+        val task = IndexingTask(
+            id = string("id"),
+            connectorId = string("connector_id"),
+            trigger = enumValueOf(string("trigger")),
+            requestedAt = instantFromMillis("requested_at_ms"),
+            from = nullableInstantFromMillis("from_at_ms"),
+            until = nullableInstantFromMillis("until_at_ms"),
+            forceRefresh = int("force_refresh") == 1,
+            automaticWindowKey = nullableString("automatic_window_key"),
+        )
+        return IndexingQueueItem(
+            task = task,
+            state = enumValueOf(string("state")),
+            attemptCount = int("attempt_count"),
+            indexedEventCount = int("indexed_event_count"),
+            lastAttemptAt = nullableInstantFromMillis("last_attempt_at_ms"),
+            startedAt = nullableInstantFromMillis("started_at_ms"),
+            completedAt = nullableInstantFromMillis("completed_at_ms"),
+            leaseOwner = nullableString("lease_owner"),
+            leaseUntil = nullableInstantFromMillis("lease_until_ms"),
+            skipReason = nullableString("skip_reason")?.let { enumValueOf<IndexingSkipReason>(it) },
+            failureCode = nullableString("failure_code")?.let { enumValueOf<IndexingFailureCode>(it) },
+        )
+    }
+
+    private fun countQueueRows(
+        db: SQLiteDatabase,
+        selection: String,
+        selectionArgs: Array<String>,
+    ): Int {
+        return db.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE_INDEXING_QUEUE WHERE $selection",
+            selectionArgs,
+        ).use { cursor ->
+            check(cursor.moveToFirst()) { "Could not count indexing queue rows." }
+            cursor.getInt(0)
         }
     }
 
@@ -685,6 +1202,15 @@ class SqlCipherLocalMemoryStore(
         return nullableString(columnName)?.let(Instant::parse)
     }
 
+    private fun Cursor.instantFromMillis(columnName: String): Instant {
+        return Instant.ofEpochMilli(long(columnName))
+    }
+
+    private fun Cursor.nullableInstantFromMillis(columnName: String): Instant? {
+        val index = getColumnIndexOrThrow(columnName)
+        return if (isNull(index)) null else Instant.ofEpochMilli(getLong(index))
+    }
+
     private fun Cursor.nullableDouble(columnName: String): Double? {
         val index = getColumnIndexOrThrow(columnName)
         return if (isNull(index)) null else getDouble(index)
@@ -703,8 +1229,13 @@ class SqlCipherLocalMemoryStore(
         const val TABLE_DAILY_SUMMARIES = "daily_summaries"
         const val TABLE_PLACE_CLUSTERS = "place_clusters"
         const val TABLE_APP_USAGE_SUMMARIES = "app_usage_summaries"
+        const val TABLE_INDEXING_QUEUE = "indexing_queue"
+        const val TABLE_AUTOMATIC_INDEXING_RUNTIME = "automatic_indexing_runtime"
         const val SQLITE_BIND_LIMIT = 900
-        const val SCHEMA_VERSION = 1
+        const val CORE_SCHEMA_VERSION = 1
+        const val INDEXING_SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = INDEXING_SCHEMA_VERSION
+        const val MAX_QUEUE_SNAPSHOT_ITEMS = 500
 
         @Volatile
         var loaded = false

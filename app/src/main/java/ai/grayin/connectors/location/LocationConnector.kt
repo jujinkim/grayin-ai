@@ -8,6 +8,7 @@ import android.location.LocationManager
 import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorDeleteResult
 import ai.grayin.core.connector.ConnectorMetadata
+import ai.grayin.core.connector.ConnectorIndexingMode
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorRevokeResult
 import ai.grayin.core.connector.ConnectorScanResult
@@ -302,6 +303,7 @@ class LocationConnector(
             sourceKinds = setOf(SourceKind.LOCATION),
             connectorCapabilities = setOf(ConnectorCapability.LOCATION),
             memoryCapabilities = setOf(MemoryCapability.HAS_TIME, MemoryCapability.HAS_LOCATION),
+            indexingMode = ConnectorIndexingMode.FOREGROUND_ONLY,
             defaultEnabled = false,
             sensitivity = SensitivityLevel.HIGH,
         )

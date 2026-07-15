@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorDeleteResult
 import ai.grayin.core.connector.ConnectorMetadata
+import ai.grayin.core.connector.ConnectorIndexingMode
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorRevokeResult
 import ai.grayin.core.connector.ConnectorScanResult
@@ -306,6 +307,7 @@ class PhotosConnector(
                 MemoryCapability.HAS_TIME,
                 MemoryCapability.HAS_MEDIA,
             ),
+            indexingMode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
             defaultEnabled = false,
             sensitivity = SensitivityLevel.HIGH,
         )

@@ -23,6 +23,7 @@ import ai.grayin.core.ai.ModelDownloadStatus
 import ai.grayin.core.ai.ModelInstallRecord
 import ai.grayin.core.ai.ModelInstallStore
 import ai.grayin.core.connector.ConnectorPermissionState
+import ai.grayin.core.connector.ConnectorIndexingMode
 import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.InvokableMemoryConnector
@@ -531,7 +532,7 @@ class GrayinMemoryController(
             canInvoke = !isLocalFiles && permissionState.canRequestPermission && !state.enabled,
             requiredPermissions = permissionState.requiredPlatformPermissions,
             canAdd = isLocalFiles,
-            canIndex = state.enabled,
+            canIndex = state.enabled && connector.metadata.indexingMode != ConnectorIndexingMode.EVENT_DRIVEN,
             canRevoke = state.enabled,
             canDelete = sourceReferences.any { it.connectorId == connectorId },
             notificationAllowedPackages = if (connectorId == NotificationConnector.CONNECTOR_ID) {

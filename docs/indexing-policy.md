@@ -1,17 +1,20 @@
 # Indexing Policy
 
-MVP defines indexing queue contracts, policy models, manual source indexing controls, and persisted automatic indexing settings. It does not add a background scheduler.
+Grayin persists connector-level indexing tasks in the same SQLCipher database as derived memory. The WorkManager scheduler and command executor are the next runtime layer; automatic settings alone do not imply that background work has run.
 
 ## Processing States
 
-Indexing work uses `ProcessingState`:
+The durable indexing queue uses these states:
 
 - pending
 - running
 - completed
-- failed
 - skipped
-- stale
+- failed
+
+Claiming is an atomic `PENDING -> RUNNING` transaction with a worker lease and attempt count. A terminal acknowledgement must match both the current lease owner and attempt number, so a stale worker cannot complete newer reclaimed work. Expired leases are requeued below the attempt limit and become a stable failure code at the limit. Completed, skipped, and failed states are terminal. Automatic tasks are unique per low-usage-window key and connector.
+
+Queue rows contain only connector ID, trigger, requested date range, timestamps, state, lease metadata, stable reason codes, and derived output counts. They never contain source content, connector output, exception text, URIs, evidence, prompts, or answers. Old terminal rows are bounded by age and count pruning.
 
 ## Automatic Indexing
 
@@ -22,7 +25,7 @@ Automatic indexing is allowed only when the policy and current device conditions
 - battery percentage is at or above the configured minimum
 - thermal state is unknown, nominal, or warm when thermal gating is enabled
 
-Hot or critical thermal states block automatic indexing.
+Hot or critical thermal states block automatic indexing. Invalid time windows, unknown or low battery, missing charging state, and thermal blocks return stable reason enums rather than exception messages.
 
 The Sources page lets the user persist automatic indexing preferences:
 
@@ -30,7 +33,13 @@ The Sources page lets the user persist automatic indexing preferences:
 - charging-only requirement
 - low-usage start and end hour
 
-Future background schedulers must read these preferences before indexing. Manual indexing is still available even when automatic indexing is off.
+The background scheduler must read these preferences and re-evaluate live device conditions on every run. Manual indexing remains available even when automatic indexing is off.
+
+## Connector Execution Modes
+
+- Calendar, Photos, App Usage, and Local Files are background-scannable after consent.
+- Location is foreground-only because Grayin does not request background-location permission.
+- Notifications are event-driven and are derived on allowed arrivals; no raw notification is retained for scheduled replay.
 
 ## Manual Commands
 
@@ -43,6 +52,6 @@ Manual indexing command models support:
 
 ## UI Status
 
-`IndexingStatus` exposes queue depth, running connector IDs, last completion time, automatic policy, manual command availability, and visible queue items.
+The encrypted queue exposes queue depth, running connector IDs, last completion time, recent task states, stable skipped/failure reasons, and indexed-event counts. A separate singleton runtime row records the last automatic check/run outcome without source data.
 
 Status text must describe indexing state without logging or retaining source originals.

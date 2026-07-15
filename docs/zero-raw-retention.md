@@ -80,3 +80,5 @@ Core model types must not add fields for original file bytes, raw notification t
 `LocalMemoryStore` accepts only source references, derived memory events, citations, daily summaries, place clusters, app usage summaries, connector-scoped delete requests, and index invalidation requests.
 
 It must never add a method that accepts original file bytes, raw notification text, raw message text, raw local-file content, raw calendar records, raw usage event dumps, or raw source payloads.
+
+The SQLCipher indexing queue may persist only connector/command metadata, date-range bounds, timestamps, leases, attempt/count fields, and stable skip/failure codes. It must never persist connector output, exception messages, source URIs, or source-derived text.

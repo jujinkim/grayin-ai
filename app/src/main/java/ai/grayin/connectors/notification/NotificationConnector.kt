@@ -6,6 +6,7 @@ import android.provider.Settings
 import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorDeleteResult
 import ai.grayin.core.connector.ConnectorMetadata
+import ai.grayin.core.connector.ConnectorIndexingMode
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorRevokeResult
 import ai.grayin.core.connector.ConnectorScanResult
@@ -160,6 +161,7 @@ class NotificationConnector(
                 MemoryCapability.HAS_TRANSPORT,
                 MemoryCapability.HAS_TEXT,
             ),
+            indexingMode = ConnectorIndexingMode.EVENT_DRIVEN,
             defaultEnabled = false,
             sensitivity = SensitivityLevel.VERY_HIGH,
         )
