@@ -1,5 +1,11 @@
 package ai.grayin.core.store
 
+import ai.grayin.core.model.AppUsageSummary
+import ai.grayin.core.model.DailyMemorySummary
+import ai.grayin.core.model.DerivedMemoryEvent
+import ai.grayin.core.model.MemoryCitation
+import ai.grayin.core.model.PlaceCluster
+import ai.grayin.core.model.SourceReference
 import java.time.Instant
 
 data class StoreWriteResult(
@@ -15,7 +21,18 @@ data class StoreDeleteResult(
     val deletedDerivedMemoryEventIds: List<String> = emptyList(),
     val deletedCitationIds: List<String> = emptyList(),
     val deletedSummaryIds: List<String> = emptyList(),
+    val deletedPlaceClusterIds: List<String> = emptyList(),
+    val deletedAppUsageSummaryIds: List<String> = emptyList(),
     val completedAt: Instant,
+)
+
+data class LocalMemorySnapshot(
+    val sourceReferences: List<SourceReference>,
+    val derivedMemoryEvents: List<DerivedMemoryEvent>,
+    val citations: List<MemoryCitation>,
+    val dailySummaries: List<DailyMemorySummary>,
+    val placeClusters: List<PlaceCluster>,
+    val appUsageSummaries: List<AppUsageSummary>,
 )
 
 data class IndexInvalidationRequest(
@@ -29,4 +46,3 @@ data class IndexInvalidationResult(
     val invalidatedIndexIds: List<String> = emptyList(),
     val completedAt: Instant,
 )
-

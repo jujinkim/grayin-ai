@@ -1,5 +1,6 @@
 package ai.grayin.core.store
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -16,12 +17,16 @@ interface StorePassphraseProvider {
 }
 
 class AndroidKeystorePassphraseProvider : StorePassphraseProvider {
-    override fun getPassphrase(context: Context): String {
+    @SuppressLint("ApplySharedPref")
+    override fun getPassphrase(context: Context): String = synchronized(PASSPHRASE_LOCK) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val encrypted = prefs.getString(KEY_ENCRYPTED_PASSPHRASE, null)
         val iv = prefs.getString(KEY_IV, null)
+        check((encrypted == null) == (iv == null)) {
+            "The encrypted local-store passphrase metadata is incomplete."
+        }
         if (encrypted != null && iv != null) {
-            return decrypt(
+            return@synchronized decrypt(
                 ciphertext = Base64.decode(encrypted, Base64.NO_WRAP),
                 iv = Base64.decode(iv, Base64.NO_WRAP),
             )
@@ -29,11 +34,12 @@ class AndroidKeystorePassphraseProvider : StorePassphraseProvider {
 
         val passphrase = generatePassphrase()
         val encryption = encrypt(passphrase)
-        prefs.edit()
+        val persisted = prefs.edit()
             .putString(KEY_ENCRYPTED_PASSPHRASE, Base64.encodeToString(encryption.ciphertext, Base64.NO_WRAP))
             .putString(KEY_IV, Base64.encodeToString(encryption.iv, Base64.NO_WRAP))
-            .apply()
-        return passphrase
+            .commit()
+        check(persisted) { "Could not persist the encrypted local-store passphrase." }
+        passphrase
     }
 
     private fun generatePassphrase(): String {
@@ -81,6 +87,7 @@ class AndroidKeystorePassphraseProvider : StorePassphraseProvider {
     )
 
     private companion object {
+        val PASSPHRASE_LOCK = Any()
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
         const val KEY_ALIAS = "grayin_local_store_key"
         const val PREFS_NAME = "grayin_secure_store"

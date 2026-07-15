@@ -11,6 +11,8 @@ import ai.grayin.core.model.NotificationDerivedEventKind
 import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceKind
 import ai.grayin.core.model.SourceReference
+import ai.grayin.core.connector.ConnectorScanResult
+import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.store.SqlCipherLocalMemoryStore
 import java.security.MessageDigest
 import java.time.Instant
@@ -31,9 +33,16 @@ class GrayinNotificationListenerService : NotificationListenerService() {
         val result = extractor.extract(sbn) ?: return
         scope.launch {
             val store = SqlCipherLocalMemoryStore(applicationContext)
-            store.saveSourceReferences(listOf(result.sourceReference))
-            store.saveDerivedMemoryEvents(listOf(result.derivedEvent))
-            store.saveCitations(listOf(result.citation))
+            store.saveConnectorScan(
+                ConnectorScanResult(
+                    connectorId = NotificationConnector.CONNECTOR_ID,
+                    processingState = ProcessingState.COMPLETED,
+                    sourceReferences = listOf(result.sourceReference),
+                    derivedEvents = listOf(result.derivedEvent),
+                    citations = listOf(result.citation),
+                    scannedAt = result.indexedAt,
+                ),
+            )
             NotificationConnector.markIndexed(applicationContext, result.indexedAt)
         }
     }

@@ -15,6 +15,7 @@ Grayin AI uses SQLCipher persistence with an Android Keystore-protected passphra
 - Generate or unwrap database keys locally on device.
 - Do not sync, export, log, or transmit database keys.
 - Rotate keys only through an explicit local migration path.
+- Serialize first-time passphrase creation and persist the encrypted passphrase synchronously before returning it to a database opener.
 
 ## Export and Import Plan
 

@@ -113,7 +113,6 @@ class LocationConnector(
         val coordinate = location.roundedCoordinate()
         val placeLookup = placeLookup(coordinate)
         val result = location.toExtractionResult(now, sampleAt, coordinate, placeLookup)
-        prefs().edit().putString(KEY_LAST_INDEXED_AT, now.toString()).apply()
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = ProcessingState.COMPLETED,
@@ -122,6 +121,12 @@ class LocationConnector(
             citations = listOf(result.citation),
             scannedAt = now,
         )
+    }
+
+    override suspend fun onScanStored(scanResult: ConnectorScanResult) {
+        if (scanResult.processingState == ProcessingState.COMPLETED) {
+            prefs().edit().putString(KEY_LAST_INDEXED_AT, scanResult.scannedAt.toString()).apply()
+        }
     }
 
     override suspend fun revoke(): ConnectorRevokeResult {

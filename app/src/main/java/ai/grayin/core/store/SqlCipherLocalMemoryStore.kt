@@ -3,37 +3,116 @@ package ai.grayin.core.store
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
+import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.model.AppUsageSummary
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.DailyMemorySummary
 import ai.grayin.core.model.DerivedMemoryEvent
+import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MemoryCitation
 import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.PlaceCluster
+import ai.grayin.core.model.SourceAvailability
 import ai.grayin.core.model.SourceReference
 import java.time.Instant
+import java.time.LocalDate
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 import org.json.JSONArray
 
 class SqlCipherLocalMemoryStore(
     private val context: Context,
     private val passphraseProvider: StorePassphraseProvider = AndroidKeystorePassphraseProvider(),
+    private val databaseName: String = DB_NAME,
 ) : LocalMemoryStore {
-    override suspend fun saveSourceReferences(sourceReferences: List<SourceReference>): StoreWriteResult {
-        return writeRows(sourceReferences) { db, source ->
-            db.insertWithOnConflict(TABLE_SOURCE_REFERENCES, null, source.toValues(), SQLiteDatabase.CONFLICT_REPLACE)
-        }
-    }
+    override suspend fun saveConnectorScan(scanResult: ConnectorScanResult): StoreWriteResult = withDatabase { db ->
+        db.beginTransaction()
+        try {
+            ConnectorScanValidator.validate(scanResult)
+            val existingCount = existingIds(
+                db,
+                TABLE_SOURCE_REFERENCES,
+                scanResult.sourceReferences.map { it.id },
+            ).size + existingIds(
+                db,
+                TABLE_DERIVED_EVENTS,
+                scanResult.derivedEvents.map { it.id },
+            ).size + existingIds(
+                db,
+                TABLE_CITATIONS,
+                scanResult.citations.map { it.id },
+            ).size + existingIds(
+                db,
+                TABLE_PLACE_CLUSTERS,
+                scanResult.placeClusters.map { it.id },
+            ).size + existingIds(
+                db,
+                TABLE_APP_USAGE_SUMMARIES,
+                scanResult.appUsageSummaries.map { it.id },
+            ).size
 
-    override suspend fun saveDerivedMemoryEvents(events: List<DerivedMemoryEvent>): StoreWriteResult {
-        return writeRows(events) { db, event ->
-            db.insertWithOnConflict(TABLE_DERIVED_EVENTS, null, event.toValues(), SQLiteDatabase.CONFLICT_REPLACE)
-        }
-    }
-
-    override suspend fun saveCitations(citations: List<MemoryCitation>): StoreWriteResult {
-        return writeRows(citations) { db, citation ->
-            db.insertWithOnConflict(TABLE_CITATIONS, null, citation.toValues(), SQLiteDatabase.CONFLICT_REPLACE)
+            scanResult.sourceReferences.forEach { source ->
+                check(
+                    db.insertWithOnConflict(
+                        TABLE_SOURCE_REFERENCES,
+                        null,
+                        source.toValues(),
+                        SQLiteDatabase.CONFLICT_REPLACE,
+                    ) >= 0L,
+                ) { "Could not persist connector source reference." }
+            }
+            scanResult.derivedEvents.forEach { event ->
+                check(
+                    db.insertWithOnConflict(
+                        TABLE_DERIVED_EVENTS,
+                        null,
+                        event.toValues(),
+                        SQLiteDatabase.CONFLICT_REPLACE,
+                    ) >= 0L,
+                ) { "Could not persist connector derived event." }
+            }
+            scanResult.citations.forEach { citation ->
+                check(
+                    db.insertWithOnConflict(
+                        TABLE_CITATIONS,
+                        null,
+                        citation.toValues(),
+                        SQLiteDatabase.CONFLICT_REPLACE,
+                    ) >= 0L,
+                ) { "Could not persist connector citation." }
+            }
+            scanResult.placeClusters.forEach { cluster ->
+                check(
+                    db.insertWithOnConflict(
+                        TABLE_PLACE_CLUSTERS,
+                        null,
+                        cluster.toValues(),
+                        SQLiteDatabase.CONFLICT_REPLACE,
+                    ) >= 0L,
+                ) { "Could not persist connector place cluster." }
+            }
+            scanResult.appUsageSummaries.forEach { summary ->
+                check(
+                    db.insertWithOnConflict(
+                        TABLE_APP_USAGE_SUMMARIES,
+                        null,
+                        summary.toValues(),
+                        SQLiteDatabase.CONFLICT_REPLACE,
+                    ) >= 0L,
+                ) { "Could not persist connector app-usage summary." }
+            }
+            db.setTransactionSuccessful()
+            val totalCount = scanResult.sourceReferences.size +
+                scanResult.derivedEvents.size +
+                scanResult.citations.size +
+                scanResult.placeClusters.size +
+                scanResult.appUsageSummaries.size
+            StoreWriteResult(
+                insertedCount = totalCount - existingCount,
+                updatedCount = existingCount,
+                completedAt = Instant.now(),
+            )
+        } finally {
+            db.endTransaction()
         }
     }
 
@@ -56,33 +135,65 @@ class SqlCipherLocalMemoryStore(
     }
 
     override suspend fun deleteConnectorData(connectorId: String): StoreDeleteResult = withDatabase { db ->
-        val sourceIds = readSourceReferences(db, connectorId).map { it.id }
-        val eventsToDelete = readDerivedMemoryEvents(db).filter { event ->
-            event.sourceReferenceIds.any { it in sourceIds }
-        }
-        val eventIds = eventsToDelete.map { it.id }
-        val citationsToDelete = readCitations(db).filter { citation ->
-            citation.sourceReferenceId in sourceIds || citation.derivedMemoryEventId in eventIds
-        }
-
         db.beginTransaction()
         try {
-            deleteIn(db, TABLE_CITATIONS, "id", citationsToDelete.map { it.id })
-            deleteIn(db, TABLE_DERIVED_EVENTS, "id", eventIds)
-            deleteIn(db, TABLE_SOURCE_REFERENCES, "id", sourceIds)
-            db.delete(TABLE_DAILY_SUMMARIES, null, null)
+            val sourceIds = readSourceReferences(db, connectorId).map { it.id }.toSet()
+            val eventIds = readDerivedMemoryEvents(db)
+                .filter { event ->
+                    event.id.startsWith("event:$connectorId:") ||
+                        event.sourceReferenceIds.any { it in sourceIds }
+                }
+                .map { it.id }
+                .toSet()
+            val citationIds = readCitations(db)
+                .filter { citation ->
+                    citation.id.startsWith("citation:$connectorId:") ||
+                        citation.sourceReferenceId in sourceIds ||
+                        citation.derivedMemoryEventId in eventIds
+                }
+                .map { it.id }
+            val placeClusterIds = readPlaceClusters(db)
+                .filter { cluster ->
+                    cluster.id.startsWith("place-cluster:$connectorId:") ||
+                        cluster.sourceReferenceIds.any { it in sourceIds }
+                }
+                .map { it.id }
+                .toSet()
+            val appUsageSummaryIds = readAppUsageSummaries(db)
+                .filter { summary ->
+                    summary.id.startsWith("app-usage:$connectorId:") ||
+                        summary.sourceReferenceIds.any { it in sourceIds }
+                }
+                .map { it.id }
+                .toSet()
+            val dailySummaryIds = readDailySummaries(db)
+                .filter { summary ->
+                    summary.derivedMemoryEventIds.any { it in eventIds } ||
+                        summary.placeClusterIds.any { it in placeClusterIds } ||
+                        summary.appUsageSummaryIds.any { it in appUsageSummaryIds }
+                }
+                .map { it.id }
+
+            deleteIn(db, TABLE_DAILY_SUMMARIES, "id", dailySummaryIds)
+            deleteIn(db, TABLE_PLACE_CLUSTERS, "id", placeClusterIds.toList())
+            deleteIn(db, TABLE_APP_USAGE_SUMMARIES, "id", appUsageSummaryIds.toList())
+            deleteIn(db, TABLE_CITATIONS, "id", citationIds)
+            deleteIn(db, TABLE_DERIVED_EVENTS, "id", eventIds.toList())
+            deleteIn(db, TABLE_SOURCE_REFERENCES, "id", sourceIds.toList())
             db.setTransactionSuccessful()
+            StoreDeleteResult(
+                connectorId = connectorId,
+                deletedSourceReferenceIds = sourceIds.toList(),
+                deletedDerivedMemoryEventIds = eventIds.toList(),
+                deletedCitationIds = citationIds,
+                deletedSummaryIds = dailySummaryIds,
+                deletedPlaceClusterIds = placeClusterIds.toList(),
+                deletedAppUsageSummaryIds = appUsageSummaryIds.toList(),
+                completedAt = Instant.now(),
+            )
         } finally {
             db.endTransaction()
         }
-
-        StoreDeleteResult(
-            connectorId = connectorId,
-            deletedSourceReferenceIds = sourceIds,
-            deletedDerivedMemoryEventIds = eventIds,
-            deletedCitationIds = citationsToDelete.map { it.id },
-            completedAt = Instant.now(),
-        )
     }
 
     override suspend fun invalidateIndexesAfterDelete(
@@ -107,16 +218,46 @@ class SqlCipherLocalMemoryStore(
         readCitations(db)
     }
 
+    override suspend fun loadDailySummaries(): List<DailyMemorySummary> = withDatabase { db ->
+        readDailySummaries(db)
+    }
+
+    override suspend fun loadPlaceClusters(): List<PlaceCluster> = withDatabase { db ->
+        readPlaceClusters(db)
+    }
+
+    override suspend fun loadAppUsageSummaries(): List<AppUsageSummary> = withDatabase { db ->
+        readAppUsageSummaries(db)
+    }
+
+    override suspend fun loadSnapshot(): LocalMemorySnapshot = withDatabase { db ->
+        db.beginTransaction()
+        try {
+            val snapshot = LocalMemorySnapshot(
+                sourceReferences = readSourceReferences(db, connectorId = null),
+                derivedMemoryEvents = readDerivedMemoryEvents(db),
+                citations = readCitations(db),
+                dailySummaries = readDailySummaries(db),
+                placeClusters = readPlaceClusters(db),
+                appUsageSummaries = readAppUsageSummaries(db),
+            )
+            db.setTransactionSuccessful()
+            snapshot
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     private fun <T> writeRows(
         rows: List<T>,
         insert: (SQLiteDatabase, T) -> Long,
     ): StoreWriteResult = withDatabase { db ->
         var inserted = 0
-        var skipped = 0
         db.beginTransaction()
         try {
             rows.forEach { row ->
-                if (insert(db, row) >= 0L) inserted += 1 else skipped += 1
+                check(insert(db, row) >= 0L) { "Could not persist a derived-memory record." }
+                inserted += 1
             }
             db.setTransactionSuccessful()
         } finally {
@@ -125,14 +266,13 @@ class SqlCipherLocalMemoryStore(
         StoreWriteResult(
             insertedCount = inserted,
             updatedCount = 0,
-            skippedCount = skipped,
             completedAt = Instant.now(),
         )
     }
 
     private fun <T> withDatabase(block: (SQLiteDatabase) -> T): T {
         loadSqlCipher()
-        val dbFile = context.getDatabasePath(DB_NAME)
+        val dbFile = context.getDatabasePath(databaseName)
         dbFile.parentFile?.mkdirs()
         val db = SQLiteDatabase.openOrCreateDatabase(
             dbFile.absolutePath,
@@ -149,6 +289,17 @@ class SqlCipherLocalMemoryStore(
     }
 
     private fun ensureSchema(db: SQLiteDatabase) {
+        val version = db.rawQuery("PRAGMA user_version", null).use { cursor ->
+            check(cursor.moveToFirst()) { "Could not read the local-store schema version." }
+            cursor.getInt(0)
+        }
+        check(version <= SCHEMA_VERSION) {
+            "Local-store schema version $version is newer than supported version $SCHEMA_VERSION."
+        }
+        if (version >= SCHEMA_VERSION) return
+
+        db.beginTransaction()
+        try {
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS $TABLE_SOURCE_REFERENCES (
@@ -243,6 +394,31 @@ class SqlCipherLocalMemoryStore(
             )
             """.trimIndent(),
         )
+            db.execSQL("PRAGMA user_version = $SCHEMA_VERSION")
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    private fun existingIds(db: SQLiteDatabase, table: String, ids: List<String>): Set<String> {
+        if (ids.isEmpty()) return emptySet()
+        return buildSet {
+            ids.distinct().chunked(SQLITE_BIND_LIMIT).forEach { chunk ->
+                val placeholders = chunk.joinToString(",") { "?" }
+                db.query(
+                    table,
+                    arrayOf("id"),
+                    "id IN ($placeholders)",
+                    chunk.toTypedArray(),
+                    null,
+                    null,
+                    null,
+                ).use { cursor ->
+                    while (cursor.moveToNext()) add(cursor.getString(0))
+                }
+            }
+        }
     }
 
     private fun readSourceReferences(db: SQLiteDatabase, connectorId: String?): List<SourceReference> {
@@ -305,6 +481,59 @@ class SqlCipherLocalMemoryStore(
                     derivedMemoryEventId = row.nullableString("derived_memory_event_id"),
                     label = row.string("label"),
                     observedAt = row.nullableInstant("observed_at"),
+                    confidence = enumValueOf(row.string("confidence")),
+                )
+            }
+    }
+
+    private fun readDailySummaries(db: SQLiteDatabase): List<DailyMemorySummary> {
+        return db.query(TABLE_DAILY_SUMMARIES, null, null, null, null, null, "date DESC")
+            .useRows { row ->
+                DailyMemorySummary(
+                    id = row.string("id"),
+                    date = LocalDate.parse(row.string("date")),
+                    summary = row.string("summary"),
+                    derivedMemoryEventIds = decodeList(row.string("derived_memory_event_ids")),
+                    placeClusterIds = decodeList(row.string("place_cluster_ids")),
+                    appUsageSummaryIds = decodeList(row.string("app_usage_summary_ids")),
+                    confidence = enumValueOf(row.string("confidence")),
+                    missingSources = decodeList(row.string("missing_sources")).map(::decodeMissingSource),
+                )
+            }
+    }
+
+    private fun readPlaceClusters(db: SQLiteDatabase): List<PlaceCluster> {
+        return db.query(TABLE_PLACE_CLUSTERS, null, null, null, null, null, "last_seen_at DESC")
+            .useRows { row ->
+                PlaceCluster(
+                    id = row.string("id"),
+                    label = row.nullableString("label"),
+                    regionLabel = row.nullableString("region_label"),
+                    centroidLatitude = row.nullableDouble("centroid_latitude"),
+                    centroidLongitude = row.nullableDouble("centroid_longitude"),
+                    radiusMeters = row.nullableDouble("radius_meters"),
+                    firstSeenAt = row.nullableInstant("first_seen_at"),
+                    lastSeenAt = row.nullableInstant("last_seen_at"),
+                    visitCount = row.int("visit_count"),
+                    sourceReferenceIds = decodeList(row.string("source_reference_ids")),
+                    confidence = enumValueOf(row.string("confidence")),
+                )
+            }
+    }
+
+    private fun readAppUsageSummaries(db: SQLiteDatabase): List<AppUsageSummary> {
+        return db.query(TABLE_APP_USAGE_SUMMARIES, null, null, null, null, null, "date DESC")
+            .useRows { row ->
+                AppUsageSummary(
+                    id = row.string("id"),
+                    sourceReferenceIds = decodeList(row.string("source_reference_ids")),
+                    date = LocalDate.parse(row.string("date")),
+                    packageName = row.string("package_name"),
+                    appAlias = row.nullableString("app_alias"),
+                    category = enumValueOf(row.string("category")),
+                    totalDurationMinutes = row.long("total_duration_minutes"),
+                    launchCount = row.nullableInt("launch_count"),
+                    activeTimeBucketLabels = decodeList(row.string("active_time_bucket_labels")),
                     confidence = enumValueOf(row.string("confidence")),
                 )
             }
@@ -394,7 +623,32 @@ class SqlCipherLocalMemoryStore(
     }
 
     private fun MissingSource.toStorageString(): String {
-        return listOf(capability.name, availability.name, explanation, connectorId.orEmpty()).joinToString("|")
+        return JSONArray()
+            .put(capability.name)
+            .put(availability.name)
+            .put(explanation)
+            .put(connectorId)
+            .toString()
+    }
+
+    private fun decodeMissingSource(value: String): MissingSource {
+        if (value.startsWith("[")) {
+            val array = JSONArray(value)
+            return MissingSource(
+                capability = enumValueOf<MemoryCapability>(array.getString(0)),
+                availability = enumValueOf<SourceAvailability>(array.getString(1)),
+                explanation = array.getString(2),
+                connectorId = if (array.isNull(3)) null else array.getString(3).takeIf(String::isNotBlank),
+            )
+        }
+        val legacy = value.split('|', limit = 4)
+        require(legacy.size == 4) { "Invalid stored missing-source record." }
+        return MissingSource(
+            capability = enumValueOf(legacy[0]),
+            availability = enumValueOf(legacy[1]),
+            explanation = legacy[2],
+            connectorId = legacy[3].takeIf(String::isNotBlank),
+        )
     }
 
     private fun encodeList(values: List<String>): String {
@@ -418,6 +672,10 @@ class SqlCipherLocalMemoryStore(
 
     private fun Cursor.string(columnName: String): String = getString(getColumnIndexOrThrow(columnName))
 
+    private fun Cursor.int(columnName: String): Int = getInt(getColumnIndexOrThrow(columnName))
+
+    private fun Cursor.long(columnName: String): Long = getLong(getColumnIndexOrThrow(columnName))
+
     private fun Cursor.nullableString(columnName: String): String? {
         val index = getColumnIndexOrThrow(columnName)
         return if (isNull(index)) null else getString(index)
@@ -425,6 +683,16 @@ class SqlCipherLocalMemoryStore(
 
     private fun Cursor.nullableInstant(columnName: String): Instant? {
         return nullableString(columnName)?.let(Instant::parse)
+    }
+
+    private fun Cursor.nullableDouble(columnName: String): Double? {
+        val index = getColumnIndexOrThrow(columnName)
+        return if (isNull(index)) null else getDouble(index)
+    }
+
+    private fun Cursor.nullableInt(columnName: String): Int? {
+        val index = getColumnIndexOrThrow(columnName)
+        return if (isNull(index)) null else getInt(index)
     }
 
     private companion object {
@@ -436,13 +704,20 @@ class SqlCipherLocalMemoryStore(
         const val TABLE_PLACE_CLUSTERS = "place_clusters"
         const val TABLE_APP_USAGE_SUMMARIES = "app_usage_summaries"
         const val SQLITE_BIND_LIMIT = 900
+        const val SCHEMA_VERSION = 1
 
+        @Volatile
         var loaded = false
 
+        val SQLCIPHER_LOAD_LOCK = Any()
+
         fun loadSqlCipher() {
-            if (!loaded) {
-                System.loadLibrary("sqlcipher")
-                loaded = true
+            if (loaded) return
+            synchronized(SQLCIPHER_LOAD_LOCK) {
+                if (!loaded) {
+                    System.loadLibrary("sqlcipher")
+                    loaded = true
+                }
             }
         }
     }

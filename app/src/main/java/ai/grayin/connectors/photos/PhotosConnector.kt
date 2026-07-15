@@ -97,9 +97,6 @@ class PhotosConnector(
         val from = scope.from ?: now.minus(DEFAULT_PAST_WINDOW)
         val until = scope.until ?: now
         val rows = readPhotoRows(from, until, now)
-        if (rows.isNotEmpty()) {
-            prefs().edit().putString(KEY_LAST_INDEXED_AT, now.toString()).apply()
-        }
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = if (rows.isEmpty()) ProcessingState.SKIPPED else ProcessingState.COMPLETED,
@@ -113,6 +110,12 @@ class PhotosConnector(
             },
             scannedAt = now,
         )
+    }
+
+    override suspend fun onScanStored(scanResult: ConnectorScanResult) {
+        if (scanResult.processingState == ProcessingState.COMPLETED) {
+            prefs().edit().putString(KEY_LAST_INDEXED_AT, scanResult.scannedAt.toString()).apply()
+        }
     }
 
     override suspend fun revoke(): ConnectorRevokeResult {

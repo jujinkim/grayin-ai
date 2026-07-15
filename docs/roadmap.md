@@ -53,6 +53,7 @@ The current Open-Meteo public endpoint is suitable only for non-commercial proto
 
 ### 3. Automatic Indexing Runtime
 
+- [x] Make connector scan storage atomic, version the SQLCipher schema, and expose a consistent derived-memory snapshot.
 - [ ] Add a persistent indexing queue implementation and command executor.
 - [ ] Add WorkManager scheduling for enabled automatic indexing.
 - [ ] Enforce charging, low-usage window, battery, and thermal conditions at runtime.

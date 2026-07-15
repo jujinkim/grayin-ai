@@ -105,10 +105,6 @@ class LocalFilesConnector(
             }
         }
         val state = if (results.isEmpty()) ProcessingState.SKIPPED else ProcessingState.COMPLETED
-        if (results.isNotEmpty()) {
-            prefs().edit().putString(KEY_LAST_INDEXED_AT, now.toString()).apply()
-        }
-
         return ConnectorScanResult(
             connectorId = metadata.connectorId,
             processingState = state,
@@ -118,6 +114,12 @@ class LocalFilesConnector(
             missingSources = missing,
             scannedAt = now,
         )
+    }
+
+    override suspend fun onScanStored(scanResult: ConnectorScanResult) {
+        if (scanResult.processingState == ProcessingState.COMPLETED) {
+            prefs().edit().putString(KEY_LAST_INDEXED_AT, scanResult.scannedAt.toString()).apply()
+        }
     }
 
     override suspend fun revoke(): ConnectorRevokeResult {

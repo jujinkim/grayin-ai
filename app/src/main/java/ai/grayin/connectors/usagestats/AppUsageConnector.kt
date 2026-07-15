@@ -98,9 +98,6 @@ class AppUsageConnector(
         val until = scope.until ?: now
         val from = scope.from ?: until.minus(DEFAULT_USAGE_WINDOW)
         val rows = readUsageRows(from, until, now)
-        if (rows.isNotEmpty()) {
-            prefs().edit().putString(KEY_LAST_INDEXED_AT, now.toString()).apply()
-        }
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = if (rows.isEmpty()) ProcessingState.SKIPPED else ProcessingState.COMPLETED,
@@ -114,6 +111,12 @@ class AppUsageConnector(
             },
             scannedAt = now,
         )
+    }
+
+    override suspend fun onScanStored(scanResult: ConnectorScanResult) {
+        if (scanResult.processingState == ProcessingState.COMPLETED) {
+            prefs().edit().putString(KEY_LAST_INDEXED_AT, scanResult.scannedAt.toString()).apply()
+        }
     }
 
     override suspend fun revoke(): ConnectorRevokeResult {

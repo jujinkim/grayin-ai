@@ -128,8 +128,9 @@ class GrayinMemoryController(
     private val fallbackAnswerGenerator: GroundedAnswerGenerator = TemplateGroundedAnswerGenerator(),
 ) {
     suspend fun snapshot(strings: GrayinStrings): GrayinSnapshot = withContext(Dispatchers.IO) {
-        val sourceReferences = store.loadSourceReferences()
-        val events = store.loadDerivedMemoryEvents()
+        val stored = store.loadSnapshot()
+        val sourceReferences = stored.sourceReferences
+        val events = stored.derivedMemoryEvents
         val localModelStatus = runCatching { localLanguageModel.status() }
             .getOrDefault(LocalModelStatus.UNAVAILABLE)
         GrayinSnapshot(
@@ -222,9 +223,8 @@ class GrayinMemoryController(
 
     suspend fun indexLocalFiles(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val scanResult = localFilesConnector.scan(ConnectorScanScope(forceRefresh = true))
-        store.saveSourceReferences(scanResult.sourceReferences)
-        store.saveDerivedMemoryEvents(scanResult.derivedEvents)
-        store.saveCitations(scanResult.citations)
+        store.saveConnectorScan(scanResult)
+        localFilesConnector.onScanStored(scanResult)
         when {
             scanResult.derivedEvents.isNotEmpty() -> {
                 strings.indexedLocalFileEvents(scanResult.derivedEvents.size)
@@ -401,9 +401,8 @@ class GrayinMemoryController(
 
     private suspend fun scanAndStore(connector: MemoryConnector): ConnectorScanResult {
         val scanResult = connector.scan(ConnectorScanScope(forceRefresh = true))
-        store.saveSourceReferences(scanResult.sourceReferences)
-        store.saveDerivedMemoryEvents(scanResult.derivedEvents)
-        store.saveCitations(scanResult.citations)
+        store.saveConnectorScan(scanResult)
+        connector.onScanStored(scanResult)
         return scanResult
     }
 
@@ -411,15 +410,16 @@ class GrayinMemoryController(
         val trimmedQuery = query.trim()
         if (trimmedQuery.isEmpty()) return@withContext emptyAnswer(strings.enterMemoryQuestion, strings)
 
+        val stored = store.loadSnapshot()
         val planning = ScopedQueryPlanning.resolve(
             query = trimmedQuery,
-            events = store.loadDerivedMemoryEvents(),
+            events = stored.derivedMemoryEvents,
             planner = queryPlanner,
         )
         val plan = planning.plan
         val evidenceItems = evidenceFor(trimmedQuery, plan, planning.events)
         val usedCitationIds = evidenceItems.flatMap { it.citationIds }.toSet()
-        val citations = store.loadCitations().filter { it.id in usedCitationIds }
+        val citations = stored.citations.filter { it.id in usedCitationIds }
         val missingSources = MissingEvidenceResolver.resolve(
             plan = plan,
             hasEvidence = evidenceItems.isNotEmpty(),
