@@ -99,6 +99,7 @@ class LocalFilesConnector internal constructor(
             connectorId = metadata.connectorId,
             displayName = metadata.displayName,
             enabled = selected.isNotEmpty(),
+            consentEnabled = selected.isNotEmpty(),
             availability = if (selected.isEmpty()) SourceAvailability.DISABLED else SourceAvailability.AVAILABLE,
             permissionGranted = selected.isNotEmpty(),
             capabilities = metadata.connectorCapabilities,

@@ -39,12 +39,14 @@ class CalendarConnector(
 
     override suspend fun currentState(): ConnectorState {
         val permissionGranted = hasCalendarPermission()
-        val enabled = permissionGranted && isEnabled()
+        val consentEnabled = isEnabled()
+        val enabled = permissionGranted && consentEnabled
         val lastIndexedAt = prefs().getString(KEY_LAST_INDEXED_AT, null)?.let(Instant::parse)
         return ConnectorState(
             connectorId = CONNECTOR_ID,
             displayName = metadata.displayName,
             enabled = enabled,
+            consentEnabled = consentEnabled,
             availability = when {
                 enabled -> SourceAvailability.AVAILABLE
                 permissionGranted -> SourceAvailability.DISABLED
@@ -99,17 +101,31 @@ class CalendarConnector(
 
         val from = scope.from ?: now.minus(DEFAULT_PAST_WINDOW)
         val until = scope.until ?: now.plus(DEFAULT_FUTURE_WINDOW)
-        val rows = readCalendarRows(from, until, now)
+        val readResult = readCalendarRows(from, until, now)
+        val rows = readResult.rows
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = if (rows.isEmpty()) ProcessingState.SKIPPED else ProcessingState.COMPLETED,
             sourceReferences = rows.map { it.sourceReference },
             derivedEvents = rows.map { it.derivedEvent },
             citations = rows.map { it.citation },
-            missingSources = if (rows.isEmpty()) {
-                missingSources(SourceAvailability.NOT_INDEXED, ConnectorScanIssueCode.NO_CALENDAR_EVENTS_IN_RANGE)
-            } else {
-                emptyList()
+            missingSources = buildList {
+                if (rows.isEmpty()) {
+                    addAll(
+                        missingSources(
+                            SourceAvailability.NOT_INDEXED,
+                            ConnectorScanIssueCode.NO_CALENDAR_EVENTS_IN_RANGE,
+                        ),
+                    )
+                }
+                if (readResult.outputLimited) {
+                    addAll(
+                        missingSources(
+                            SourceAvailability.STALE,
+                            ConnectorScanIssueCode.CALENDAR_EVENT_LIMIT_REACHED,
+                        ),
+                    )
+                }
             },
             scopeFrom = from,
             scopeUntil = until,
@@ -144,7 +160,7 @@ class CalendarConnector(
         from: Instant,
         until: Instant,
         observedAt: Instant,
-    ): List<CalendarExtractionResult> {
+    ): CalendarReadResult {
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
             .appendPath(from.toEpochMilli().toString())
             .appendPath(until.toEpochMilli().toString())
@@ -156,12 +172,28 @@ class CalendarConnector(
             null,
             "${CalendarContract.Instances.BEGIN} ASC",
         )?.use { cursor ->
-            buildList {
-                while (cursor.moveToNext() && size < MAX_EVENTS_PER_SCAN) {
-                    add(cursor.toExtractionResult(observedAt))
-                }
+            val rows = mutableListOf<CalendarExtractionResult>()
+            var outputLimited = false
+            while (cursor.moveToNext()) {
+                    val beginMillis = cursor.getLong(1)
+                    val endMillis = if (cursor.isNull(2)) null else cursor.getLong(2)
+                    if (
+                        CalendarRangePolicy.overlaps(
+                            eventStartMillis = beginMillis,
+                            eventEndMillis = endMillis,
+                            fromMillis = from.toEpochMilli(),
+                            untilExclusiveMillis = until.toEpochMilli(),
+                        )
+                    ) {
+                        if (rows.size >= MAX_EVENTS_PER_SCAN) {
+                            outputLimited = true
+                            break
+                        }
+                        rows += cursor.toExtractionResult(observedAt)
+                    }
             }
-        }.orEmpty()
+            CalendarReadResult(rows, outputLimited)
+        } ?: CalendarReadResult(emptyList(), outputLimited = false)
     }
 
     private fun android.database.Cursor.toExtractionResult(observedAt: Instant): CalendarExtractionResult {
@@ -295,6 +327,11 @@ class CalendarConnector(
         val citation: MemoryCitation,
     )
 
+    private data class CalendarReadResult(
+        val rows: List<CalendarExtractionResult>,
+        val outputLimited: Boolean,
+    )
+
     companion object {
         const val CONNECTOR_ID = "calendar"
         val METADATA = ConnectorMetadata(
@@ -305,6 +342,7 @@ class CalendarConnector(
             memoryCapabilities = setOf(MemoryCapability.HAS_TIME, MemoryCapability.HAS_CALENDAR),
             indexingMode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
             defaultEnabled = false,
+            supportsDateRangeIndexing = true,
             sensitivity = SensitivityLevel.HIGH,
         )
 
@@ -329,5 +367,19 @@ class CalendarConnector(
             CalendarContract.Instances.CALENDAR_DISPLAY_NAME,
             CalendarContract.Instances.ALL_DAY,
         )
+    }
+}
+
+internal object CalendarRangePolicy {
+    fun overlaps(
+        eventStartMillis: Long,
+        eventEndMillis: Long?,
+        fromMillis: Long,
+        untilExclusiveMillis: Long,
+    ): Boolean {
+        require(fromMillis < untilExclusiveMillis) { "Calendar range must be half-open and non-empty." }
+        val minimumEnd = if (eventStartMillis == Long.MAX_VALUE) Long.MAX_VALUE else eventStartMillis + 1L
+        val effectiveEnd = eventEndMillis?.coerceAtLeast(minimumEnd) ?: minimumEnd
+        return eventStartMillis < untilExclusiveMillis && effectiveEnd > fromMillis
     }
 }

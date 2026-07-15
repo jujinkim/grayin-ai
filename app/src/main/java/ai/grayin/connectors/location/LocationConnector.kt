@@ -32,6 +32,7 @@ import ai.grayin.core.model.DerivedMemoryEventKind
 import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MemoryCitation
 import ai.grayin.core.model.MissingSource
+import ai.grayin.core.model.PlaceCluster
 import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceAvailability
@@ -50,12 +51,14 @@ class LocationConnector(
 
     override suspend fun currentState(): ConnectorState {
         val permissionGranted = hasLocationPermission()
-        val enabled = permissionGranted && isEnabled()
+        val consentEnabled = isEnabled()
+        val enabled = permissionGranted && consentEnabled
         val lastIndexedAt = prefs().getString(KEY_LAST_INDEXED_AT, null)?.let(Instant::parse)
         return ConnectorState(
             connectorId = CONNECTOR_ID,
             displayName = metadata.displayName,
             enabled = enabled,
+            consentEnabled = consentEnabled,
             availability = when {
                 enabled -> SourceAvailability.AVAILABLE
                 permissionGranted -> SourceAvailability.DISABLED
@@ -123,6 +126,7 @@ class LocationConnector(
             sourceReferences = listOf(result.sourceReference),
             derivedEvents = listOf(result.derivedEvent),
             citations = listOf(result.citation),
+            placeClusters = listOf(result.placeCluster),
             scannedAt = now,
         )
     }
@@ -181,12 +185,24 @@ class LocationConnector(
         coordinate: GeoCoordinate,
         placeLookup: PlaceLookupResult?,
     ): LocationExtractionResult {
-        val sourceHash = sha256("${provider.orEmpty()}:$time:${coordinate.latitude}:${coordinate.longitude}")
+        val sourceHash = sha256(
+            LocationPlaceClusterPolicy.sourceIdentityMaterial(
+                provider = provider,
+                sampleAt = sampleAt,
+                coordinate = coordinate,
+            ),
+        )
         val sourceId = "source:$CONNECTOR_ID:$sourceHash"
         val eventId = "event:$CONNECTOR_ID:$sourceHash"
         val citationId = "citation:$CONNECTOR_ID:$sourceHash"
-        val region = placeLookup?.displayLabel() ?: "lat ${coordinate.latitude}, lon ${coordinate.longitude}"
+        val regionLabel = placeLookup?.displayLabel()?.let(LocationPlaceClusterPolicy::closedRegionLabel)
+        val region = regionLabel ?: "lat ${coordinate.latitude}, lon ${coordinate.longitude}"
         val placeKeywords = placeLookup?.keywords().orEmpty()
+        val confidence = if (hasAccuracy() && accuracy.isFinite() && accuracy in 0f..250f) {
+            ConfidenceLevel.MEDIUM
+        } else {
+            ConfidenceLevel.LOW
+        }
         return LocationExtractionResult(
             sourceReference = SourceReference(
                 id = sourceId,
@@ -210,7 +226,7 @@ class LocationConnector(
                 labels = listOf("location", "place-visit", provider.orEmpty())
                     .plus(placeKeywords)
                     .filter { it.isNotBlank() },
-                confidence = if (accuracy <= 250f) ConfidenceLevel.MEDIUM else ConfidenceLevel.LOW,
+                confidence = confidence,
                 sensitivity = SensitivityLevel.HIGH,
                 citationIds = listOf(citationId),
                 createdAt = observedAt,
@@ -221,7 +237,17 @@ class LocationConnector(
                 derivedMemoryEventId = eventId,
                 label = "Location sample: $region",
                 observedAt = observedAt,
-                confidence = if (accuracy <= 250f) ConfidenceLevel.MEDIUM else ConfidenceLevel.LOW,
+                confidence = confidence,
+            ),
+            placeCluster = LocationPlaceClusterPolicy.create(
+                coordinate = coordinate,
+                sourceReferenceId = sourceId,
+                sampleAt = sampleAt,
+                regionLabel = regionLabel,
+                radiusMeters = accuracy
+                    .takeIf { value -> hasAccuracy() && value.isFinite() && value >= 0f }
+                    ?.toDouble(),
+                confidence = confidence,
             ),
         )
     }
@@ -231,10 +257,7 @@ class LocationConnector(
     }
 
     private fun Location.roundedCoordinate(): GeoCoordinate {
-        return GeoCoordinate(
-            latitude = round(latitude),
-            longitude = round(longitude),
-        )
+        return LocationPlaceClusterPolicy.roundedCoordinate(latitude, longitude)
     }
 
     private fun PlaceLookupResult.displayLabel(): String? {
@@ -245,7 +268,7 @@ class LocationConnector(
     }
 
     private fun PlaceLookupResult.keywords(): List<String> {
-        return listOf(localityLabel, regionLabel, countryCode).mapNotNull { it?.takeIf(String::isNotBlank) }
+        return listOf(localityLabel, regionLabel, countryCode).mapNotNull(LocationPlaceClusterPolicy::closedKeyword)
     }
 
     private fun skipped(
@@ -287,10 +310,6 @@ class LocationConnector(
 
     private fun prefs() = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private fun round(value: Double): Double {
-        return (value * COORDINATE_ROUNDING_FACTOR).roundToInt() / COORDINATE_ROUNDING_FACTOR
-    }
-
     private fun sha256(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) }.take(HASH_ID_CHARS)
@@ -300,6 +319,7 @@ class LocationConnector(
         val sourceReference: SourceReference,
         val derivedEvent: DerivedMemoryEvent,
         val citation: MemoryCitation,
+        val placeCluster: PlaceCluster,
     )
 
     companion object {
@@ -319,6 +339,83 @@ class LocationConnector(
         private const val KEY_ENABLED = "enabled"
         private const val KEY_LAST_INDEXED_AT = "last_indexed_at"
         private const val HASH_ID_CHARS = 32
-        private const val COORDINATE_ROUNDING_FACTOR = 1000.0
     }
+}
+
+internal object LocationPlaceClusterPolicy {
+    fun sourceIdentityMaterial(
+        provider: String?,
+        sampleAt: Instant,
+        coordinate: GeoCoordinate,
+    ): String {
+        val rounded = roundedCoordinate(coordinate.latitude, coordinate.longitude)
+        return "location-source-v1:${provider.orEmpty()}:$sampleAt:${rounded.latitude}:${rounded.longitude}"
+    }
+
+    fun roundedCoordinate(latitude: Double, longitude: Double): GeoCoordinate {
+        return GeoCoordinate(
+            latitude = roundAndNormalize(latitude),
+            longitude = roundAndNormalize(longitude),
+        )
+    }
+
+    fun create(
+        coordinate: GeoCoordinate,
+        sourceReferenceId: String,
+        sampleAt: Instant,
+        regionLabel: String?,
+        radiusMeters: Double? = null,
+        confidence: ConfidenceLevel,
+    ): PlaceCluster {
+        require(sourceReferenceId.startsWith("source:${LocationConnector.CONNECTOR_ID}:")) {
+            "A location place cluster must reference a location source."
+        }
+        val rounded = roundedCoordinate(coordinate.latitude, coordinate.longitude)
+        val identity = "location-place-cluster-v1:${rounded.latitude}:${rounded.longitude}"
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(identity.toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte -> "%02x".format(byte) }
+            .take(HASH_ID_CHARS)
+        return PlaceCluster(
+            id = "place-cluster:${LocationConnector.CONNECTOR_ID}:$digest",
+            regionLabel = closedRegionLabel(regionLabel),
+            centroidLatitude = rounded.latitude,
+            centroidLongitude = rounded.longitude,
+            radiusMeters = radiusMeters?.takeIf { it.isFinite() && it >= 0.0 }?.coerceAtMost(MAX_RADIUS_METERS),
+            firstSeenAt = sampleAt,
+            lastSeenAt = sampleAt,
+            visitCount = 1,
+            sourceReferenceIds = listOf(sourceReferenceId),
+            confidence = confidence,
+        )
+    }
+
+    fun closedRegionLabel(value: String?): String? {
+        return closedText(value, MAX_REGION_LABEL_CHARS)
+    }
+
+    fun closedKeyword(value: String?): String? {
+        return closedText(value, MAX_KEYWORD_CHARS)
+    }
+
+    private fun closedText(value: String?, maxChars: Int): String? {
+        val normalized = value
+            ?.trim()
+            ?.replace(WHITESPACE, " ")
+            ?.takeIf { text -> text.isNotBlank() && text.none(Char::isISOControl) }
+            ?: return null
+        return normalized.take(maxChars).trim().takeIf(String::isNotBlank)
+    }
+
+    private fun roundAndNormalize(value: Double): Double {
+        val rounded = (value * COORDINATE_ROUNDING_FACTOR).roundToInt() / COORDINATE_ROUNDING_FACTOR
+        return if (rounded == 0.0) 0.0 else rounded
+    }
+
+    private const val COORDINATE_ROUNDING_FACTOR = 1000.0
+    private const val HASH_ID_CHARS = 32
+    private const val MAX_REGION_LABEL_CHARS = 128
+    private const val MAX_KEYWORD_CHARS = 64
+    private const val MAX_RADIUS_METERS = 100_000.0
+    private val WHITESPACE = Regex("\\s+")
 }

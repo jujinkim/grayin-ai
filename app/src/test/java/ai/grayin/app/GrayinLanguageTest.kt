@@ -149,7 +149,7 @@ class GrayinLanguageTest {
             GrayinText.forOption(GrayinLanguageOption.JAPANESE).sourceConnectionTitle,
         )
         assertEquals(
-            "Source connection is unavailable until this connector is implemented.",
+            "Source connection is unavailable.",
             GrayinText.forOption(GrayinLanguageOption.ENGLISH).connectorConnectionUnavailable,
         )
     }

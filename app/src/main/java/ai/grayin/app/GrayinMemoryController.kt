@@ -39,7 +39,6 @@ import ai.grayin.core.model.EvidencePack
 import ai.grayin.core.model.MemoryCitation
 import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.ProcessingState
-import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceReference
 import ai.grayin.core.enrichment.OnlineEnrichmentPreferences
 import ai.grayin.core.indexing.ConnectorScanWriter
@@ -48,12 +47,12 @@ import ai.grayin.core.indexing.IndexConnector
 import ai.grayin.core.indexing.IndexNow
 import ai.grayin.core.indexing.IndexingCommand
 import ai.grayin.core.indexing.IndexingCommandExecutor
-import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.IndexingQueue
 import ai.grayin.core.indexing.IndexingQueueItem
 import ai.grayin.core.indexing.IndexingQueueState
 import ai.grayin.core.indexing.IndexingSkipReason
 import ai.grayin.core.indexing.IndexingTrigger
+import ai.grayin.core.indexing.ManualIndexDateRange
 import ai.grayin.core.retrieval.ConnectorScanMissingResolver
 import ai.grayin.core.retrieval.DefaultQueryPlanner
 import ai.grayin.core.retrieval.EvidenceEventSelector
@@ -78,7 +77,7 @@ import ai.grayin.core.transfer.TransferPayload
 import ai.grayin.core.transfer.TransferProducerMetadata
 import ai.grayin.core.transfer.TransferResult
 import java.time.Instant
-import java.util.Locale
+import java.time.ZoneId
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -97,7 +96,18 @@ data class ConnectorUiState(
     val canDelete: Boolean = false,
     val notificationAllowedPackages: List<String> = emptyList(),
     val onlineEnrichmentEnabled: Boolean? = null,
+    val detailRows: List<String> = emptyList(),
+    val supportsDateRangeIndexing: Boolean = false,
+    val lastRequestedScanRange: IndexedDateRangePresentation? = null,
 )
+
+sealed interface ConnectorConnectionResult {
+    data class Connected(val connectorId: String, val connectorName: String) : ConnectorConnectionResult
+
+    data class PermissionRequired(val connectorId: String) : ConnectorConnectionResult
+
+    data class Unavailable(val connectorId: String) : ConnectorConnectionResult
+}
 
 data class AnswerUiState(
     val answer: String,
@@ -220,7 +230,7 @@ class GrayinMemoryController(
             },
             indexingStatus = loadIndexingStatus(strings),
             timelineRows = timelineRows(events, strings),
-            placesRows = listOf(strings.noPlaceClusters),
+            placesRows = placeRows(stored.placeClusters, strings),
             settingsRows = listOf(
                 strings.networkPermissionRestricted,
                 strings.accountAbsent,
@@ -303,7 +313,7 @@ class GrayinMemoryController(
         return buildList {
             add(strings.localModelProvider(entry.providerLabel))
             add(strings.localModelLicense(entry.licenseLabel))
-            add(strings.localModelApproxSize(formatGigabytes(entry.approxSizeBytes)))
+            add(strings.localModelApproxSize(strings.formatGigabytes(entry.approxSizeBytes)))
             add(strings.localModelRecommendedRam(entry.recommendedRamGb))
             add(strings.localModelFileName(entry.fileName))
             if (entry.recommended) add(strings.localModelRecommended)
@@ -313,16 +323,12 @@ class GrayinMemoryController(
                 record.progressPercent?.let { progress -> add(strings.localModelProgress(progress)) }
             }
             if (record.status == ModelDownloadStatus.FAILED && record.failureCode != null) {
-                add(strings.localModelFailure(record.failureCode.storageKey))
+                add(strings.localModelFailure(record.failureCode))
             }
             if (record.status == ModelDownloadStatus.READY && record.installedBytes > 0L) {
-                add(strings.localModelInstalledSize(formatGigabytes(record.installedBytes)))
+                add(strings.localModelInstalledSize(strings.formatGigabytes(record.installedBytes)))
             }
         }
-    }
-
-    private fun formatGigabytes(bytes: Long): String {
-        return String.format(Locale.US, "%.2f GB", bytes / 1_000_000_000.0)
     }
 
     private suspend fun ocrLanguagePackOptions(strings: GrayinStrings): List<OcrLanguagePackUiState> {
@@ -334,7 +340,7 @@ class GrayinMemoryController(
                 name = strings.ocrLanguagePackName(entry.language),
                 status = strings.ocrLanguagePackStatus(record.status),
                 detailRows = buildList {
-                    add(strings.ocrLanguagePackSize(formatExactDownloadSize(entry.expectedSizeBytes)))
+                    add(strings.ocrLanguagePackSize(strings.formatExactDownloadSize(entry.expectedSizeBytes)))
                     add(strings.ocrLanguagePackLicense(entry.licenseLabel))
                     add(strings.ocrLanguagePackCatalogCommit(OcrLanguagePackCatalog.TESSDATA_FAST_COMMIT))
                     if (
@@ -362,10 +368,6 @@ class GrayinMemoryController(
         }
     }
 
-    private fun formatExactDownloadSize(bytes: Long): String {
-        return String.format(Locale.US, "%,d bytes (%.2f MB)", bytes, bytes / 1_000_000.0)
-    }
-
     suspend fun indexLocalFiles(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val result = enqueueAndDrain(IndexConnector(LocalFileMemoryExtractor.CONNECTOR_ID)).singleOrNull()
         singleIndexResult(
@@ -387,6 +389,25 @@ class GrayinMemoryController(
         )
     }
 
+    suspend fun indexConnectorDateRange(
+        connectorId: String,
+        range: ManualIndexDateRange,
+        strings: GrayinStrings,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): String = withContext(Dispatchers.IO) {
+        val connector = connectorFor(connectorId)
+        require(connector.metadata.supportsDateRangeIndexing) {
+            "Connector does not support manual date-range indexing."
+        }
+        val result = enqueueAndDrain(range.toCommand(connectorId, zoneId)).singleOrNull()
+        singleIndexResult(
+            connector = connector,
+            result = result,
+            strings = strings,
+            localFiles = false,
+        )
+    }
+
     suspend fun indexAllEnabledSources(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val results = enqueueAndDrain(IndexNow)
         val scanned = results.filter { result ->
@@ -405,13 +426,17 @@ class GrayinMemoryController(
         }
     }
 
-    suspend fun invokeConnector(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+    suspend fun connectConnector(connectorId: String): ConnectorConnectionResult = withContext(Dispatchers.IO) {
         val connector = connectorFor(connectorId)
-        if (connector !is InvokableMemoryConnector) return@withContext strings.connectorConnectionUnavailable
+        if (connector !is InvokableMemoryConnector) {
+            return@withContext ConnectorConnectionResult.Unavailable(connectorId)
+        }
         val permissionState = connector.invoke()
-        if (!permissionState.permissionGranted) return@withContext strings.sourcePermissionDenied
+        if (!permissionState.permissionGranted) {
+            return@withContext ConnectorConnectionResult.PermissionRequired(connectorId)
+        }
         store.markConnectorReconsented(connectorId)
-        strings.connectedConnector(strings.connectorName(connectorId, connector.metadata.displayName))
+        ConnectorConnectionResult.Connected(connectorId, connector.metadata.displayName)
     }
 
     suspend fun rememberSelectedLocalFile(uri: Uri, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
@@ -782,17 +807,16 @@ class GrayinMemoryController(
 
             IndexingQueueState.SKIPPED -> when (result.skipReason) {
                 IndexingSkipReason.MISSING_PERMISSION -> strings.sourcePermissionDenied
-                IndexingSkipReason.SOURCE_DISABLED,
-                IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE,
-                -> strings.connectorConnectionUnavailable
+                IndexingSkipReason.NO_INDEXABLE_DATA -> if (localFiles) {
+                    strings.noLocalFilesIndexed
+                } else {
+                    strings.manualIndexingSkipped(result.skipReason)
+                }
 
-                else -> strings.noLocalFilesIndexed
+                else -> strings.manualIndexingSkipped(result.skipReason)
             }
 
-            IndexingQueueState.FAILED -> when (result.failureCode) {
-                IndexingFailureCode.CONNECTOR_NOT_FOUND -> strings.connectorConnectionUnavailable
-                else -> strings.indexingFailed
-            }
+            IndexingQueueState.FAILED -> strings.manualIndexingFailed(result.failureCode)
 
             IndexingQueueState.PENDING,
             IndexingQueueState.RUNNING,
@@ -844,7 +868,7 @@ class GrayinMemoryController(
 
         AnswerUiState(
             answer = if (answer.evidence.isEmpty()) strings.cannotAnswerFromIndexedEvidence else answer.answer,
-            confidence = answer.confidence.name,
+            confidence = strings.confidenceLabel(answer.confidence),
             evidenceRows = if (answer.evidence.isEmpty()) {
                 listOf(strings.noCitedEvidence)
             } else {
@@ -879,7 +903,7 @@ class GrayinMemoryController(
         val usedEvidence = evidenceItems.filter { it.id in usedEvidenceIds }
         return AnswerUiState(
             answer = answer,
-            confidence = confidence.name,
+            confidence = strings.confidenceLabel(confidence),
             evidenceRows = usedEvidence.map { item ->
                 val labels = citations
                     .filter { it.id in item.citationIds }
@@ -936,13 +960,14 @@ class GrayinMemoryController(
                 reconsentRequired = reconsentRequired,
                 strings = strings,
             ),
-            sensitivity = sensitivityLabel(connector.metadata.sensitivity, strings),
-            canInvoke = !isLocalFiles && permissionState.canRequestPermission && (!state.enabled || reconsentRequired),
+            sensitivity = strings.sensitivityLabel(connector.metadata.sensitivity),
+            canInvoke = !isLocalFiles && permissionState.canRequestPermission &&
+                (!state.consentEnabled || !permissionState.permissionGranted || reconsentRequired),
             requiredPermissions = permissionState.requiredPlatformPermissions,
             canAdd = isLocalFiles,
-            canIndex = state.enabled && !reconsentRequired &&
+            canIndex = state.enabled && (isLocalFiles || permissionState.permissionGranted) && !reconsentRequired &&
                 connector.metadata.indexingMode != ConnectorIndexingMode.EVENT_DRIVEN,
-            canRevoke = state.enabled,
+            canRevoke = state.consentEnabled,
             canDelete = sourceReferences.any { it.connectorId == connectorId },
             notificationAllowedPackages = if (connectorId == NotificationConnector.CONNECTOR_ID) {
                 notificationAllowlist.load().toList()
@@ -951,6 +976,16 @@ class GrayinMemoryController(
             },
             onlineEnrichmentEnabled = if (connectorId == LocationConnector.CONNECTOR_ID) {
                 onlineEnrichmentPreferences.isEnabled()
+            } else {
+                null
+            },
+            detailRows = strings.connectorScanDetailRows(scanStatus),
+            supportsDateRangeIndexing = connector.metadata.supportsDateRangeIndexing,
+            lastRequestedScanRange = if (scanStatus?.scopeFrom != null && scanStatus.scopeUntil != null) {
+                IndexedDateRangePresentation(
+                    from = scanStatus.scopeFrom,
+                    untilExclusive = scanStatus.scopeUntil,
+                )
             } else {
                 null
             },
@@ -967,35 +1002,37 @@ class GrayinMemoryController(
     ): String {
         return when {
             reconsentRequired -> strings.reconnectionRequired
+            state.consentEnabled && !permissionState.permissionGranted -> strings.sourcePermissionDenied
             hasStoredSources &&
                 (scanStatus?.processingState == ProcessingState.COMPLETED ||
                     state.processingState == ProcessingState.COMPLETED) -> strings.indexed
             state.enabled -> strings.selected
-            !permissionState.canRequestPermission && !permissionState.permissionGranted -> strings.notImplemented
+            !permissionState.canRequestPermission && !permissionState.permissionGranted -> strings.sourcePermissionDenied
             else -> strings.off
-        }
-    }
-
-    private fun sensitivityLabel(level: SensitivityLevel, strings: GrayinStrings): String {
-        return when (level) {
-            SensitivityLevel.VERY_HIGH -> strings.veryHighSensitivity
-            SensitivityLevel.HIGH -> strings.highSensitivity
-            SensitivityLevel.MEDIUM -> "Medium sensitivity"
-            SensitivityLevel.LOW -> "Low sensitivity"
         }
     }
 
     private fun timelineRows(events: List<DerivedMemoryEvent>, strings: GrayinStrings): List<String> {
         if (events.isEmpty()) return listOf(strings.noDerivedEvents)
-        return events.sortedByDescending { it.createdAt }
+        return DerivedMemoryPresentationMapper.timeline(events)
             .take(MAX_TIMELINE_ROWS)
-            .map { "${it.createdAt}: ${it.summary}" }
+            .map(strings::timelineRow)
+    }
+
+    private fun placeRows(
+        places: List<ai.grayin.core.model.PlaceCluster>,
+        strings: GrayinStrings,
+    ): List<String> {
+        if (places.isEmpty()) return listOf(strings.noPlaceClusters)
+        return DerivedMemoryPresentationMapper.places(places)
+            .take(MAX_PLACE_ROWS)
+            .map(strings::placeRow)
     }
 
     private fun emptyAnswer(message: String, strings: GrayinStrings): AnswerUiState {
         return AnswerUiState(
             answer = message,
-            confidence = ConfidenceLevel.UNKNOWN.name,
+            confidence = strings.confidenceLabel(ConfidenceLevel.UNKNOWN),
             evidenceRows = listOf(strings.noCitedEvidence),
             missingRows = listOf(strings.askFromIndexedEvidence),
         )
@@ -1006,17 +1043,18 @@ class GrayinMemoryController(
             missingSource.explanation.startsWith("Required capability ") ||
             missingSource.explanation.startsWith("Optional capability ")
         ) {
-            strings.capabilityUnavailable(missingSource.capability.name)
+            strings.capabilityUnavailable(strings.memoryCapabilityLabel(missingSource.capability))
         } else {
             missingSource.explanation
         }
-        return "${missingSource.capability.name}: $explanation"
+        return "${strings.memoryCapabilityLabel(missingSource.capability)}: $explanation"
     }
 
     private companion object {
         const val INDEXING_STATUS_QUEUE_LIMIT = 20
         const val MAX_EVIDENCE_ITEMS = 8
         const val MAX_TIMELINE_ROWS = 30
+        const val MAX_PLACE_ROWS = 30
         const val MAX_MANUAL_DRAIN_TASKS = 64
         const val MANUAL_INDEXING_LEASE_OWNER = "manual-ui"
     }

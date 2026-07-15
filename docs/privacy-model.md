@@ -43,6 +43,8 @@ Encrypted import never restores connector consent. It releases Local Files grant
 
 Location source consent and online-enrichment consent are separate. Disabling or revoking Location disables online enrichment. Without enrichment consent, Location continues to index the rounded local coordinate and does not call the gateway.
 
+Each connected Location scan reads only Android's current last-known observation. Grayin derives a stable cluster from the 0.001-degree rounded coordinate and accumulates new source observations in SQLCipher; it neither reads a platform location-history archive nor stores the original exact coordinate. Optional provider labels are normalized and bounded before storage.
+
 Every connector must support:
 
 - enable

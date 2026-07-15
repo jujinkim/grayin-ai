@@ -2,7 +2,7 @@ package ai.grayin.connectors.usagestats
 
 import android.Manifest
 import android.app.AppOpsManager
-import android.app.usage.UsageStats
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
@@ -41,12 +41,14 @@ class AppUsageConnector(
 
     override suspend fun currentState(): ConnectorState {
         val permissionGranted = hasUsageAccess()
-        val enabled = permissionGranted && isEnabled()
+        val consentEnabled = isEnabled()
+        val enabled = permissionGranted && consentEnabled
         val lastIndexedAt = prefs().getString(KEY_LAST_INDEXED_AT, null)?.let(Instant::parse)
         return ConnectorState(
             connectorId = CONNECTOR_ID,
             displayName = metadata.displayName,
             enabled = enabled,
+            consentEnabled = consentEnabled,
             availability = when {
                 enabled -> SourceAvailability.AVAILABLE
                 permissionGranted -> SourceAvailability.DISABLED
@@ -101,17 +103,48 @@ class AppUsageConnector(
 
         val until = scope.until ?: now
         val from = scope.from ?: until.minus(DEFAULT_USAGE_WINDOW)
-        val rows = readUsageRows(from, until, now)
+        val readResult = readUsageRows(from, until, now)
+        val rows = readResult.rows
+        val eventHistoryLimitation = missingSources(
+            SourceAvailability.STALE,
+            ConnectorScanIssueCode.APP_USAGE_EVENT_HISTORY_LIMITED,
+        )
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
-            processingState = if (rows.isEmpty()) ProcessingState.SKIPPED else ProcessingState.COMPLETED,
+            processingState = if (rows.isEmpty() || readResult.eventInputLimited) {
+                ProcessingState.SKIPPED
+            } else {
+                ProcessingState.COMPLETED
+            },
             sourceReferences = rows.map { it.sourceReference },
             derivedEvents = rows.map { it.derivedEvent },
             citations = rows.map { it.citation },
-            missingSources = if (rows.isEmpty()) {
-                missingSources(SourceAvailability.NOT_INDEXED, ConnectorScanIssueCode.NO_APP_USAGE_IN_RANGE)
-            } else {
-                emptyList()
+            replaceExistingConnectorData = !readResult.eventInputLimited,
+            missingSources = buildList {
+                if (readResult.eventInputLimited) {
+                    addAll(
+                        missingSources(
+                            SourceAvailability.STALE,
+                            ConnectorScanIssueCode.APP_USAGE_EVENT_LIMIT_REACHED,
+                        ),
+                    )
+                } else if (rows.isEmpty()) {
+                    addAll(
+                        missingSources(
+                            SourceAvailability.NOT_INDEXED,
+                            ConnectorScanIssueCode.NO_APP_USAGE_IN_RANGE,
+                        ),
+                    )
+                }
+                if (readResult.outputLimited) {
+                    addAll(
+                        missingSources(
+                            SourceAvailability.STALE,
+                            ConnectorScanIssueCode.APP_USAGE_DERIVED_OUTPUT_LIMIT_REACHED,
+                        ),
+                    )
+                }
+                addAll(eventHistoryLimitation)
             },
             scopeFrom = from,
             scopeUntil = until,
@@ -146,26 +179,68 @@ class AppUsageConnector(
         from: Instant,
         until: Instant,
         observedAt: Instant,
-    ): List<AppUsageExtractionResult> {
-        val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return emptyList()
-        return manager.queryUsageStats(
-            UsageStatsManager.INTERVAL_DAILY,
-            from.toEpochMilli(),
-            until.toEpochMilli(),
-        ).orEmpty()
-            .filter { it.totalTimeInForeground > 0L }
-            .sortedByDescending { it.totalTimeInForeground }
+    ): AppUsageReadResult {
+        val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            ?: return AppUsageReadResult(emptyList(), eventInputLimited = false, outputLimited = false)
+        val effectiveUntil = minOf(until, observedAt)
+        if (!from.isBefore(effectiveUntil)) {
+            return AppUsageReadResult(emptyList(), eventInputLimited = false, outputLimited = false)
+        }
+        val usageEvents = manager.queryEvents(from.toEpochMilli(), effectiveUntil.toEpochMilli())
+            ?: return AppUsageReadResult(emptyList(), eventInputLimited = false, outputLimited = false)
+        val event = UsageEvents.Event()
+        var visitedEvents = 0
+        val transitions = buildList {
+            while (usageEvents.hasNextEvent() && visitedEvents < MAX_TRANSITION_EVENTS) {
+                if (!usageEvents.getNextEvent(event)) break
+                visitedEvents += 1
+                val transition = when (event.eventType) {
+                    @Suppress("DEPRECATION")
+                    UsageEvents.Event.MOVE_TO_FOREGROUND -> AppUsageTransition.FOREGROUND
+
+                    @Suppress("DEPRECATION")
+                    UsageEvents.Event.MOVE_TO_BACKGROUND -> AppUsageTransition.BACKGROUND
+
+                    else -> null
+                } ?: continue
+                val packageName = event.packageName?.takeIf(String::isNotBlank) ?: continue
+                add(
+                    AppUsageTransitionEvent(
+                        packageName = packageName,
+                        occurredAt = Instant.ofEpochMilli(event.timeStamp),
+                        transition = transition,
+                        activityClassName = event.className,
+                    ),
+                )
+            }
+        }
+        val truncated = visitedEvents >= MAX_TRANSITION_EVENTS && usageEvents.hasNextEvent()
+        if (truncated) {
+            return AppUsageReadResult(emptyList(), eventInputLimited = true, outputLimited = false)
+        }
+        val sessions = AppUsageEventAggregator.aggregate(
+            events = transitions,
+            fromInclusive = from,
+            untilExclusive = effectiveUntil,
+        )
+            .sortedByDescending { it.totalForegroundDuration }
+        val outputLimited = sessions.size > MAX_USAGE_ROWS
+        val rows = sessions
             .take(MAX_USAGE_ROWS)
             .map { it.toExtractionResult(observedAt) }
+        return AppUsageReadResult(
+            rows = rows,
+            eventInputLimited = false,
+            outputLimited = outputLimited,
+        )
     }
 
-    private fun UsageStats.toExtractionResult(observedAt: Instant): AppUsageExtractionResult {
-        val sourceHash = sha256("$packageName:$firstTimeStamp:$lastTimeStamp:$totalTimeInForeground")
+    private fun ExactAppUsageSession.toExtractionResult(observedAt: Instant): AppUsageExtractionResult {
+        val totalTimeInForeground = totalForegroundDuration.toMillis()
+        val sourceHash = sha256("$packageName:$firstSeenAt:$lastSeenAt:$totalTimeInForeground")
         val sourceId = "source:$CONNECTOR_ID:$sourceHash"
         val eventId = "event:$CONNECTOR_ID:$sourceHash"
         val citationId = "citation:$CONNECTOR_ID:$sourceHash"
-        val firstSeenAt = Instant.ofEpochMilli(firstTimeStamp)
-        val lastSeenAt = Instant.ofEpochMilli(lastTimeStamp)
         val minutes = (totalTimeInForeground / MILLIS_PER_MINUTE).coerceAtLeast(1L)
         val appAlias = appAlias(packageName)
         return AppUsageExtractionResult(
@@ -285,6 +360,12 @@ class AppUsageConnector(
         val citation: MemoryCitation,
     )
 
+    private data class AppUsageReadResult(
+        val rows: List<AppUsageExtractionResult>,
+        val eventInputLimited: Boolean,
+        val outputLimited: Boolean,
+    )
+
     companion object {
         const val CONNECTOR_ID = "app_usage"
         val METADATA = ConnectorMetadata(
@@ -295,6 +376,7 @@ class AppUsageConnector(
             memoryCapabilities = setOf(MemoryCapability.HAS_TIME, MemoryCapability.HAS_APP_USAGE),
             indexingMode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
             defaultEnabled = false,
+            supportsDateRangeIndexing = true,
             sensitivity = SensitivityLevel.VERY_HIGH,
         )
 
@@ -302,6 +384,7 @@ class AppUsageConnector(
         private const val KEY_ENABLED = "enabled"
         private const val KEY_LAST_INDEXED_AT = "last_indexed_at"
         private const val MAX_USAGE_ROWS = 100
+        private const val MAX_TRANSITION_EVENTS = 100_000
         private const val MILLIS_PER_MINUTE = 60_000L
         private const val MIN_TOKEN_LENGTH = 3
         private const val MAX_TOKEN_LENGTH = 32

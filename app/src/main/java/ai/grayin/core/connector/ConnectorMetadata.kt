@@ -19,5 +19,6 @@ data class ConnectorMetadata(
     val memoryCapabilities: Set<MemoryCapability>,
     val indexingMode: ConnectorIndexingMode,
     val defaultEnabled: Boolean = false,
+    val supportsDateRangeIndexing: Boolean = false,
     val sensitivity: SensitivityLevel,
 )

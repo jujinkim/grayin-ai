@@ -1001,11 +1001,12 @@ class SqlCipherLocalMemoryStore(
         completedAt: Instant,
     ): StoreWriteResult {
         ConnectorScanValidator.validate(scanResult)
-        val existingCount = existingIds(
+        val existingSourceReferenceIds = existingIds(
             db,
             TABLE_SOURCE_REFERENCES,
             scanResult.sourceReferences.map { it.id },
-        ).size + existingIds(
+        )
+        val existingCount = existingSourceReferenceIds.size + existingIds(
             db,
             TABLE_DERIVED_EVENTS,
             scanResult.derivedEvents.map { it.id },
@@ -1058,11 +1059,24 @@ class SqlCipherLocalMemoryStore(
             ) { "Could not persist connector citation." }
         }
         scanResult.placeClusters.forEach { cluster ->
+            val clusterToStore = if (
+                scanResult.connectorId == LOCATION_CONNECTOR_ID &&
+                !scanResult.replaceExistingConnectorData
+            ) {
+                mergeLocationPlaceCluster(
+                    existing = readPlaceCluster(db, cluster.id),
+                    incoming = cluster,
+                    newSourceReferenceIds = cluster.sourceReferenceIds
+                        .filterNotTo(linkedSetOf()) { sourceId -> sourceId in existingSourceReferenceIds },
+                )
+            } else {
+                cluster
+            }
             check(
                 db.insertWithOnConflict(
                     TABLE_PLACE_CLUSTERS,
                     null,
-                    cluster.toValues(),
+                    clusterToStore.toValues(),
                     SQLiteDatabase.CONFLICT_REPLACE,
                 ) >= 0L,
             ) { "Could not persist connector place cluster." }
@@ -1948,21 +1962,35 @@ class SqlCipherLocalMemoryStore(
 
     private fun readPlaceClusters(db: SQLiteDatabase): List<PlaceCluster> {
         return db.query(TABLE_PLACE_CLUSTERS, null, null, null, null, null, "last_seen_at DESC")
-            .useRows { row ->
-                PlaceCluster(
-                    id = row.string("id"),
-                    label = row.nullableString("label"),
-                    regionLabel = row.nullableString("region_label"),
-                    centroidLatitude = row.nullableDouble("centroid_latitude"),
-                    centroidLongitude = row.nullableDouble("centroid_longitude"),
-                    radiusMeters = row.nullableDouble("radius_meters"),
-                    firstSeenAt = row.nullableInstant("first_seen_at"),
-                    lastSeenAt = row.nullableInstant("last_seen_at"),
-                    visitCount = row.int("visit_count"),
-                    sourceReferenceIds = decodeList(row.string("source_reference_ids")),
-                    confidence = enumValueOf(row.string("confidence")),
-                )
-            }
+            .useRows { row -> row.toPlaceCluster() }
+    }
+
+    private fun readPlaceCluster(db: SQLiteDatabase, id: String): PlaceCluster? {
+        return db.query(
+            TABLE_PLACE_CLUSTERS,
+            null,
+            "id = ?",
+            arrayOf(id),
+            null,
+            null,
+            null,
+        ).useRows { row -> row.toPlaceCluster() }.singleOrNull()
+    }
+
+    private fun Cursor.toPlaceCluster(): PlaceCluster {
+        return PlaceCluster(
+            id = string("id"),
+            label = nullableString("label"),
+            regionLabel = nullableString("region_label"),
+            centroidLatitude = nullableDouble("centroid_latitude"),
+            centroidLongitude = nullableDouble("centroid_longitude"),
+            radiusMeters = nullableDouble("radius_meters"),
+            firstSeenAt = nullableInstant("first_seen_at"),
+            lastSeenAt = nullableInstant("last_seen_at"),
+            visitCount = int("visit_count"),
+            sourceReferenceIds = decodeList(string("source_reference_ids")),
+            confidence = enumValueOf(string("confidence")),
+        )
     }
 
     private fun readAppUsageSummaries(db: SQLiteDatabase): List<AppUsageSummary> {
@@ -2324,6 +2352,7 @@ class SqlCipherLocalMemoryStore(
         private const val UNINITIALIZED_AUTOMATIC_SETTINGS_KEY = "v1:uninitialized"
         private const val IMPORT_RECONSENT_AUTOMATIC_SETTINGS_KEY = "v1:import-reconsent-required"
         private const val LOCAL_FILES_CONNECTOR_ID = "local_files"
+        private const val LOCATION_CONNECTOR_ID = "location"
 
         @Volatile
         private var loaded = false
@@ -2341,4 +2370,57 @@ class SqlCipherLocalMemoryStore(
             }
         }
     }
+}
+
+internal fun mergeLocationPlaceCluster(
+    existing: PlaceCluster?,
+    incoming: PlaceCluster,
+    newSourceReferenceIds: Set<String>,
+): PlaceCluster {
+    require(incoming.id.startsWith("place-cluster:location:")) {
+        "A location cluster must use the location-scoped ID prefix."
+    }
+    require(incoming.centroidLatitude != null && incoming.centroidLongitude != null) {
+        "A location cluster must have a complete rounded centroid."
+    }
+    require(
+        incoming.centroidLatitude.isFinite() && incoming.centroidLatitude in -90.0..90.0 &&
+            incoming.centroidLongitude.isFinite() && incoming.centroidLongitude in -180.0..180.0,
+    ) {
+        "A location cluster centroid is outside the supported range."
+    }
+    require(incoming.firstSeenAt != null && incoming.lastSeenAt != null) {
+        "A location cluster must have a complete observation range."
+    }
+    require(!incoming.lastSeenAt.isBefore(incoming.firstSeenAt)) {
+        "A location cluster observation range is invalid."
+    }
+    require(incoming.visitCount == 1 && incoming.sourceReferenceIds.distinct().size == 1) {
+        "An incoming location cluster must represent one indexed observation."
+    }
+    require(newSourceReferenceIds.all { sourceId -> sourceId in incoming.sourceReferenceIds }) {
+        "New location-cluster sources must belong to the incoming scan."
+    }
+    if (existing == null) return incoming.copy(sourceReferenceIds = incoming.sourceReferenceIds.distinct())
+
+    require(existing.id == incoming.id) { "Location cluster IDs must match before merge." }
+    require(existing.visitCount >= 0) { "A stored location cluster cannot have a negative visit count." }
+    require(
+        existing.centroidLatitude == incoming.centroidLatitude &&
+            existing.centroidLongitude == incoming.centroidLongitude,
+    ) {
+        "A stable location cluster ID cannot change its rounded centroid."
+    }
+    val mergedVisitCount = existing.visitCount.toLong() + newSourceReferenceIds.size
+    require(mergedVisitCount <= Int.MAX_VALUE) { "Location cluster visit count exceeds the supported range." }
+    return existing.copy(
+        label = existing.label ?: incoming.label,
+        regionLabel = incoming.regionLabel ?: existing.regionLabel,
+        radiusMeters = listOfNotNull(existing.radiusMeters, incoming.radiusMeters).maxOrNull(),
+        firstSeenAt = listOfNotNull(existing.firstSeenAt, incoming.firstSeenAt).minOrNull(),
+        lastSeenAt = listOfNotNull(existing.lastSeenAt, incoming.lastSeenAt).maxOrNull(),
+        visitCount = mergedVisitCount.toInt(),
+        sourceReferenceIds = (existing.sourceReferenceIds + incoming.sourceReferenceIds).distinct(),
+        confidence = maxOf(existing.confidence, incoming.confidence),
+    )
 }

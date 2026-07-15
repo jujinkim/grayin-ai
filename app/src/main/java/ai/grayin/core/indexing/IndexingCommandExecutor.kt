@@ -231,7 +231,7 @@ class IndexingCommandExecutor(
         }
     }
 
-    private fun connectorIdsFor(
+    private suspend fun connectorIdsFor(
         command: IndexingCommand,
         trigger: IndexingTrigger,
     ): List<String> {
@@ -241,10 +241,28 @@ class IndexingCommandExecutor(
                 .map { connector -> connector.metadata.connectorId }
 
             is IndexConnector -> listOf(command.connectorId)
-            is IndexDateRange -> command.connectorId?.let(::listOf)
-                ?: connectorRegistry.all
-                    .filter { connector -> supportsTrigger(connector, trigger) }
-                    .map { connector -> connector.metadata.connectorId }
+            is IndexDateRange -> command.connectorId?.let { connectorId ->
+                val connector = connectorRegistry.find(connectorId)
+                require(connector == null || connector.metadata.supportsDateRangeIndexing) {
+                    "Connector does not support date-range indexing: $connectorId"
+                }
+                listOf(connectorId)
+            } ?: connectorRegistry.all
+                .filter { connector ->
+                    connector.metadata.supportsDateRangeIndexing && supportsTrigger(connector, trigger)
+                }
+                .filter { connector -> connector.isEnabledForDateRange() }
+                .map { connector -> connector.metadata.connectorId }
+        }
+    }
+
+    private suspend fun MemoryConnector.isEnabledForDateRange(): Boolean {
+        return try {
+            currentState().enabled
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
         }
     }
 

@@ -220,7 +220,7 @@ Purpose:
 
 - produce place visits
 - produce place clusters
-- reconstruct daily movement
+- accumulate observed place history for future daily movement questions
 - support questions like “Where did I go yesterday?”
 
 Rules:
@@ -235,6 +235,9 @@ Rules:
 - the local LLM must not call map APIs directly; map/place enrichment must remain outside the model path
 - exact business names are not required
 - focus on region, movement, stay duration, and user-defined place labels
+- the current connector reads one Android last-known observation per manual scan; it does not claim to recover prior device location history
+- each observation emits a stable cluster keyed by a domain-separated hash of its 0.001-degree rounded coordinate
+- repeated scans of the same source are idempotent; a new source observation at that coordinate extends the encrypted cluster visit count and first/last-seen range
 
 ### Photos Connector
 
@@ -290,6 +293,8 @@ Rules:
 
 - do not store raw usage event dumps
 - store only summaries, buckets, aliases, and derived usage events
+- aggregate foreground/background transitions transiently inside the exact requested half-open range instead of persisting expanded daily `UsageStats` buckets
+- disclose a typed partial-history status because Android keeps usage events for only a limited period and activity already foreground at the lower boundary cannot be reconstructed
 
 ### Local Files Connector
 
@@ -322,6 +327,8 @@ Manual indexing should support:
 - index one connector
 - index one date range
 
+Calendar, Photos, and App Usage support manual 7-, 30-, and 90-day ranges. The chosen inclusive local dates are converted with the current system time zone to a half-open instant range, including daylight-saving transitions. Photos use an exclusive upper bound; App Usage transiently derives only completed sessions whose transition timestamps are inside the bounds and reports Android's limited-history caveat. Location is a current foreground observation, Local Files is non-temporal, and Notifications are event-driven, so those connectors do not expose range controls. The latest requested connector scan range is persisted in SQLCipher and rendered in Sources. Calendar, Photos, and App Usage use bounded output with typed partial-range issue codes; reaching the App Usage transient input bound stores no partial sessions.
+
 Processing states:
 
 - pending
@@ -342,6 +349,8 @@ On first installed launch, the app may open Sources first to explain that source
 The MVP UI supports English, Korean, and Japanese copy. Settings exposes language choices as `system`, `korean`, `english`, and `japanese`; `system` resolves from the Android system language and falls back to English for unsupported languages.
 
 Primary navigation uses a bottom navigation bar with icons and localized labels for Ask, Timeline, Places, Sources, and Settings.
+
+Timeline never presents connector-authored stored summary prose directly. It formats the typed event kind, local time interval, and confidence for the active language. Places formats encrypted typed cluster fields such as the derived region label, rounded centroid, visit count, first/last observation, accuracy radius, and confidence. Imported or legacy derived records therefore receive a localized generic typed presentation rather than being parsed as English text.
 
 The retrieval pipeline:
 

@@ -730,6 +730,33 @@ class SqlCipherIndexingQueueInstrumentedTest {
     }
 
     @Test
+    fun locationClusterMergeIsIdempotentInsideTheConnectorTransaction() = runBlocking {
+        val databaseName = newDatabaseName()
+        val memoryStore = store(databaseName)
+        val firstAt = Instant.parse("2026-07-14T12:00:00Z")
+        val lastAt = Instant.parse("2026-07-15T12:00:00Z")
+        val first = locationScanResult("first", firstAt, "Old region")
+        val second = locationScanResult("second", lastAt, "New region")
+
+        memoryStore.saveConnectorScan(first)
+        memoryStore.saveConnectorScan(first)
+        assertEquals(1, memoryStore.loadPlaceClusters().single().visitCount)
+
+        memoryStore.saveConnectorScan(second)
+        memoryStore.saveConnectorScan(second)
+
+        val cluster = memoryStore.loadSnapshot().placeClusters.single()
+        assertEquals("New region", cluster.regionLabel)
+        assertEquals(firstAt, cluster.firstSeenAt)
+        assertEquals(lastAt, cluster.lastSeenAt)
+        assertEquals(2, cluster.visitCount)
+        assertEquals(
+            listOf("source:location:first", "source:location:second"),
+            cluster.sourceReferenceIds,
+        )
+    }
+
+    @Test
     fun connectorDeleteFencesRunningAndPendingTasksBeforeStaleCommit() = runBlocking {
         val databaseName = newDatabaseName()
         val requestedAt = Instant.parse("2026-07-15T06:10:00Z")
@@ -1400,6 +1427,68 @@ class SqlCipherIndexingQueueInstrumentedTest {
                 ),
             ),
             scannedAt = Instant.parse("2026-07-15T01:45:00Z"),
+        )
+    }
+
+    private fun locationScanResult(
+        suffix: String,
+        observedAt: Instant,
+        regionLabel: String,
+    ): ConnectorScanResult {
+        val sourceId = "source:location:$suffix"
+        val eventId = "event:location:$suffix"
+        val citationId = "citation:location:$suffix"
+        return ConnectorScanResult(
+            connectorId = "location",
+            processingState = ProcessingState.COMPLETED,
+            sourceReferences = listOf(
+                SourceReference(
+                    id = sourceId,
+                    connectorId = "location",
+                    sourceKind = SourceKind.LOCATION,
+                    externalIdHash = suffix,
+                    observedAt = observedAt,
+                    modifiedAt = observedAt,
+                    sensitivity = ai.grayin.core.model.SensitivityLevel.HIGH,
+                ),
+            ),
+            derivedEvents = listOf(
+                DerivedMemoryEvent(
+                    id = eventId,
+                    kind = DerivedMemoryEventKind.PLACE_VISIT,
+                    sourceReferenceIds = listOf(sourceId),
+                    summary = "Location visit indexed.",
+                    startedAt = observedAt,
+                    confidence = ConfidenceLevel.MEDIUM,
+                    sensitivity = ai.grayin.core.model.SensitivityLevel.HIGH,
+                    citationIds = listOf(citationId),
+                    createdAt = observedAt,
+                ),
+            ),
+            citations = listOf(
+                MemoryCitation(
+                    id = citationId,
+                    sourceReferenceId = sourceId,
+                    derivedMemoryEventId = eventId,
+                    label = "Location sample",
+                    observedAt = observedAt,
+                    confidence = ConfidenceLevel.MEDIUM,
+                ),
+            ),
+            placeClusters = listOf(
+                PlaceCluster(
+                    id = "place-cluster:location:0123456789abcdef0123456789abcdef",
+                    regionLabel = regionLabel,
+                    centroidLatitude = 37.566,
+                    centroidLongitude = 126.978,
+                    firstSeenAt = observedAt,
+                    lastSeenAt = observedAt,
+                    visitCount = 1,
+                    sourceReferenceIds = listOf(sourceId),
+                    confidence = ConfidenceLevel.MEDIUM,
+                ),
+            ),
+            scannedAt = observedAt,
         )
     }
 

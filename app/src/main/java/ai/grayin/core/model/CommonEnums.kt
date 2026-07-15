@@ -73,8 +73,28 @@ enum class ConnectorScanIssueCode(
         "no_calendar_events_in_range",
         "No calendar events were found in the indexed time window.",
     ),
+    CALENDAR_EVENT_LIMIT_REACHED(
+        "calendar_event_limit_reached",
+        "The calendar scan reached its derived event limit; the indexed range is partial.",
+    ),
     NO_PHOTOS_IN_RANGE("no_photos_in_range", "No photos were found in the indexed time window."),
+    PHOTO_METADATA_LIMIT_REACHED(
+        "photo_metadata_limit_reached",
+        "The photo scan reached its metadata limit; the indexed range is partial.",
+    ),
     NO_APP_USAGE_IN_RANGE("no_app_usage_in_range", "No app usage events were found in the indexed time window."),
+    APP_USAGE_EVENT_HISTORY_LIMITED(
+        "app_usage_event_history_limited",
+        "Android retains app usage events for a limited period; older or boundary-spanning activity may be incomplete.",
+    ),
+    APP_USAGE_EVENT_LIMIT_REACHED(
+        "app_usage_event_limit_reached",
+        "The app usage scan reached its transient event limit and stored no partial result.",
+    ),
+    APP_USAGE_DERIVED_OUTPUT_LIMIT_REACHED(
+        "app_usage_derived_output_limit_reached",
+        "The app usage scan reached its derived session limit; the indexed range is partial.",
+    ),
     NO_LAST_KNOWN_LOCATION("no_last_known_location", "No last known location sample is available."),
     NOTIFICATION_ALLOWLIST_EMPTY(
         "notification_allowlist_empty",

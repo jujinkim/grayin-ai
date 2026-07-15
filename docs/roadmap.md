@@ -99,10 +99,12 @@ The lifecycle instrumentation covers persisted secure-window startup, Activity r
 
 ### 7. Source and UI Completion
 
-- [ ] Build place history/cluster output from indexed location evidence and populate Places.
-- [ ] Refresh usage/notification permission state after returning from Android settings.
-- [ ] Localize connector status, error, and derived-summary presentation.
-- [ ] Add date-range indexing controls and per-connector date-range status.
+- [x] Build place history/cluster output from indexed location evidence and populate Places.
+- [x] Refresh usage/notification permission state after returning from Android settings.
+- [x] Localize connector status, error, and derived-summary presentation.
+- [x] Add date-range indexing controls and per-connector date-range status.
+
+Location clusters accumulate user-triggered last-known observations by stable 0.001-degree rounded coordinate; Android does not expose a historical location archive to this connector. Calendar, Photos, and App Usage expose 7-, 30-, and 90-day local-date ranges. The queue stores half-open instant bounds, unsupported or event-driven connectors never receive a range request, and every connector output bound reports a typed partial status instead of claiming full coverage. Sources rechecks usage/notification access exactly once after the corresponding Android settings activity returns and rejects a second in-flight settings launch. Timeline, Places, connector scan status/issues, sensitivity, confidence, capability names, model failures, file sizes, and manual indexing failures are formatted from typed values in English, Korean, or Japanese rather than displaying connector-authored prose or enum/storage keys.
 
 ### 8. Local Model Release Hardening
 

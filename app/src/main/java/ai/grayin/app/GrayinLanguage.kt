@@ -125,10 +125,7 @@ data class GrayinStrings(
     val selected: String,
     val indexed: String,
     val reconnectionRequired: String,
-    val notImplemented: String,
     val connectorConnectionUnavailable: String,
-    val highSensitivity: String,
-    val veryHighSensitivity: String,
     val noDerivedEvents: String,
     val noPlaceClusters: String,
     val loadingLocalState: String,
@@ -511,8 +508,18 @@ data class GrayinStrings(
                 ConnectorScanIssueCode.SOURCE_NOT_INVOKED -> "소스가 아직 연결되지 않았습니다."
                 ConnectorScanIssueCode.SOURCE_UNAVAILABLE -> "이번 인덱싱에서 소스를 사용할 수 없습니다."
                 ConnectorScanIssueCode.NO_CALENDAR_EVENTS_IN_RANGE -> "인덱싱한 기간에 일정이 없습니다."
+                ConnectorScanIssueCode.CALENDAR_EVENT_LIMIT_REACHED ->
+                    "일정 스캔이 파생 이벤트 한도에 도달하여 인덱싱 범위가 일부만 처리되었습니다."
                 ConnectorScanIssueCode.NO_PHOTOS_IN_RANGE -> "인덱싱한 기간에 사진이 없습니다."
+                ConnectorScanIssueCode.PHOTO_METADATA_LIMIT_REACHED ->
+                    "사진 스캔이 메타데이터 한도에 도달하여 인덱싱 범위가 일부만 처리되었습니다."
                 ConnectorScanIssueCode.NO_APP_USAGE_IN_RANGE -> "인덱싱한 기간에 앱 사용 기록이 없습니다."
+                ConnectorScanIssueCode.APP_USAGE_EVENT_HISTORY_LIMITED ->
+                    "Android가 앱 사용 이벤트를 제한된 기간만 보관하므로 오래되었거나 기간 경계를 넘는 사용 기록은 일부 누락될 수 있습니다."
+                ConnectorScanIssueCode.APP_USAGE_EVENT_LIMIT_REACHED ->
+                    "앱 사용 스캔이 임시 이벤트 한도에 도달하여 불완전한 결과를 저장하지 않았습니다."
+                ConnectorScanIssueCode.APP_USAGE_DERIVED_OUTPUT_LIMIT_REACHED ->
+                    "앱 사용 스캔이 파생 세션 한도에 도달하여 인덱싱 범위가 일부만 처리되었습니다."
                 ConnectorScanIssueCode.NO_LAST_KNOWN_LOCATION -> "사용 가능한 최근 위치가 없습니다."
                 ConnectorScanIssueCode.NOTIFICATION_ALLOWLIST_EMPTY -> "알림 허용 목록에 앱을 하나 이상 추가하세요."
                 ConnectorScanIssueCode.NOTIFICATION_HISTORY_UNAVAILABLE -> "허용한 앱의 새 알림만 도착할 때 인덱싱됩니다."
@@ -547,8 +554,18 @@ data class GrayinStrings(
                 ConnectorScanIssueCode.SOURCE_NOT_INVOKED -> "ソースはまだ接続されていません。"
                 ConnectorScanIssueCode.SOURCE_UNAVAILABLE -> "今回のインデックスではソースを利用できません。"
                 ConnectorScanIssueCode.NO_CALENDAR_EVENTS_IN_RANGE -> "対象期間に予定がありません。"
+                ConnectorScanIssueCode.CALENDAR_EVENT_LIMIT_REACHED ->
+                    "予定のスキャンが派生イベント上限に達したため、対象期間の一部のみを処理しました。"
                 ConnectorScanIssueCode.NO_PHOTOS_IN_RANGE -> "対象期間に写真がありません。"
+                ConnectorScanIssueCode.PHOTO_METADATA_LIMIT_REACHED ->
+                    "写真のスキャンがメタデータ上限に達したため、対象期間の一部のみを処理しました。"
                 ConnectorScanIssueCode.NO_APP_USAGE_IN_RANGE -> "対象期間にアプリ使用履歴がありません。"
+                ConnectorScanIssueCode.APP_USAGE_EVENT_HISTORY_LIMITED ->
+                    "Androidがアプリ使用イベントを保持する期間は限られるため、古い履歴や期間の境界をまたぐ使用は一部欠ける場合があります。"
+                ConnectorScanIssueCode.APP_USAGE_EVENT_LIMIT_REACHED ->
+                    "アプリ使用スキャンが一時イベント上限に達したため、不完全な結果は保存しませんでした。"
+                ConnectorScanIssueCode.APP_USAGE_DERIVED_OUTPUT_LIMIT_REACHED ->
+                    "アプリ使用スキャンが派生セッション上限に達したため、対象期間の一部のみを処理しました。"
                 ConnectorScanIssueCode.NO_LAST_KNOWN_LOCATION -> "利用できる最終位置情報がありません。"
                 ConnectorScanIssueCode.NOTIFICATION_ALLOWLIST_EMPTY -> "通知の許可リストにアプリを1つ以上追加してください。"
                 ConnectorScanIssueCode.NOTIFICATION_HISTORY_UNAVAILABLE -> "許可したアプリの新しい通知のみ到着時にインデックスされます。"
@@ -1065,6 +1082,8 @@ data class GrayinStrings(
         }
     }
 
+    fun indexingSkipReason(reason: IndexingSkipReason): String = indexingSkipReasonLabel(reason)
+
     private fun indexingFailureLabel(code: IndexingFailureCode): String {
         return when (languageCode) {
             GrayinLanguage.KOREAN -> when (code) {
@@ -1098,6 +1117,8 @@ data class GrayinStrings(
             }
         }
     }
+
+    fun indexingFailure(code: IndexingFailureCode): String = indexingFailureLabel(code)
 
     private fun indexingTriggerLabel(trigger: IndexingTrigger): String {
         return when (languageCode) {
@@ -1255,14 +1276,6 @@ data class GrayinStrings(
         }
     }
 
-    fun localModelFailure(reason: String): String {
-        return when (languageCode) {
-            GrayinLanguage.KOREAN -> "실패 사유: $reason"
-            GrayinLanguage.JAPANESE -> "失敗理由: $reason"
-            GrayinLanguage.ENGLISH -> "Failure: $reason"
-        }
-    }
-
     fun localModelSelected(modelName: String): String {
         return when (languageCode) {
             GrayinLanguage.KOREAN -> "$modelName 모델을 선택했습니다."
@@ -1409,10 +1422,7 @@ private val EnglishStrings = GrayinStrings(
     selected = "Connected",
     indexed = "Indexed",
     reconnectionRequired = "Reconnection required",
-    notImplemented = "Not implemented",
-    connectorConnectionUnavailable = "Source connection is unavailable until this connector is implemented.",
-    highSensitivity = "High sensitivity",
-    veryHighSensitivity = "Very high sensitivity",
+    connectorConnectionUnavailable = "Source connection is unavailable.",
     noDerivedEvents = "No derived memory events indexed.",
     noPlaceClusters = "No place clusters indexed.",
     loadingLocalState = "Loading local state.",
@@ -1530,10 +1540,7 @@ private val KoreanStrings = EnglishStrings.copy(
     selected = "연결됨",
     indexed = "인덱싱됨",
     reconnectionRequired = "재연결 필요",
-    notImplemented = "미구현",
-    connectorConnectionUnavailable = "이 커넥터가 구현될 때까지 소스 연결을 사용할 수 없습니다.",
-    highSensitivity = "높은 민감도",
-    veryHighSensitivity = "매우 높은 민감도",
+    connectorConnectionUnavailable = "소스 연결을 사용할 수 없습니다.",
     noDerivedEvents = "인덱싱된 파생 기억 이벤트가 없습니다.",
     noPlaceClusters = "인덱싱된 장소 클러스터가 없습니다.",
     loadingLocalState = "로컬 상태를 불러오는 중입니다.",
@@ -1651,10 +1658,7 @@ private val JapaneseStrings = EnglishStrings.copy(
     selected = "接続済み",
     indexed = "インデックス済み",
     reconnectionRequired = "再接続が必要",
-    notImplemented = "未実装",
-    connectorConnectionUnavailable = "このコネクタが実装されるまで、ソース接続は利用できません。",
-    highSensitivity = "高い機密性",
-    veryHighSensitivity = "非常に高い機密性",
+    connectorConnectionUnavailable = "ソース接続を利用できません。",
     noDerivedEvents = "インデックス済みの派生記憶イベントはありません。",
     noPlaceClusters = "インデックス済みの場所クラスタはありません。",
     loadingLocalState = "ローカル状態を読み込み中です。",

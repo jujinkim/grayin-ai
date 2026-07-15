@@ -27,6 +27,10 @@ The Ask screen includes:
 
 The answer card starts empty, then renders grounded answers from indexed evidence across connected sources.
 
+## Timeline and Places
+
+Timeline renders typed event kind, local date/time interval, and confidence in the selected language. It does not display stored connector-authored summary prose directly. Places renders encrypted location clusters ordered by latest observation, including a derived region label when available, rounded coordinate, visit count, first/last observation, bounded accuracy radius, and confidence. With no cluster it shows the localized empty state.
+
 ## Sources
 
 The Sources screen lists connector-backed state, sensitivity labels, and an intro explaining that sources must be explicitly connected and indexed before Grayin can read/analyze them for Ask.
@@ -42,6 +46,8 @@ The Local Files row discloses the supported formats and that originals are read 
 
 Location, Photos, Calendar, Notifications, and App Usage expose permission/settings connection, indexing state, revoke, and delete-derived-data controls.
 
+Calendar, Photos, and App Usage additionally expose 7-, 30-, and 90-day manual indexing actions plus the latest requested range. Location, Local Files, and Notifications intentionally have no range actions. Every connector row renders localized sensitivity, latest typed scan state, and typed issue text, including bounded-output or Android usage-history caveats so a partial range is never presented as complete. Usage Access and Notification Listener rows recheck and persist connection state once when their fixed Android settings screen returns; a second settings launch cannot replace the pending connector, and UI decisions never compare translated error strings.
+
 Location also exposes a separate default-OFF external place/weather enrichment switch. Its disclosure lists the rounded coordinate/date projection, fixed provider, Open-Meteo attribution, possible 90-day provider URL/IP log retention, and local fallback behavior.
 
 Above the connector list, Sources provides Index all now and automatic-indexing controls for enabled state, charging-only behavior, and the local low-usage window. Equal start/end hours are rejected before persistence; a legacy invalid window is durably repaired to a disabled one-hour window.
@@ -50,7 +56,7 @@ The indexing-status card refreshes only while Sources and its Activity lifecycle
 
 ## Settings
 
-Settings includes language selection, optional app-security controls, manual indexing, encrypted derived-memory export/import, OCR language-data controls, runtime local-model selection and official-page controls, local Gemma `.litertlm` import/delete fallback controls, operation status, indexed counts, and local-first/network-boundary policy status rows. Model download/cancel/delete actions are conditional and currently hidden because no catalog entry has complete transport metadata.
+Settings includes language selection, optional app-security controls, manual indexing, encrypted derived-memory export/import, OCR language-data controls, runtime local-model selection and official-page controls, local Gemma `.litertlm` import/delete fallback controls, operation status, indexed counts, and local-first/network-boundary policy status rows. Model and OCR sizes use the selected locale, and closed model-download failure codes are translated rather than exposing storage keys. Model download/cancel/delete actions are conditional and currently hidden because no catalog entry has complete transport metadata.
 
 The app-security card provides separate screenshot-blocking and app-lock toggles plus concise disclosure that Android handles biometric/device credentials and Grayin stores none. Screenshot preference changes persist synchronously. App-lock enable and disable changes require successful system authentication before they persist; enabling app lock forces `FLAG_SECURE` regardless of the screenshot toggle. Persistence failure leaves the prior toggle state and window policy unchanged.
 

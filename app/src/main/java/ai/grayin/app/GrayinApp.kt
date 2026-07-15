@@ -71,6 +71,8 @@ import ai.grayin.core.security.AppLockState
 import ai.grayin.core.security.AppSecurityAuthCapability
 import ai.grayin.core.security.AppSecurityFailure
 import ai.grayin.core.security.AppSecurityState
+import ai.grayin.core.indexing.ManualIndexDateRange
+import java.time.LocalDate
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -146,6 +148,7 @@ fun GrayinApp(
     var backupDialogModeName by rememberSaveable { mutableStateOf(BackupDialogMode.NONE.name) }
     var pendingExportToken by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingImportToken by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingSettingsConnectorId by rememberSaveable { mutableStateOf<String?>(null) }
     var backupPassword by remember { mutableStateOf("") }
     var backupPasswordConfirmation by remember { mutableStateOf("") }
     val selectedScreen = GrayinScreen.valueOf(selectedScreenName)
@@ -274,9 +277,11 @@ fun GrayinApp(
             scope.launch {
                 working = true
                 try {
-                    statusMessage = controller.invokeConnector(CalendarConnectorId, strings)
+                    statusMessage = strings.connectorConnectionResult(
+                        controller.connectConnector(CalendarConnectorId),
+                    )
                 } catch (_: Throwable) {
-                    statusMessage = strings.sourcePermissionDenied
+                    statusMessage = strings.sourceConnectionFailed()
                 } finally {
                     refreshSnapshotSafely()
                     working = false
@@ -293,9 +298,11 @@ fun GrayinApp(
             scope.launch {
                 working = true
                 try {
-                    statusMessage = controller.invokeConnector(PhotosConnectorId, strings)
+                    statusMessage = strings.connectorConnectionResult(
+                        controller.connectConnector(PhotosConnectorId),
+                    )
                 } catch (_: Throwable) {
-                    statusMessage = strings.sourcePermissionDenied
+                    statusMessage = strings.sourceConnectionFailed()
                 } finally {
                     refreshSnapshotSafely()
                     working = false
@@ -312,9 +319,11 @@ fun GrayinApp(
             scope.launch {
                 working = true
                 try {
-                    statusMessage = controller.invokeConnector(LocationConnectorId, strings)
+                    statusMessage = strings.connectorConnectionResult(
+                        controller.connectConnector(LocationConnectorId),
+                    )
                 } catch (_: Throwable) {
-                    statusMessage = strings.sourcePermissionDenied
+                    statusMessage = strings.sourceConnectionFailed()
                 } finally {
                     refreshSnapshotSafely()
                     working = false
@@ -322,6 +331,54 @@ fun GrayinApp(
             }
         } else {
             statusMessage = strings.sourcePermissionDenied
+        }
+    }
+    val connectorSettingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) {
+        val returned = ConnectorSettingsAccessState(pendingSettingsConnectorId).consumeReturn()
+        pendingSettingsConnectorId = returned.nextState.pendingConnectorId
+        val connectorId = returned.connectorId
+        if (connectorId != null) {
+            scope.launch {
+                working = true
+                try {
+                    statusMessage = strings.connectorConnectionResult(
+                        controller.connectConnector(connectorId),
+                    )
+                } catch (_: Throwable) {
+                    statusMessage = strings.sourceConnectionFailed()
+                } finally {
+                    refreshSnapshotSafely()
+                    working = false
+                }
+            }
+        }
+    }
+
+    fun openConnectorSettings(connectorId: String) {
+        val pendingState = try {
+            ConnectorSettingsAccessState(pendingSettingsConnectorId).begin(connectorId)
+        } catch (_: IllegalArgumentException) {
+            statusMessage = strings.settingsAccessAlreadyPending()
+            return
+        }
+        val destination = ConnectorSettingsAccessState.destinationForConnector(connectorId)
+            ?: return
+        pendingSettingsConnectorId = pendingState.pendingConnectorId
+        try {
+            connectorSettingsLauncher.launch(
+                Intent(
+                    when (destination) {
+                        ConnectorSettingsDestination.USAGE_ACCESS -> Settings.ACTION_USAGE_ACCESS_SETTINGS
+                        ConnectorSettingsDestination.NOTIFICATION_LISTENER_ACCESS ->
+                            Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
+                    },
+                ),
+            )
+        } catch (_: Throwable) {
+            pendingSettingsConnectorId = pendingState.cancel().pendingConnectorId
+            statusMessage = strings.settingsAccessOpenFailed()
         }
     }
 
@@ -525,7 +582,7 @@ fun GrayinApp(
                                 } catch (_: Throwable) {
                                     answerState = AnswerUiState(
                                         answer = strings.searchFailed,
-                                        confidence = "UNKNOWN",
+                                        confidence = strings.confidenceLabel(ai.grayin.core.model.ConfidenceLevel.UNKNOWN),
                                         evidenceRows = listOf(strings.noCitedEvidence),
                                         missingRows = listOf(strings.tryIndexingAgain),
                                     )
@@ -546,7 +603,7 @@ fun GrayinApp(
                         automaticIndexingSyncing = automaticIndexingSyncing,
                         statusMessage = statusMessage,
                         strings = strings,
-                        working = working,
+                        working = working || pendingSettingsConnectorId != null,
                         onIndexAllSources = ::indexAllSources,
                         onAutomaticIndexingChanged = ::updateAutomaticIndexing,
                         onAddLocalFile = {
@@ -571,12 +628,13 @@ fun GrayinApp(
                                     scope.launch {
                                         working = true
                                         try {
-                                            statusMessage = controller.invokeConnector(connectorId, strings)
-                                            if (statusMessage == strings.sourcePermissionDenied) {
-                                                context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                            val result = controller.connectConnector(connectorId)
+                                            statusMessage = strings.connectorConnectionResult(result)
+                                            if (result is ConnectorConnectionResult.PermissionRequired) {
+                                                openConnectorSettings(connectorId)
                                             }
                                         } catch (_: Throwable) {
-                                            statusMessage = strings.sourcePermissionDenied
+                                            statusMessage = strings.sourceConnectionFailed()
                                         } finally {
                                             refreshSnapshotSafely()
                                             working = false
@@ -588,12 +646,13 @@ fun GrayinApp(
                                     scope.launch {
                                         working = true
                                         try {
-                                            statusMessage = controller.invokeConnector(connectorId, strings)
-                                            if (statusMessage == strings.sourcePermissionDenied) {
-                                                context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                            val result = controller.connectConnector(connectorId)
+                                            statusMessage = strings.connectorConnectionResult(result)
+                                            if (result is ConnectorConnectionResult.PermissionRequired) {
+                                                openConnectorSettings(connectorId)
                                             }
                                         } catch (_: Throwable) {
-                                            statusMessage = strings.sourcePermissionDenied
+                                            statusMessage = strings.sourceConnectionFailed()
                                         } finally {
                                             refreshSnapshotSafely()
                                             working = false
@@ -611,6 +670,27 @@ fun GrayinApp(
                                 working = true
                                 try {
                                     statusMessage = controller.indexConnector(connectorId, strings)
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.indexingFailed
+                                } finally {
+                                    refreshSnapshotSafely()
+                                    working = false
+                                }
+                            }
+                        },
+                        onIndexSourceDateRange = { connectorId, days ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    val today = LocalDate.now()
+                                    statusMessage = controller.indexConnectorDateRange(
+                                        connectorId = connectorId,
+                                        range = ManualIndexDateRange(
+                                            startDateInclusive = today.minusDays(days.toLong() - 1L),
+                                            endDateInclusive = today,
+                                        ),
+                                        strings = strings,
+                                    )
                                 } catch (_: Throwable) {
                                     statusMessage = strings.indexingFailed
                                 } finally {
@@ -1263,6 +1343,7 @@ private fun SourcesScreen(
     onAddLocalFile: () -> Unit,
     onInvokeSource: (String, List<String>) -> Unit,
     onIndexSource: (String) -> Unit,
+    onIndexSourceDateRange: (String, Int) -> Unit,
     onRevokeSource: (String) -> Unit,
     onDeleteSourceData: (String) -> Unit,
     onSaveNotificationAllowlist: (String) -> Unit,
@@ -1308,6 +1389,7 @@ private fun SourcesScreen(
                 onAddLocalFile = onAddLocalFile,
                 onInvokeSource = onInvokeSource,
                 onIndexSource = onIndexSource,
+                onIndexSourceDateRange = onIndexSourceDateRange,
                 onRevokeSource = onRevokeSource,
                 onDeleteSourceData = onDeleteSourceData,
                 onSaveNotificationAllowlist = onSaveNotificationAllowlist,
@@ -1575,6 +1657,7 @@ private fun SourceRow(
     onAddLocalFile: () -> Unit,
     onInvokeSource: (String, List<String>) -> Unit,
     onIndexSource: (String) -> Unit,
+    onIndexSourceDateRange: (String, Int) -> Unit,
     onRevokeSource: (String) -> Unit,
     onDeleteSourceData: (String) -> Unit,
     onSaveNotificationAllowlist: (String) -> Unit,
@@ -1604,6 +1687,12 @@ private fun SourceRow(
                 Text(source.status, style = MaterialTheme.typography.labelLarge)
             }
             Text(source.sensitivity, style = MaterialTheme.typography.bodySmall)
+            source.detailRows.forEach { detail ->
+                Text(detail, style = MaterialTheme.typography.bodySmall)
+            }
+            source.lastRequestedScanRange?.let { range ->
+                Text(strings.requestedScanDateRangeLabel(range), style = MaterialTheme.typography.bodySmall)
+            }
             if (source.id == LocalFilesConnectorId) {
                 Text(strings.localDocumentSupportDisclosure(), style = MaterialTheme.typography.bodySmall)
             }
@@ -1670,6 +1759,18 @@ private fun SourceRow(
                             onClick = { onIndexSource(source.id) },
                         ) {
                             Text(strings.indexNow)
+                        }
+                    }
+                    if (source.canIndex && source.supportsDateRangeIndexing) {
+                        Text(strings.dateRangeIndexingTitle(), style = MaterialTheme.typography.titleSmall)
+                        listOf(7, 30, 90).forEach { days ->
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !working,
+                                onClick = { onIndexSourceDateRange(source.id, days) },
+                            ) {
+                                Text(strings.lastDaysLabel(days))
+                            }
                         }
                     }
                     if (source.canRevoke) {
@@ -2254,7 +2355,7 @@ private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
 private fun emptyAnswerState(strings: GrayinStrings): AnswerUiState {
     return AnswerUiState(
         answer = strings.noAnswerAvailable,
-        confidence = "UNKNOWN",
+        confidence = strings.confidenceLabel(ai.grayin.core.model.ConfidenceLevel.UNKNOWN),
         evidenceRows = listOf(strings.noCitedEvidence),
         missingRows = listOf(strings.addAndIndexLocalFileFirst),
     )

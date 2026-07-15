@@ -30,12 +30,14 @@ class NotificationConnector(
 
     override suspend fun currentState(): ConnectorState {
         val permissionGranted = isListenerEnabled(context)
-        val enabled = permissionGranted && isSourceEnabled(context)
+        val consentEnabled = isSourceEnabled(context)
+        val enabled = permissionGranted && consentEnabled
         val lastIndexedAt = prefs(context).getString(KEY_LAST_INDEXED_AT, null)?.let(Instant::parse)
         return ConnectorState(
             connectorId = CONNECTOR_ID,
             displayName = metadata.displayName,
             enabled = enabled,
+            consentEnabled = consentEnabled,
             availability = when {
                 enabled -> SourceAvailability.AVAILABLE
                 permissionGranted -> SourceAvailability.DISABLED

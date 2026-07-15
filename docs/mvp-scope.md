@@ -11,8 +11,9 @@
 - SQLCipher-backed derived-memory store
 - connector abstraction
 - real Local Files connector for user-selected Text, Markdown, and PDF documents with on-device page/OCR indexing
-- real basic connectors for location, photos, calendar, notifications, and app usage
+- real basic connectors for location, photos, calendar, notifications, and app usage, including encrypted rounded-coordinate place-cluster accumulation
 - indexing queue abstraction
+- manual 7-, 30-, and 90-day indexing for Calendar, Photos, and App Usage
 - query planner skeleton
 - grounded answer format
 - local LLM adapter abstraction
@@ -20,6 +21,7 @@
 - default-OFF bounded Android reverse geocoding and fixed Open-Meteo weather provider with explicit provider disclosure
 - documentation
 - benchmark questions
+- typed English/Korean/Japanese presentation for connector status, Timeline events, and Places clusters
 
 ## Excluded
 

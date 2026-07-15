@@ -40,12 +40,14 @@ class PhotosConnector(
 
     override suspend fun currentState(): ConnectorState {
         val permissionGranted = hasPhotosPermission()
-        val enabled = permissionGranted && isEnabled()
+        val consentEnabled = isEnabled()
+        val enabled = permissionGranted && consentEnabled
         val lastIndexedAt = prefs().getString(KEY_LAST_INDEXED_AT, null)?.let(Instant::parse)
         return ConnectorState(
             connectorId = CONNECTOR_ID,
             displayName = metadata.displayName,
             enabled = enabled,
+            consentEnabled = consentEnabled,
             availability = when {
                 enabled -> SourceAvailability.AVAILABLE
                 permissionGranted -> SourceAvailability.DISABLED
@@ -100,17 +102,31 @@ class PhotosConnector(
 
         val from = scope.from ?: now.minus(DEFAULT_PAST_WINDOW)
         val until = scope.until ?: now
-        val rows = readPhotoRows(from, until, now)
+        val readResult = readPhotoRows(from, until, now)
+        val rows = readResult.rows
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = if (rows.isEmpty()) ProcessingState.SKIPPED else ProcessingState.COMPLETED,
             sourceReferences = rows.map { it.sourceReference },
             derivedEvents = rows.map { it.derivedEvent },
             citations = rows.map { it.citation },
-            missingSources = if (rows.isEmpty()) {
-                missingSources(SourceAvailability.NOT_INDEXED, ConnectorScanIssueCode.NO_PHOTOS_IN_RANGE)
-            } else {
-                emptyList()
+            missingSources = buildList {
+                if (rows.isEmpty()) {
+                    addAll(
+                        missingSources(
+                            SourceAvailability.NOT_INDEXED,
+                            ConnectorScanIssueCode.NO_PHOTOS_IN_RANGE,
+                        ),
+                    )
+                }
+                if (readResult.outputLimited) {
+                    addAll(
+                        missingSources(
+                            SourceAvailability.STALE,
+                            ConnectorScanIssueCode.PHOTO_METADATA_LIMIT_REACHED,
+                        ),
+                    )
+                }
             },
             scopeFrom = from,
             scopeUntil = until,
@@ -145,8 +161,8 @@ class PhotosConnector(
         from: Instant,
         until: Instant,
         observedAt: Instant,
-    ): List<PhotoExtractionResult> {
-        val selection = "${MediaStore.Images.Media.DATE_TAKEN} >= ? AND ${MediaStore.Images.Media.DATE_TAKEN} <= ?"
+    ): PhotoReadResult {
+        val selection = "${MediaStore.Images.Media.DATE_TAKEN} >= ? AND ${MediaStore.Images.Media.DATE_TAKEN} < ?"
         val selectionArgs = arrayOf(from.toEpochMilli().toString(), until.toEpochMilli().toString())
         return context.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -155,12 +171,17 @@ class PhotosConnector(
             selectionArgs,
             "${MediaStore.Images.Media.DATE_TAKEN} DESC",
         )?.use { cursor ->
-            buildList {
-                while (cursor.moveToNext() && size < MAX_PHOTOS_PER_SCAN) {
-                    add(cursor.toExtractionResult(observedAt))
+            val rows = mutableListOf<PhotoExtractionResult>()
+            var outputLimited = false
+            while (cursor.moveToNext()) {
+                if (rows.size >= MAX_PHOTOS_PER_SCAN) {
+                    outputLimited = true
+                    break
                 }
+                rows += cursor.toExtractionResult(observedAt)
             }
-        }.orEmpty()
+            PhotoReadResult(rows, outputLimited)
+        } ?: PhotoReadResult(emptyList(), outputLimited = false)
     }
 
     private fun android.database.Cursor.toExtractionResult(observedAt: Instant): PhotoExtractionResult {
@@ -305,6 +326,11 @@ class PhotosConnector(
         val citation: MemoryCitation,
     )
 
+    private data class PhotoReadResult(
+        val rows: List<PhotoExtractionResult>,
+        val outputLimited: Boolean,
+    )
+
     companion object {
         const val CONNECTOR_ID = "photos"
         val METADATA = ConnectorMetadata(
@@ -318,6 +344,7 @@ class PhotosConnector(
             ),
             indexingMode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
             defaultEnabled = false,
+            supportsDateRangeIndexing = true,
             sensitivity = SensitivityLevel.HIGH,
         )
 

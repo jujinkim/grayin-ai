@@ -34,6 +34,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -72,6 +73,7 @@ class IndexingCommandExecutorTest {
         val connector = FakeConnector(
             id = "calendar",
             mode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
+            supportsDateRangeIndexing = true,
             operations = operations,
             scanResult = successfulScan("calendar"),
         )
@@ -118,6 +120,82 @@ class IndexingCommandExecutorTest {
         )
         assertEquals("manual-ui", queue.lastTerminalLeaseOwner)
         assertEquals(1, queue.lastTerminalAttemptCount)
+    }
+
+    @Test
+    fun `connector-specific unsupported date range is rejected before enqueue or scan`() = runBlocking {
+        val operations = mutableListOf<String>()
+        val connector = FakeConnector(
+            id = "local_files",
+            mode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
+            supportsDateRangeIndexing = false,
+            operations = operations,
+        )
+        val queue = RecordingQueue(operations)
+        val executor = executor(listOf(connector), queue)
+
+        try {
+            executor.enqueue(
+                IndexDateRange(
+                    from = NOW.minusSeconds(86_400),
+                    until = NOW,
+                    connectorId = connector.id,
+                ),
+                IndexingTrigger.MANUAL,
+            )
+            fail("Unsupported date-range indexing should be rejected.")
+        } catch (_: IllegalArgumentException) {
+            // Expected deterministic boundary rejection.
+        }
+
+        assertTrue(queue.items.isEmpty())
+        assertTrue(operations.isEmpty())
+        assertNull(connector.lastScope)
+    }
+
+    @Test
+    fun `unscoped date range selects only enabled supported connectors`() = runBlocking {
+        val enabledSupported = FakeConnector(
+            id = "calendar",
+            mode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
+            supportsDateRangeIndexing = true,
+        )
+        val disabledSupported = FakeConnector(
+            id = "photos",
+            mode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
+            enabled = false,
+            supportsDateRangeIndexing = true,
+        )
+        val enabledUnsupported = FakeConnector(
+            id = "local_files",
+            mode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
+            supportsDateRangeIndexing = false,
+        )
+        val eventDrivenSupported = FakeConnector(
+            id = "notification",
+            mode = ConnectorIndexingMode.EVENT_DRIVEN,
+            supportsDateRangeIndexing = true,
+        )
+        val queue = RecordingQueue()
+        val executor = executor(
+            connectors = listOf(
+                enabledSupported,
+                disabledSupported,
+                enabledUnsupported,
+                eventDrivenSupported,
+            ),
+            queue = queue,
+        )
+
+        val enqueued = executor.enqueue(
+            IndexDateRange(
+                from = NOW.minusSeconds(86_400),
+                until = NOW,
+            ),
+            IndexingTrigger.MANUAL,
+        )
+
+        assertEquals(listOf("calendar"), enqueued.map { it.connectorId })
     }
 
     @Test
@@ -488,6 +566,7 @@ class IndexingCommandExecutorTest {
         mode: ConnectorIndexingMode,
         private val enabled: Boolean = true,
         private val permissionGranted: Boolean = true,
+        supportsDateRangeIndexing: Boolean = false,
         private val operations: MutableList<String> = mutableListOf(),
         private val scanResult: ConnectorScanResult = successfulScan(id),
         private val scanError: Exception? = null,
@@ -500,6 +579,7 @@ class IndexingCommandExecutorTest {
             connectorCapabilities = emptySet(),
             memoryCapabilities = emptySet(),
             indexingMode = mode,
+            supportsDateRangeIndexing = supportsDateRangeIndexing,
             sensitivity = SensitivityLevel.MEDIUM,
         )
         var lastScope: ConnectorScanScope? = null
