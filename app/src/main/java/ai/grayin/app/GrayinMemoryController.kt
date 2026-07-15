@@ -40,6 +40,7 @@ import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceReference
+import ai.grayin.core.enrichment.OnlineEnrichmentPreferences
 import ai.grayin.core.retrieval.DefaultQueryPlanner
 import ai.grayin.core.retrieval.EvidenceEventSelector
 import ai.grayin.core.retrieval.MissingEvidenceResolver
@@ -65,6 +66,7 @@ data class ConnectorUiState(
     val canRevoke: Boolean = false,
     val canDelete: Boolean = false,
     val notificationAllowedPackages: List<String> = emptyList(),
+    val onlineEnrichmentEnabled: Boolean? = null,
 )
 
 data class AnswerUiState(
@@ -110,6 +112,9 @@ class GrayinMemoryController(
     ),
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
     private val notificationAllowlist: NotificationAppAllowlist = NotificationAppAllowlist(context.applicationContext),
+    private val onlineEnrichmentPreferences: OnlineEnrichmentPreferences = OnlineEnrichmentPreferences(
+        context.applicationContext,
+    ),
     private val modelInstallStore: ModelInstallStore = ModelInstallStore(context.applicationContext),
     private val modelDownloadScheduler: ModelDownloadScheduler = ModelDownloadScheduler(context.applicationContext),
     private val modelPathResolver: Gemma4ModelPathResolver = Gemma4ModelPathResolver(
@@ -351,6 +356,11 @@ class GrayinMemoryController(
         strings.notificationAllowlistSaved(parsed.allowedPackages.size)
     }
 
+    suspend fun updateOnlineEnrichment(enabled: Boolean, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        onlineEnrichmentPreferences.setEnabled(enabled)
+        strings.onlineEnrichmentSaved(enabled)
+    }
+
     suspend fun deleteLocalFileData(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val deleteResult = store.deleteConnectorData(LocalFileMemoryExtractor.CONNECTOR_ID)
         strings.deletedLocalFileEvents(deleteResult.deletedDerivedMemoryEventIds.size)
@@ -528,6 +538,11 @@ class GrayinMemoryController(
                 notificationAllowlist.load().toList()
             } else {
                 emptyList()
+            },
+            onlineEnrichmentEnabled = if (connectorId == LocationConnector.CONNECTOR_ID) {
+                onlineEnrichmentPreferences.isEnabled()
+            } else {
+                null
             },
         )
     }

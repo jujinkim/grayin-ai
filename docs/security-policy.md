@@ -28,6 +28,8 @@ Grayin AI uses SQLCipher persistence with an Android Keystore-protected passphra
 
 The app uses INTERNET permission only for typed map/place/reverse-geocode/weather enrichment and fixed-catalog model/manifest downloads.
 
+External enrichment is separately consented and default OFF. Current traffic is HTTPS-only: Android `Geocoder` receives a 0.001-degree coordinate; fixed Open-Meteo forecast/archive hosts receive a 0.01-degree coordinate and UTC date. Redirects and cleartext traffic are disabled, provider responses are size/schema/range checked, and failures return stable reason enums without response bodies.
+
 Network use must not:
 
 - expose arbitrary URL or endpoint calls to app feature code

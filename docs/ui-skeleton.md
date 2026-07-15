@@ -40,6 +40,8 @@ Local Files supports:
 
 Location, Photos, Calendar, Notifications, and App Usage expose permission/settings connection, indexing state, revoke, and delete-derived-data controls.
 
+Location also exposes a separate default-OFF external place/weather enrichment switch. Its disclosure lists the rounded coordinate/date projection, fixed provider, Open-Meteo attribution, possible 90-day provider URL/IP log retention, and local fallback behavior.
+
 ## Settings
 
 Settings includes language selection, manual indexing, runtime local-model selection/download/cancel/delete controls, local Gemma `.litertlm` import/delete fallback controls, operation status, indexed counts, and local-first/network-boundary policy status rows.

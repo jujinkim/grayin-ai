@@ -19,6 +19,14 @@ Provider base URLs, paths, and request schemas must be fixed in provider code or
 
 An `EnrichmentRequest` is not a persisted `DerivedMemoryEvent` and must not contain summaries, labels, entities, citations, source references, evidence IDs, or connector payloads.
 
+Current fixed providers and projections:
+
+- reverse geocode: Android `Geocoder`, only after separate online-enrichment opt-in; latitude/longitude are rounded to 0.001 degrees and only locality, sub-locality, region, sub-region, and two-letter country code may return to the app
+- weather: Open-Meteo forecast and archive APIs, only after the same opt-in; latitude/longitude are rounded to 0.01 degrees and only one UTC date is transmitted
+- weather hosts are fixed to `api.open-meteo.com` and `archive-api.open-meteo.com`; paths and query keys are fixed in provider code, redirects are rejected, cleartext traffic is disabled, connect/read timeouts are 5 seconds each, and the response body is capped at 64 KiB
+
+Open-Meteo's public endpoint is for non-commercial prototype use. Its API data requires CC BY 4.0 attribution, and its published terms say request logs that can include IP addresses and URLs may be retained for 90 days. A commercial release requires a paid/fixed provider contract and must not ship a secret API key as if an APK could protect it.
+
 ### Fixed-Catalog Artifact Downloads
 
 Runtime model files and authenticated model manifests may be downloaded from fixed catalog entries. Every model artifact must have a pinned SHA-256 digest. A remotely updated manifest must carry an ECDSA P-256 signature verified with a public key bundled in the app; a bundled catalog is authenticated by the signed APK and must still pin artifact digests. Catalog entries must define an HTTPS URL, expected file identity, size limits, license or terms URL, and app compatibility metadata.
@@ -49,4 +57,4 @@ Grayin AI must not:
 
 Network failure must not block local indexing, retrieval, or template answers. Enrichment failures return an explicit unavailable result. Model download failures keep the last verified local model or template fallback.
 
-No network response may be treated as trusted until schema, size, and integrity checks succeed.
+No network response may be treated as trusted until HTTP status, content type, schema, array length, timestamp, numeric range, size, and integrity checks succeed. Provider response bodies and exception messages must not be copied into UI errors or logs.

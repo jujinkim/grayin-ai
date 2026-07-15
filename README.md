@@ -55,6 +55,8 @@ The app does not expose arbitrary or user-entered endpoints. External enrichment
 
 External enrichment may fetch map/place, weather, or reverse-geocode details through typed gateway methods. Runtime model downloads use fixed catalog URLs. Both paths follow `docs/network-policy.md`.
 
+External place/weather enrichment has a separate default-OFF Location switch. Android reverse geocoding receives a 0.001-degree coordinate. The fixed Open-Meteo weather provider receives a 0.01-degree coordinate and one UTC date, rejects redirects, caps/validates responses, and returns explicit unavailable reasons without blocking local indexing. Its current public endpoint is non-commercial prototype infrastructure; provider terms and possible 90-day URL/IP log retention are disclosed in the app and privacy docs.
+
 Examples:
 
 - location clusters

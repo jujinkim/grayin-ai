@@ -51,6 +51,6 @@
 
 ## Network Metadata Risk
 
-External enrichment can reveal a rounded coordinate, timestamp, locale, units, or coarse place query to the selected provider. Only fields required by a typed operation may leave the device. Provider failures must degrade to local results without retrying through unapproved endpoints.
+External enrichment can reveal a rounded coordinate/date and the device IP address to the selected provider. Current reverse-geocode projection uses 0.001-degree coordinates through Android `Geocoder`; weather uses 0.01-degree coordinates and one UTC date through fixed Open-Meteo forecast/archive endpoints. Open-Meteo states that URL/IP request logs may be retained for 90 days. The mitigation is a separate default-OFF consent, coarse projections, fixed HTTPS hosts/queries, disabled redirects and cleartext traffic, response caps/schema checks, no retries through other providers, and coordinate-only local fallback.
 
 Model downloads reveal model selection and network metadata to the fixed artifact host. They must not include user-memory identifiers or evidence data. See `docs/network-policy.md`.

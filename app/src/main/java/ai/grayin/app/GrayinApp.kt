@@ -443,6 +443,19 @@ fun GrayinApp() {
                                 }
                             }
                         },
+                        onOnlineEnrichmentChanged = { enabled ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.updateOnlineEnrichment(enabled, strings)
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: strings.searchFailed
+                                } finally {
+                                    snapshot = controller.snapshot(strings)
+                                    working = false
+                                }
+                            }
+                        },
                     )
                     GrayinScreen.Settings -> SettingsScreen(
                         rows = snapshot.settingsRows,
@@ -690,6 +703,7 @@ private fun SourcesScreen(
     onRevokeSource: (String) -> Unit,
     onDeleteSourceData: (String) -> Unit,
     onSaveNotificationAllowlist: (String) -> Unit,
+    onOnlineEnrichmentChanged: (Boolean) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -728,6 +742,7 @@ private fun SourcesScreen(
                 onRevokeSource = onRevokeSource,
                 onDeleteSourceData = onDeleteSourceData,
                 onSaveNotificationAllowlist = onSaveNotificationAllowlist,
+                onOnlineEnrichmentChanged = onOnlineEnrichmentChanged,
             )
         }
     }
@@ -935,6 +950,7 @@ private fun SourceRow(
     onRevokeSource: (String) -> Unit,
     onDeleteSourceData: (String) -> Unit,
     onSaveNotificationAllowlist: (String) -> Unit,
+    onOnlineEnrichmentChanged: (Boolean) -> Unit,
 ) {
     var notificationAllowlistText by rememberSaveable(source.id) {
         mutableStateOf(source.notificationAllowedPackages.joinToString("\n"))
@@ -960,6 +976,23 @@ private fun SourceRow(
                 Text(source.status, style = MaterialTheme.typography.labelLarge)
             }
             Text(source.sensitivity, style = MaterialTheme.typography.bodySmall)
+            source.onlineEnrichmentEnabled?.let { enabled ->
+                Text(strings.onlineEnrichmentTitle, style = MaterialTheme.typography.titleSmall)
+                Text(strings.onlineEnrichmentDisclosure, style = MaterialTheme.typography.bodySmall)
+                Text(strings.onlineEnrichmentProviderCredit, style = MaterialTheme.typography.bodySmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(strings.onlineEnrichmentTitle)
+                    Switch(
+                        checked = enabled,
+                        enabled = !working,
+                        onCheckedChange = onOnlineEnrichmentChanged,
+                    )
+                }
+            }
             if (source.id == NotificationConnectorId) {
                 Text(strings.notificationAllowlistTitle, style = MaterialTheme.typography.titleSmall)
                 Text(strings.notificationAllowlistHint, style = MaterialTheme.typography.bodySmall)

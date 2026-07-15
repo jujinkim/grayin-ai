@@ -54,7 +54,7 @@ Calendar supports explicit runtime calendar read permission plus app-level conne
 
 Photos supports explicit runtime media read permission plus app-level connection before indexing. It reads Android MediaStore image metadata transiently, emits derived photo index events/citations/source references, and never reads or stores original image bytes. Metadata-only events provide media capability but do not claim visual-label capability.
 
-Location supports explicit runtime location permission plus app-level connection before indexing. It reads last-known provider location transiently, emits rounded derived place-visit events/citations/source references, and does not store raw location provider dumps.
+Location supports explicit runtime location permission plus app-level connection before indexing. It reads last-known provider location transiently, emits rounded derived place-visit events/citations/source references, and does not store raw location provider dumps. A separate default-OFF enrichment switch permits the connector to pass only a transient 0.001-degree coordinate to `OnlineEnrichmentGateway.reverseGeocode`; failure or denial keeps the coordinate-only local result. Revocation disables this consent.
 
 App Usage supports explicit usage-access settings permission plus app-level connection before indexing. It reads Android UsageStats transiently, emits derived app-duration events/citations/source references, and does not store raw usage event dumps.
 
@@ -79,3 +79,5 @@ Connectors must not expose raw/original content through return values, callbacks
 Store APIs must accept connector outputs only as source references, derived memory, citations, summaries, clusters, and index metadata. They must not accept original file bytes, raw notification text, raw message text, raw usage dumps, raw calendar records, raw local-file content, or raw source payloads.
 
 Connectors must not own network clients or endpoints. A connector that needs map/place, reverse-geocode, or weather enrichment may call a typed `OnlineEnrichmentGateway` method with only approved derived lookup inputs. All other connector network access is forbidden by `docs/network-policy.md`.
+
+`OnlineEnrichmentGateway` returns typed available/unavailable results. Provider errors, response bodies, and arbitrary endpoint values never cross the gateway boundary.

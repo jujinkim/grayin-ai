@@ -134,6 +134,9 @@ data class GrayinStrings(
     val noSourcesReadyToIndex: String,
     val revokedLocalFiles: String,
     val networkPermissionRestricted: String,
+    val onlineEnrichmentTitle: String,
+    val onlineEnrichmentDisclosure: String,
+    val onlineEnrichmentProviderCredit: String,
     val accountAbsent: String,
     val cloudSyncAbsent: String,
     val telemetryAbsent: String,
@@ -262,6 +265,14 @@ data class GrayinStrings(
             GrayinLanguage.KOREAN -> "알림 앱 허용 목록을 저장했습니다: ${count}개."
             GrayinLanguage.JAPANESE -> "通知アプリ許可リストを保存しました: ${count}件。"
             GrayinLanguage.ENGLISH -> "Saved notification app allowlist: $count package(s)."
+        }
+    }
+
+    fun onlineEnrichmentSaved(enabled: Boolean): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> if (enabled) "외부 장소·날씨 enrichment를 켰습니다." else "외부 장소·날씨 enrichment를 껐습니다."
+            GrayinLanguage.JAPANESE -> if (enabled) "外部の場所・天気enrichmentをオンにしました。" else "外部の場所・天気enrichmentをオフにしました。"
+            GrayinLanguage.ENGLISH -> if (enabled) "Enabled external place and weather enrichment." else "Disabled external place and weather enrichment."
         }
     }
 
@@ -538,6 +549,9 @@ private val EnglishStrings = GrayinStrings(
     noSourcesReadyToIndex = "No connected sources are ready to index.",
     revokedLocalFiles = "Revoked local file access and deleted derived local file data.",
     networkPermissionRestricted = "Network: typed external enrichment and fixed-catalog model downloads only",
+    onlineEnrichmentTitle = "External place and weather enrichment",
+    onlineEnrichmentDisclosure = "Optional. Sends only rounded coordinates and a UTC date to fixed providers. Open-Meteo may retain request URL/IP logs for up to 90 days. No source content or stored memory is sent.",
+    onlineEnrichmentProviderCredit = "Weather data provider: Open-Meteo (CC BY 4.0)",
     accountAbsent = "Account: absent",
     cloudSyncAbsent = "Cloud sync: absent",
     telemetryAbsent = "Telemetry: absent",
@@ -651,6 +665,9 @@ private val KoreanStrings = EnglishStrings.copy(
     noSourcesReadyToIndex = "인덱싱할 수 있는 연결된 소스가 없습니다.",
     revokedLocalFiles = "로컬 파일 접근 권한을 해제하고 파생 로컬 파일 데이터를 삭제했습니다.",
     networkPermissionRestricted = "네트워크: typed 외부 enrichment 및 고정 catalog 모델 다운로드만 허용",
+    onlineEnrichmentTitle = "외부 장소·날씨 enrichment",
+    onlineEnrichmentDisclosure = "선택 기능입니다. 고정 provider에 반올림 좌표와 UTC 날짜만 보냅니다. Open-Meteo는 요청 URL/IP 로그를 최대 90일 보관할 수 있습니다. 소스 내용이나 저장된 기억은 보내지 않습니다.",
+    onlineEnrichmentProviderCredit = "날씨 데이터 제공: Open-Meteo (CC BY 4.0)",
     accountAbsent = "계정: 없음",
     cloudSyncAbsent = "클라우드 동기화: 없음",
     telemetryAbsent = "텔레메트리: 없음",
@@ -764,6 +781,9 @@ private val JapaneseStrings = EnglishStrings.copy(
     noSourcesReadyToIndex = "インデックス可能な接続済みソースがありません。",
     revokedLocalFiles = "ローカルファイルへのアクセス許可を解除し、派生ローカルファイルデータを削除しました。",
     networkPermissionRestricted = "ネットワーク: typed外部enrichmentと固定catalogモデルのダウンロードのみ許可",
+    onlineEnrichmentTitle = "外部の場所・天気enrichment",
+    onlineEnrichmentDisclosure = "任意機能です。固定providerへ丸めた座標とUTC日付だけを送信します。Open-MeteoはリクエストURL/IPログを最大90日保持する場合があります。ソース内容や保存済み記憶は送信しません。",
+    onlineEnrichmentProviderCredit = "天気データ提供: Open-Meteo (CC BY 4.0)",
     accountAbsent = "アカウント: なし",
     cloudSyncAbsent = "クラウド同期: なし",
     telemetryAbsent = "テレメトリー: なし",

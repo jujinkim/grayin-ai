@@ -109,7 +109,7 @@ The MVP should conceptually support these evidence sources through implemented c
 - OCR-derived text
 - future local LLM-generated summaries
 
-Current usable local MVP implementation supports user-selected `.txt` and `.md` files, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app usage summaries, and connected Android notification-derived signals after explicit permission or settings access. Ask can use a local Gemma LiteRT-LM model over retrieved `EvidencePack` data when a runtime-downloaded or manually imported `.litertlm` model file is installed, with template fallback when unavailable. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
+Current usable local MVP implementation supports user-selected `.txt` and `.md` files, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app usage summaries, and connected Android notification-derived signals after explicit permission or settings access. A separate default-OFF Location switch permits bounded Android reverse geocoding and fixed Open-Meteo weather lookup through `OnlineEnrichmentGateway`; failures preserve coordinate-only local indexing. Ask can use a local Gemma LiteRT-LM model over retrieved `EvidencePack` data when a runtime-downloaded or manually imported `.litertlm` model file is installed, with template fallback when unavailable. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
 
 ## Important Definitions
 
@@ -230,6 +230,8 @@ Rules:
 - weather lookups may use a fixed external provider through the typed enrichment gateway
 - reverse-geocode lookup may use Android's geocoder or a fixed provider through the typed enrichment gateway
 - only rounded coordinates, timestamps, locale, units, or an explicitly approved coarse place query may leave the device
+- source connection does not imply online enrichment consent; the enrichment switch defaults OFF and revocation disables it
+- current reverse geocoding transmits only a 0.001-degree coordinate; current weather transmits only a 0.01-degree coordinate and UTC date
 - the local LLM must not call map APIs directly; map/place enrichment must remain outside the model path
 - exact business names are not required
 - focus on region, movement, stay duration, and user-defined place labels

@@ -17,6 +17,7 @@
 - grounded answer format
 - local LLM adapter abstraction
 - INTERNET permission for typed map/place/reverse-geocode/weather enrichment and fixed-catalog model downloads
+- default-OFF bounded Android reverse geocoding and fixed Open-Meteo weather provider with explicit provider disclosure
 - documentation
 - benchmark questions
 

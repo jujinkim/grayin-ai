@@ -2,6 +2,8 @@ package ai.grayin.core.enrichment
 
 import java.net.URI
 import java.net.URL
+import java.lang.reflect.Modifier
+import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -41,6 +43,24 @@ class OnlineEnrichmentGatewayTest {
         assertTrue(OnlineEnrichmentFeature.WEATHER_LOOKUP in OnlineEnrichmentPolicy.allowedFeatures)
         assertTrue(OnlineEnrichmentFeature.REVERSE_GEOCODE_LOOKUP in OnlineEnrichmentPolicy.allowedFeatures)
         assertEquals(2, OnlineEnrichmentPolicy.allowedFeatures.size)
+    }
+
+    @Test
+    fun requestProjectionTypesContainNoEndpointOrStoredMemoryFields() {
+        assertEquals(
+            setOf(GeoCoordinate::class.java, Instant::class.java),
+            WeatherLookupRequest::class.java.declaredFields
+                .filterNot { field -> Modifier.isStatic(field.modifiers) }
+                .map { field -> field.type }
+                .toSet(),
+        )
+        assertEquals(
+            setOf(GeoCoordinate::class.java),
+            ReverseGeocodeRequest::class.java.declaredFields
+                .filterNot { field -> Modifier.isStatic(field.modifiers) }
+                .map { field -> field.type }
+                .toSet(),
+        )
     }
 
     private fun assertThrowsIllegalArgument(block: () -> Unit) {

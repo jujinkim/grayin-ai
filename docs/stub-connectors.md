@@ -6,7 +6,7 @@ Every connector must report metadata, permission state, scan status, missing-sou
 
 ## Current Connectors
 
-- Location: high sensitivity, default OFF until user grants location permission and connects it. Reads Android last-known provider location transiently and stores only derived place-visit events, citations, and source references.
+- Location: high sensitivity, default OFF until user grants location permission and connects it. Reads Android last-known provider location transiently and stores only derived place-visit events, citations, and source references. Optional reverse-geocode/weather enrichment has a separate default-OFF consent.
 - Photos: high sensitivity, default OFF until user grants photo permission and connects it. Reads Android MediaStore image metadata transiently and stores only derived photo index events, citations, and source references.
 - Calendar: high sensitivity, default OFF until user grants calendar permission and connects it. Reads Android calendar instances transiently and stores only derived calendar events, citations, and source references.
 - Notifications: very high sensitivity, default OFF until user enables notification listener access, connects it, and adds exact Android package names to the default-empty allowlist. Reads only allowed posted notifications transiently and stores only derived notification signal events, citations, and source references.
@@ -41,8 +41,10 @@ The Location connector:
 - requires user connection before indexing
 - reads last-known provider location only inside connector-owned scan scopes
 - stores rounded location signals in derived place-visit events
+- exposes a separate online-enrichment switch with provider/data-retention disclosure
+- when enabled, calls only typed gateway methods; when disabled or unavailable, keeps coordinate-only local indexing
 - emits source references, derived place-visit events, and citations
-- supports app-level revoke by disabling the connector and deleting derived data
+- supports app-level revoke by disabling the connector and enrichment consent and deleting derived data
 
 ## Photos
 

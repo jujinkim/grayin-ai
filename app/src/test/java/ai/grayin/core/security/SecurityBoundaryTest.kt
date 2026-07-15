@@ -1,6 +1,7 @@
 package ai.grayin.core.security
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,6 +12,7 @@ class SecurityBoundaryTest {
         val manifest = File("src/main/AndroidManifest.xml").readText()
 
         assertTrue(manifest.contains("android.permission.INTERNET"))
+        assertTrue(manifest.contains("android:usesCleartextTraffic=\"false\""))
     }
 
     @Test
@@ -60,5 +62,26 @@ class SecurityBoundaryTest {
         forbidden.forEach { token ->
             assertFalse("Forbidden dependency token found: $token", buildFile.contains(token, ignoreCase = true))
         }
+    }
+
+    @Test
+    fun networkConnectionsExistOnlyInsideApprovedBoundaries() {
+        val networkFiles = File("src/main/java").walkTopDown()
+            .filter(File::isFile)
+            .filter { file -> file.extension == "kt" }
+            .filter { file ->
+                val source = file.readText()
+                source.contains("openConnection()") || source.contains("openConnection() as")
+            }
+            .map { file -> file.relativeTo(File("src/main/java")).invariantSeparatorsPath }
+            .toSet()
+
+        assertEquals(
+            setOf(
+                "ai/grayin/core/ai/ModelDownloadWorker.kt",
+                "ai/grayin/core/enrichment/OpenMeteoTransport.kt",
+            ),
+            networkFiles,
+        )
     }
 }

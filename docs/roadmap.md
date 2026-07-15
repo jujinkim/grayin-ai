@@ -45,9 +45,11 @@ Each step updates affected docs, runs available checks, and produces one coheren
 
 ### 2. Typed External Enrichment
 
-- [ ] Implement a fixed weather provider behind `OnlineEnrichmentGateway`.
-- [ ] Keep map/place and reverse-geocode operations inside the typed gateway.
-- [ ] Add timeout, schema validation, explicit unavailable results, and network-boundary tests.
+- [x] Implement a fixed weather provider behind `OnlineEnrichmentGateway`.
+- [x] Keep map/place and reverse-geocode operations inside the typed gateway.
+- [x] Add timeout, schema validation, explicit unavailable results, and network-boundary tests.
+
+The current Open-Meteo public endpoint is suitable only for non-commercial prototype use. Commercial release remains blocked on a paid/fixed provider contract or a replacement provider with compatible terms.
 
 ### 3. Automatic Indexing Runtime
 

@@ -14,7 +14,9 @@ import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.InvokableMemoryConnector
 import ai.grayin.core.enrichment.AndroidOnlineEnrichmentGateway
+import ai.grayin.core.enrichment.EnrichmentResult
 import ai.grayin.core.enrichment.GeoCoordinate
+import ai.grayin.core.enrichment.OnlineEnrichmentPreferences
 import ai.grayin.core.enrichment.OnlineEnrichmentFeature
 import ai.grayin.core.enrichment.OnlineEnrichmentGateway
 import ai.grayin.core.enrichment.OnlineEnrichmentPolicy
@@ -40,6 +42,7 @@ import kotlin.math.roundToInt
 class LocationConnector(
     private val context: Context,
     private val enrichmentGateway: OnlineEnrichmentGateway = AndroidOnlineEnrichmentGateway(context.applicationContext),
+    private val enrichmentPreferences: OnlineEnrichmentPreferences = OnlineEnrichmentPreferences(context.applicationContext),
 ) : InvokableMemoryConnector {
     override val metadata: ConnectorMetadata = METADATA
 
@@ -108,7 +111,7 @@ class LocationConnector(
             ?: return skipped(now, SourceAvailability.NOT_INDEXED, "No last known location sample is available.")
         val sampleAt = location.sampleAt(now)
         val coordinate = location.roundedCoordinate()
-        val placeLookup = placeLookup(coordinate, sampleAt)
+        val placeLookup = placeLookup(coordinate)
         val result = location.toExtractionResult(now, sampleAt, coordinate, placeLookup)
         prefs().edit().putString(KEY_LAST_INDEXED_AT, now.toString()).apply()
         return ConnectorScanResult(
@@ -123,6 +126,7 @@ class LocationConnector(
 
     override suspend fun revoke(): ConnectorRevokeResult {
         prefs().edit().clear().apply()
+        enrichmentPreferences.setEnabled(false)
         return ConnectorRevokeResult(
             connectorId = CONNECTOR_ID,
             revokedAt = Instant.now(),
@@ -151,15 +155,14 @@ class LocationConnector(
             .maxByOrNull { it.time }
     }
 
-    private suspend fun placeLookup(coordinate: GeoCoordinate, observedAt: Instant): PlaceLookupResult? {
+    private suspend fun placeLookup(coordinate: GeoCoordinate): PlaceLookupResult? {
+        if (!enrichmentPreferences.isEnabled()) return null
         return runCatching {
             OnlineEnrichmentPolicy.requireAllowed(OnlineEnrichmentFeature.REVERSE_GEOCODE_LOOKUP)
-            enrichmentGateway.reverseGeocode(
-                ReverseGeocodeRequest(
-                    coordinate = coordinate,
-                    observedAt = observedAt,
-                ),
-            )
+            when (val result = enrichmentGateway.reverseGeocode(ReverseGeocodeRequest(coordinate))) {
+                is EnrichmentResult.Available -> result.value
+                is EnrichmentResult.Unavailable -> null
+            }
         }.getOrNull()
     }
 

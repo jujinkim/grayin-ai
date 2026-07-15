@@ -18,6 +18,10 @@ Grayin AI is designed around user-owned local memory.
 
 Online enrichment may fetch map/place, weather, or reverse-geocode information. Runtime model infrastructure may download a model file or signed manifest selected from the fixed app catalog.
 
+External enrichment has a separate default-OFF user switch under Location. Reverse geocoding sends a coordinate rounded to 0.001 degrees through Android `Geocoder`. Open-Meteo weather sends a coordinate rounded to 0.01 degrees plus one UTC date. It does not send the stored location event, source reference, query, or user label.
+
+The provider still sees network metadata. Open-Meteo's published terms say API request logs may include IP addresses and URLs and may be retained for 90 days. The UI discloses this before opt-in. Current public Open-Meteo endpoints are non-commercial prototype endpoints and require CC BY 4.0 attribution.
+
 Allowed network requests must:
 
 - use minimal derived lookup inputs such as rounded latitude/longitude, timestamp, locale, units, or an approved coarse place query
@@ -34,6 +38,8 @@ Allowed network requests must:
 ## Consent
 
 Every connector requires explicit opt-in.
+
+Location source consent and online-enrichment consent are separate. Disabling or revoking Location disables online enrichment. Without enrichment consent, Location continues to index the rounded local coordinate and does not call the gateway.
 
 Every connector must support:
 
