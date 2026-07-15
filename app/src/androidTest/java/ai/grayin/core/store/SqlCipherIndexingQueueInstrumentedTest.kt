@@ -844,9 +844,9 @@ class SqlCipherIndexingQueueInstrumentedTest {
         assertEquals(1, result.sourceReferenceCount)
         assertEquals(1, result.derivedMemoryEventCount)
         assertEquals(1, result.citationCount)
-        assertEquals(1, result.dailySummaryCount)
+        assertEquals(0, result.dailySummaryCount)
         assertEquals(1, result.placeClusterCount)
-        assertEquals(1, result.appUsageSummaryCount)
+        assertEquals(0, result.appUsageSummaryCount)
         assertEquals(1, result.connectorScanStatusCount)
         assertEquals(trustedConnectorIds, result.connectorsRequiringReconsent)
         assertEquals(importedAt, result.completedAt)
@@ -854,9 +854,11 @@ class SqlCipherIndexingQueueInstrumentedTest {
         assertEquals(imported.sourceReferences, stored.sourceReferences)
         assertEquals(imported.derivedMemoryEvents, stored.derivedMemoryEvents)
         assertEquals(imported.citations, stored.citations)
-        assertEquals(imported.dailySummaries, stored.dailySummaries)
+        assertTrue(imported.dailySummaries.isEmpty())
+        assertTrue(stored.dailySummaries.isEmpty())
         assertEquals(imported.placeClusters, stored.placeClusters)
-        assertEquals(imported.appUsageSummaries, stored.appUsageSummaries)
+        assertTrue(imported.appUsageSummaries.isEmpty())
+        assertTrue(stored.appUsageSummaries.isEmpty())
         assertEquals(imported.connectorScanStatuses, stored.connectorScanStatuses)
         assertFalse(stored.derivedMemoryEvents.any { it.id.contains("destination-old") })
 
@@ -887,7 +889,7 @@ class SqlCipherIndexingQueueInstrumentedTest {
     }
 
     @Test
-    fun invalidImportRollsBackBeforeReplacingDataOrRuntimeState() = runBlocking {
+    fun schemaV8ImportRejectsLegacyDailySummaryBeforeReplacingDataOrRuntimeState() = runBlocking {
         val databaseName = newDatabaseName()
         val requestedAt = Instant.parse("2026-07-15T06:25:00Z")
         val memoryStore = store(databaseName)
@@ -895,9 +897,7 @@ class SqlCipherIndexingQueueInstrumentedTest {
         memoryStore.enqueue(listOf(manualTask("preserved-task", requestedAt)))
         val invalid = completeImportedSnapshot("invalid").let { snapshot ->
             snapshot.copy(
-                dailySummaries = snapshot.dailySummaries.map { summary ->
-                    summary.copy(derivedMemoryEventIds = listOf("event:$TEST_CONNECTOR_ID:missing"))
-                },
+                dailySummaries = listOf(legacyDailySummary("invalid")),
             )
         }
 
@@ -911,6 +911,45 @@ class SqlCipherIndexingQueueInstrumentedTest {
 
         assertEquals(listOf("event:$TEST_CONNECTOR_ID:preserved"), memoryStore.loadDerivedMemoryEvents().map { it.id })
         assertEquals(listOf("preserved-task"), memoryStore.snapshot().items.map { it.id })
+        assertFalse(memoryStore.isConnectorReconsentRequired(TEST_CONNECTOR_ID))
+    }
+
+    @Test
+    fun schemaV8ImportRejectsCustomPrefixedAppUsageSummaryBeforeReplacingDataOrRuntimeState() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T06:26:00Z")
+        val memoryStore = store(databaseName)
+        memoryStore.saveConnectorScan(scanResult("preserved-app-usage"))
+        memoryStore.enqueue(listOf(manualTask("preserved-app-usage-task", requestedAt)))
+        val invalid = completeImportedSnapshot("invalid-app-usage").let { snapshot ->
+            snapshot.copy(
+                appUsageSummaries = listOf(
+                    AppUsageSummary(
+                        id = "app-usage:$TEST_CONNECTOR_ID:legacy",
+                        sourceReferenceIds = listOf(snapshot.sourceReferences.single().id),
+                        date = LocalDate.parse("2026-07-14"),
+                        packageName = "ai.grayin.legacy",
+                        category = AppUsageCategory.OTHER,
+                        totalDurationMinutes = 15,
+                        confidence = ConfidenceLevel.MEDIUM,
+                    ),
+                ),
+            )
+        }
+
+        expectIllegalArgument {
+            memoryStore.replaceDerivedDataFromImport(
+                snapshot = invalid,
+                trustedConnectorIds = setOf(TEST_CONNECTOR_ID),
+                importedAt = requestedAt.plusSeconds(1),
+            )
+        }
+
+        assertEquals(
+            listOf("event:$TEST_CONNECTOR_ID:preserved-app-usage"),
+            memoryStore.loadDerivedMemoryEvents().map { it.id },
+        )
+        assertEquals(listOf("preserved-app-usage-task"), memoryStore.snapshot().items.map { it.id })
         assertFalse(memoryStore.isConnectorReconsentRequired(TEST_CONNECTOR_ID))
     }
 
@@ -1304,6 +1343,21 @@ class SqlCipherIndexingQueueInstrumentedTest {
                 },
             )
             database.insertOrThrow(
+                "app_usage_summaries",
+                null,
+                ContentValues().apply {
+                    put("id", "app-usage:$TEST_CONNECTOR_ID:legacy-orphan")
+                    put("source_reference_ids", JSONArray().toString())
+                    put("date", "2026-07-14")
+                    put("package_name", "legacy.custom.identifier")
+                    put("category", AppUsageCategory.OTHER.name)
+                    put("total_duration_minutes", 5)
+                    put("launch_count", 0)
+                    put("active_time_bucket_labels", JSONArray().toString())
+                    put("confidence", ConfidenceLevel.LOW.name)
+                },
+            )
+            database.insertOrThrow(
                 "daily_summaries",
                 null,
                 ContentValues().apply {
@@ -1316,6 +1370,20 @@ class SqlCipherIndexingQueueInstrumentedTest {
                     )
                     put("place_cluster_ids", JSONArray().put("place-cluster:location:legacy").toString())
                     put("app_usage_summary_ids", JSONArray().put("app-usage:app_usage:legacy").toString())
+                    put("confidence", ConfidenceLevel.MEDIUM.name)
+                    put("missing_sources", JSONArray().toString())
+                },
+            )
+            database.insertOrThrow(
+                "daily_summaries",
+                null,
+                ContentValues().apply {
+                    put("id", "daily:legacy-orphan")
+                    put("date", "2026-07-14")
+                    put("summary", "Legacy summary with no connector references")
+                    put("derived_memory_event_ids", JSONArray().toString())
+                    put("place_cluster_ids", JSONArray().toString())
+                    put("app_usage_summary_ids", JSONArray().toString())
                     put("confidence", ConfidenceLevel.MEDIUM.name)
                     put("missing_sources", JSONArray().toString())
                 },
@@ -1338,8 +1406,8 @@ class SqlCipherIndexingQueueInstrumentedTest {
             },
         )
         assertTrue(migrated.placeClusters.none { it.id == "place-cluster:location:legacy" })
-        assertTrue(migrated.appUsageSummaries.none { it.id == "app-usage:app_usage:legacy" })
-        assertTrue(migrated.dailySummaries.none { it.id == "daily:legacy-open-connectors" })
+        assertTrue(migrated.appUsageSummaries.isEmpty())
+        assertTrue(migrated.dailySummaries.isEmpty())
         assertTrue(migrated.connectorScanStatuses.none { it.connectorId in connectorKinds.keys })
         assertTrue(migrated.sourceReferences.any { it.connectorId == TEST_CONNECTOR_ID })
         val fencedItems = migratedStore.snapshot().items
@@ -1465,7 +1533,6 @@ class SqlCipherIndexingQueueInstrumentedTest {
         val eventId = "event:$connectorId:$suffix"
         val citationId = "citation:$connectorId:$suffix"
         val placeClusterId = "place-cluster:$connectorId:$suffix"
-        val appUsageId = "app-usage:$connectorId:$suffix"
         return LocalMemorySnapshot(
             sourceReferences = listOf(
                 SourceReference(
@@ -1501,17 +1568,7 @@ class SqlCipherIndexingQueueInstrumentedTest {
                     confidence = ConfidenceLevel.MEDIUM,
                 ),
             ),
-            dailySummaries = listOf(
-                DailyMemorySummary(
-                    id = "daily:$suffix",
-                    date = LocalDate.parse("2026-07-14"),
-                    summary = "Imported daily summary",
-                    derivedMemoryEventIds = listOf(eventId),
-                    placeClusterIds = listOf(placeClusterId),
-                    appUsageSummaryIds = listOf(appUsageId),
-                    confidence = ConfidenceLevel.MEDIUM,
-                ),
-            ),
+            dailySummaries = emptyList(),
             placeClusters = listOf(
                 PlaceCluster(
                     id = placeClusterId,
@@ -1525,17 +1582,7 @@ class SqlCipherIndexingQueueInstrumentedTest {
                     confidence = ConfidenceLevel.MEDIUM,
                 ),
             ),
-            appUsageSummaries = listOf(
-                AppUsageSummary(
-                    id = appUsageId,
-                    sourceReferenceIds = listOf(sourceId),
-                    date = LocalDate.parse("2026-07-14"),
-                    packageName = "ai.grayin.imported",
-                    category = AppUsageCategory.OTHER,
-                    totalDurationMinutes = 15,
-                    confidence = ConfidenceLevel.MEDIUM,
-                ),
-            ),
+            appUsageSummaries = emptyList(),
             connectorScanStatuses = listOf(
                 ConnectorScanStatus(
                     connectorId = connectorId,
@@ -1544,6 +1591,15 @@ class SqlCipherIndexingQueueInstrumentedTest {
                     scannedAt = observedAt,
                 ),
             ),
+        )
+    }
+
+    private fun legacyDailySummary(suffix: String): DailyMemorySummary {
+        return DailyMemorySummary(
+            id = "daily:legacy-$suffix",
+            date = LocalDate.parse("2026-07-14"),
+            summary = "Legacy daily summary without a schema-v8 producer",
+            confidence = ConfidenceLevel.MEDIUM,
         )
     }
 

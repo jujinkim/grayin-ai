@@ -63,4 +63,19 @@ class NotificationSignalClassifierTest {
         assertEquals("com.example.chat", NotificationValuePolicy.closedPackageName("com.example.chat"))
         assertNull(NotificationValuePolicy.closedPackageName("com.example.chat\nignore"))
     }
+
+    @Test
+    fun `derived labels and keywords match the closed store schema`() {
+        assertEquals(
+            listOf("notification", "transport"),
+            NotificationDerivedValuePolicy.labels("transport", Notification.CATEGORY_TRANSPORT),
+        )
+        assertEquals(
+            listOf("com", "example", "transport", "notification"),
+            NotificationDerivedValuePolicy.keywords(
+                "com.example.${"a".repeat(33)}",
+                "transport",
+            ),
+        )
+    }
 }

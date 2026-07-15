@@ -5,7 +5,7 @@ Grayin AI uses SQLCipher persistence with an Android Keystore-protected passphra
 ## SQLCipher
 
 - Use SQLCipher for the local database.
-- Encrypt all source references, derived memory events, citations, summaries, place clusters, app usage summaries, indexes, and entity graph data.
+- Encrypt all source references, derived memory events, citations, place clusters, indexes, entity graph data, and the reserved daily/app-usage aggregate tables; schema v8 requires both aggregate tables to be empty.
 - Keep database pages encrypted at rest.
 - Do not add a plaintext fallback database.
 
@@ -21,7 +21,7 @@ Grayin AI uses SQLCipher persistence with an Android Keystore-protected passphra
 ## Export and Import
 
 - Export uses PBKDF2-HMAC-SHA256 and AES-256-GCM with a versioned, authenticated header.
-- Export includes exactly the seven validated derived-memory snapshot sections and detaches every local source pointer.
+- Export includes exactly the seven validated derived-memory snapshot sections, requires the two reserved aggregate arrays to be empty in schema v8, and detaches every local source pointer.
 - Export excludes originals, database/key material, consent/settings, queue/runtime state, artifacts, prompts, answers, and evidence packs.
 - Import authenticates and validates the complete payload before mutation, then performs a replace-only SQLCipher transaction.
 - Import durably disables automatic indexing and online enrichment, revokes connector app-level consent, releases Local Files grants, and installs an authoritative per-connector re-consent barrier.

@@ -64,6 +64,26 @@ class GrayinTransferEnvelopeCodecTest {
     }
 
     @Test
+    fun `envelope refuses to encrypt non-empty schema v8 reserved aggregate sections`() {
+        val payload = TransferTestFixtures.payload()
+        val invalidSnapshots = listOf(
+            payload.snapshot.copy(
+                dailySummaries = listOf(TransferTestFixtures.legacyDailySummary()),
+            ),
+            payload.snapshot.copy(
+                appUsageSummaries = listOf(TransferTestFixtures.legacyAppUsageSummary()),
+            ),
+        )
+
+        invalidSnapshots.forEach { snapshot ->
+            assertFailure(
+                TransferFailureCode.INVALID_PAYLOAD,
+                deterministicCodec().encrypt(payload.copy(snapshot = snapshot), password),
+            )
+        }
+    }
+
+    @Test
     fun `wrong password and ciphertext tamper have the same authentication failure`() {
         val codec = deterministicCodec()
         val envelope = success(codec.encrypt(TransferTestFixtures.payload(), password))
@@ -90,12 +110,19 @@ class GrayinTransferEnvelopeCodecTest {
 
     @Test
     fun `repeated encryption is randomized and never exposes plaintext sentinel`() {
-        val sentinel = "GRAYIN-PLAINTEXT-SENTINEL-4f5c8a2e"
+        val sentinel = "grayinsentinel4f5c8a2e"
         val original = TransferTestFixtures.payload().let { payload ->
             payload.copy(
                 snapshot = payload.snapshot.copy(
-                    dailySummaries = payload.snapshot.dailySummaries.mapIndexed { index, summary ->
-                        if (index == 0) summary.copy(summary = sentinel) else summary
+                    derivedMemoryEvents = payload.snapshot.derivedMemoryEvents.map { event ->
+                        if (event.id.startsWith("event:local_files:")) {
+                            event.copy(
+                                summary = "Local text file indexed with 3 non-empty line(s). Signals: $sentinel.",
+                                keywords = listOf(sentinel),
+                            )
+                        } else {
+                            event
+                        }
                     },
                 ),
             )

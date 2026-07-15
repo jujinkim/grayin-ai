@@ -34,10 +34,12 @@ interface LocalMemoryStore : ConnectorReconsentGate {
 
     suspend fun loadCitations(): List<MemoryCitation>
 
+    /** Compatibility read surface; canonical schema-v8 stores contain no daily-summary rows. */
     suspend fun loadDailySummaries(): List<DailyMemorySummary>
 
     suspend fun loadPlaceClusters(): List<PlaceCluster>
 
+    /** Compatibility read surface; canonical schema-v8 stores contain no app-usage-summary rows. */
     suspend fun loadAppUsageSummaries(): List<AppUsageSummary>
 
     suspend fun loadConnectorScanStatuses(): List<ConnectorScanStatus>
@@ -46,8 +48,9 @@ interface LocalMemoryStore : ConnectorReconsentGate {
     suspend fun loadSnapshot(): LocalMemorySnapshot
 
     /**
-     * Replaces all seven derived-memory sections in one transaction after validating the
-     * detached import snapshot. Runtime queue/control state is not imported.
+     * Replaces all seven derived-memory wire sections in one transaction after validating the
+     * detached import snapshot. The two reserved aggregate lists are empty in schema v8.
+     * Runtime queue/control state is not imported.
      */
     suspend fun replaceDerivedDataFromImport(
         snapshot: LocalMemorySnapshot,

@@ -3,6 +3,7 @@ package ai.grayin.core.store
 import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFileMetadata
 import ai.grayin.core.connector.ConnectorScanResult
+import ai.grayin.core.model.AppUsageSummary
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.model.DerivedMemoryEvent
@@ -10,7 +11,6 @@ import ai.grayin.core.model.DerivedMemoryEventKind
 import ai.grayin.core.model.MemoryCitation
 import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MissingSource
-import ai.grayin.core.model.AppUsageSummary
 import ai.grayin.core.model.PlaceCluster
 import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.model.SensitivityLevel
@@ -31,6 +31,28 @@ class ConnectorScanValidatorTest {
     @Test
     fun `accepts all five current live connector record shapes`() {
         validCurrentConnectorScans().forEach(ConnectorScanValidator::validate)
+    }
+
+    @Test
+    fun `rejects app usage aggregate output from a schema v8 scan`() {
+        val valid = validCurrentConnectorScans().single { scan -> scan.connectorId == "app_usage" }
+        val sourceId = valid.sourceReferences.single().id
+        val invalid = valid.copy(
+            appUsageSummaries = listOf(
+                AppUsageSummary(
+                    id = "app-usage:app_usage:legacy",
+                    sourceReferenceIds = listOf(sourceId),
+                    date = LocalDate.parse("2026-07-15"),
+                    packageName = "com.example.app",
+                    totalDurationMinutes = 30,
+                    confidence = ConfidenceLevel.MEDIUM,
+                ),
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ConnectorScanValidator.validate(invalid)
+        }
     }
 
     @Test

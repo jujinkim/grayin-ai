@@ -7,12 +7,11 @@
 - Photo indexes
 - Notification-derived events
 - Place clusters
-- App usage summaries
+- App-usage session events
 - Calendar summaries
-- OCR-derived text
-- Embeddings
+- OCR-derived structural and keyword signals
 - Entity graph
-- Daily/weekly summaries
+- Reserved daily-summary data only after a future canonical producer and schema review; schema v8 stores none
 - Export files
 
 ## Threats
@@ -73,7 +72,7 @@
 - HMAC-only Local Files selection/source identity with closed citation labels and schema-v6 legacy purge
 - Atomic queue-lease fencing before connector deletion or revocation
 - PBKDF2-HMAC-SHA256 plus AES-256-GCM export envelope with authenticated fixed header, random salt/nonce, strict lengths, and bounded pre-KDF parsing
-- Strict seven-section payload schema, closed-graph validation, detached local pointers, and a replace-only SQLCipher import transaction
+- Strict seven-section payload schema with empty reserved daily-summary and app-usage-summary arrays in v8, closed-graph validation, detached local pointers, and a replace-only SQLCipher import transaction
 - Ciphertext-only no-backup staging, Android document contracts that set `EXTRA_LOCAL_ONLY`, no persisted backup URI grants, and a user disclosure to choose device storage; provider behavior outside Grayin is not claimed as an app guarantee
 - Per-connector SQLCipher re-consent barriers checked before source reads and again in scan-write transactions
 

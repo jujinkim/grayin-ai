@@ -1,5 +1,7 @@
 package ai.grayin.connectors.usagestats
 
+import ai.grayin.core.model.ConnectorScanIssueCode
+import ai.grayin.core.model.SourceAvailability
 import java.time.Duration
 import java.time.Instant
 import org.junit.Assert.assertEquals
@@ -108,6 +110,35 @@ class AppUsageEventAggregatorTest {
         assertTrue(alias.toByteArray(Charsets.UTF_8).size <= 256)
         assertFalse(alias.contains('\n'))
         assertFalse(alias.contains('\u202E'))
+    }
+
+    @Test
+    fun `app usage distinguishes unavailable provider from authoritative empty range`() {
+        val unavailable = AppUsageSnapshotPolicy.emptyReadIssue(sourceAvailable = false)
+        assertEquals(SourceAvailability.STALE, unavailable.availability)
+        assertEquals(ConnectorScanIssueCode.SOURCE_UNAVAILABLE, unavailable.issueCode)
+        assertFalse(
+            AppUsageSnapshotPolicy.shouldReplace(
+                sourceAvailable = false,
+                eventInputLimited = false,
+            ),
+        )
+
+        val emptyRange = AppUsageSnapshotPolicy.emptyReadIssue(sourceAvailable = true)
+        assertEquals(SourceAvailability.NOT_INDEXED, emptyRange.availability)
+        assertEquals(ConnectorScanIssueCode.NO_APP_USAGE_IN_RANGE, emptyRange.issueCode)
+        assertTrue(
+            AppUsageSnapshotPolicy.shouldReplace(
+                sourceAvailable = true,
+                eventInputLimited = false,
+            ),
+        )
+        assertFalse(
+            AppUsageSnapshotPolicy.shouldReplace(
+                sourceAvailable = true,
+                eventInputLimited = true,
+            ),
+        )
     }
 
     private fun event(

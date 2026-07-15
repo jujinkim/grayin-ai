@@ -41,7 +41,7 @@ Current usable app path:
 - Ask answers from indexed, cited local evidence and lists missing sources
 - Settings supports language selection: `system`, `korean`, `english`, or `japanese`
 - Settings installs, cancels, and deletes fixed-catalog `eng`, `kor`, or `jpn` OCR language data after an explicit user action
-- Settings exports and replace-imports the validated seven-section derived snapshot through an explicit password-authenticated encrypted document flow; the picker requests on-device storage, and connector access must be re-consented after import
+- Settings exports and replace-imports the validated seven-section wire snapshot through an explicit password-authenticated encrypted document flow; schema v8 keeps the reserved daily-summary and app-usage-summary arrays but requires both to be empty, the picker requests on-device storage, and connector access must be re-consented after import
 - Settings offers independent persisted screenshot blocking and system biometric/device-credential app lock; app lock forces the secure-window policy and relocks after process start or a non-configuration background transition
 - Local Files accepts explicitly selected Text, Markdown, and PDF documents; PDF pages use embedded text or installed on-device OCR data
 - Bottom navigation uses icons and localized labels
@@ -69,7 +69,7 @@ Examples:
 - photo metadata and keywords
 - calendar events
 - notification-derived payment/reservation/transport events
-- app usage summaries
+- app-usage session events
 - local Text, Markdown, and PDF page-derived indexes
 
 The private bounded Pdfium/Tesseract document runtime, language-data installer, and Local Files PDF integration are implemented. Selected document identities are stored only as Android Keystore HMACs; PDF/page originals, names, URIs, text, and images are not stored. Installing a language pack remains a separate Settings action and indexing never starts a download.

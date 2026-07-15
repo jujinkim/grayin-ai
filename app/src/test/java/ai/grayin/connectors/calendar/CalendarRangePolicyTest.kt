@@ -1,5 +1,7 @@
 package ai.grayin.connectors.calendar
 
+import ai.grayin.core.model.ConnectorScanIssueCode
+import ai.grayin.core.model.SourceAvailability
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,5 +32,17 @@ class CalendarRangePolicyTest {
         assertFalse(requireNotNull(fields.title).contains('\n'))
         assertEquals("Room 42", fields.location)
         assertEquals("android-calendar", CalendarValuePolicy.SOURCE_APP_IDENTIFIER)
+    }
+
+    @Test
+    fun `calendar distinguishes unavailable provider from authoritative empty range`() {
+        val unavailable = CalendarScanPolicy.emptyReadIssue(queryCompleted = false)
+        assertEquals(SourceAvailability.STALE, unavailable.availability)
+        assertEquals(ConnectorScanIssueCode.SOURCE_UNAVAILABLE, unavailable.issueCode)
+
+        val emptyRange = CalendarScanPolicy.emptyReadIssue(queryCompleted = true)
+        assertEquals(SourceAvailability.NOT_INDEXED, emptyRange.availability)
+        assertEquals(ConnectorScanIssueCode.NO_CALENDAR_EVENTS_IN_RANGE, emptyRange.issueCode)
+        assertFalse(CalendarScanPolicy.shouldReplace())
     }
 }

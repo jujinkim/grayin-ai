@@ -25,7 +25,7 @@ Current phase status: the repository-local implementation plan is complete throu
 - Settings installs, cancels, and deletes fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action; document indexing never initiates a download.
 - Local Files passes explicitly selected PDF descriptors to a private `:document` Pdfium/Tesseract runtime, which enforces descriptor, signature, page, bitmap, text, OCR, and time limits and returns only bounded derived AIDL results.
 - Local document selection stores only Keystore HMAC markers. SQLCipher schema v8 retains the v6 Local Files identity purge and additionally fences work and removes legacy open-schema Location, Calendar, Photos, Notifications, and App Usage records.
-- Settings provides explicit encrypted export/import of the validated seven-section derived snapshot with no Grayin-owned network transport. Version 1 uses password-derived AES-256-GCM, exact current-schema validation, replace-only SQLCipher import, and mandatory connector re-consent; the Android picker requests on-device documents but an external provider controls its own storage behavior.
+- Settings provides explicit encrypted export/import of the validated seven-section wire snapshot with no Grayin-owned network transport. Schema v8 retains the reserved daily-summary and app-usage-summary arrays but requires both to be empty. Version 1 uses password-derived AES-256-GCM, exact current-schema validation, replace-only SQLCipher import, and mandatory connector re-consent; the Android picker requests on-device documents but an external provider controls its own storage behavior.
 - Settings provides independent persisted screenshot blocking and system biometric/device-credential app lock. App lock forces `FLAG_SECURE`, starts locked in a new process, and relocks after a non-configuration background transition.
 - INTERNET permission bounded by `docs/network-policy.md`: typed map/place/reverse-geocode/weather enrichment plus fixed-catalog model, authenticated manifest, or OCR language-data downloads.
 
@@ -111,6 +111,7 @@ Location clusters accumulate user-triggered last-known observations by stable 0.
 - [x] Add durable model-download generation fencing before enabling a catalog transport entry.
 - [x] Implement canonical bounded remote-manifest parsing, ECDSA P-256 verification, compatibility/expiry checks, and durable rollback/equivocation state.
 - [x] Fence stale work before any manifest/artifact connection, keep the Settings refresh gate process-wide, and fail closed on malformed response-length metadata.
+- [x] Declare the WorkManager model-transfer foreground service and runtime `ForegroundInfo` as `dataSync` for Android 14 compatibility.
 - [x] Reject app-private model-path symlinks and bind verified-file cache entries to stable filesystem identity.
 - [x] Validate imported LiteRT-LM container structure, version, size/space bounds, exact copy, and atomic publication beyond extension alone.
 - [x] Expand held-out synthetic training/evaluation coverage across 10 behavior families and English/Korean/Japanese, then run the deterministic grounded-answer contract benchmark.

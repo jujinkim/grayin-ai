@@ -35,6 +35,60 @@ class GrayinTransferPayloadCodecTest {
     }
 
     @Test
+    fun `schema v8 requires the reserved daily summary section to be empty`() {
+        val payload = TransferTestFixtures.payload()
+        val legacyDaily = TransferTestFixtures.legacyDailySummary()
+        val nonCanonical = payload.copy(
+            snapshot = payload.snapshot.copy(dailySummaries = listOf(legacyDaily)),
+        )
+
+        assertFailure(TransferFailureCode.INVALID_PAYLOAD, codec.encode(nonCanonical))
+
+        val encoded = success(codec.encode(payload)).toString(Charsets.UTF_8)
+        assertTrue(encoded.contains("\"dailySummaries\":[]"))
+        val legacyDailyJson =
+            "{\"id\":\"daily:legacy-unowned\",\"date\":\"2026-07-15\"," +
+                "\"summary\":\"Legacy daily summary without a schema-v8 producer.\"," +
+                "\"derivedMemoryEventIds\":[],\"placeClusterIds\":[]," +
+                "\"appUsageSummaryIds\":[],\"confidence\":\"MEDIUM\",\"missingSources\":[]}"
+        val withLegacyDaily = encoded
+            .replaceFirst("\"dailySummaries\":[]", "\"dailySummaries\":[$legacyDailyJson]")
+            .toByteArray(Charsets.UTF_8)
+
+        assertFailure(TransferFailureCode.INVALID_PAYLOAD, codec.decode(withLegacyDaily))
+    }
+
+    @Test
+    fun `schema v8 requires the reserved app usage aggregate section to be empty`() {
+        val payload = TransferTestFixtures.payload()
+        val nonCanonical = payload.copy(
+            snapshot = payload.snapshot.copy(
+                appUsageSummaries = listOf(TransferTestFixtures.legacyAppUsageSummary()),
+            ),
+        )
+
+        assertFailure(TransferFailureCode.INVALID_PAYLOAD, codec.encode(nonCanonical))
+
+        val encoded = success(codec.encode(payload)).toString(Charsets.UTF_8)
+        assertTrue(encoded.contains("\"appUsageSummaries\":[]"))
+        val legacyAppUsageJson =
+            "{\"id\":\"app-usage:app_usage:legacy\"," +
+                "\"sourceReferenceIds\":[\"source:app_usage:" +
+                "55555555555555555555555555555555\"],\"date\":\"2026-07-15\"," +
+                "\"packageName\":\"com.example.app\",\"appAlias\":\"Legacy aggregate\"," +
+                "\"category\":\"OTHER\",\"totalDurationMinutes\":30,\"launchCount\":1," +
+                "\"activeTimeBucketLabels\":[],\"confidence\":\"MEDIUM\"}"
+        val withLegacyAppUsage = encoded
+            .replaceFirst(
+                "\"appUsageSummaries\":[]",
+                "\"appUsageSummaries\":[$legacyAppUsageJson]",
+            )
+            .toByteArray(Charsets.UTF_8)
+
+        assertFailure(TransferFailureCode.INVALID_PAYLOAD, codec.decode(withLegacyAppUsage))
+    }
+
+    @Test
     fun `validator rejects v8 claims containing legacy open connector fields`() {
         val payload = TransferTestFixtures.payload()
         val invalidSnapshots = listOf(
@@ -119,8 +173,19 @@ class GrayinTransferPayloadCodecTest {
         listOf("unsafe\u202Elabel", "private\uE000label", "unassigned\u0378label").forEach { label ->
             val invalid = payload.copy(
                 snapshot = payload.snapshot.copy(
-                    dailySummaries = payload.snapshot.dailySummaries.map { summary ->
-                        summary.copy(summary = label)
+                    derivedMemoryEvents = payload.snapshot.derivedMemoryEvents.map { event ->
+                        if (event.id.startsWith("event:calendar:")) {
+                            event.copy(summary = "Calendar event indexed: $label, from ${event.startedAt}.")
+                        } else {
+                            event
+                        }
+                    },
+                    citations = payload.snapshot.citations.map { citation ->
+                        if (citation.id.startsWith("citation:calendar:")) {
+                            citation.copy(label = "Calendar: $label")
+                        } else {
+                            citation
+                        }
                     },
                 ),
             )
@@ -204,7 +269,7 @@ class GrayinTransferPayloadCodecTest {
     }
 
     @Test
-    fun `round trip preserves all seven sections and detaches pointers`() {
+    fun `round trip preserves the seven-section wire shape and detaches pointers`() {
         val original = TransferTestFixtures.payload()
 
         val encoded = success(codec.encode(original))
@@ -221,7 +286,7 @@ class GrayinTransferPayloadCodecTest {
         assertEquals(6, decoded.snapshot.sourceReferences.size)
         assertEquals(6, decoded.snapshot.derivedMemoryEvents.size)
         assertEquals(6, decoded.snapshot.citations.size)
-        assertEquals(1, decoded.snapshot.dailySummaries.size)
+        assertEquals(0, decoded.snapshot.dailySummaries.size)
         assertEquals(1, decoded.snapshot.placeClusters.size)
         assertEquals(0, decoded.snapshot.appUsageSummaries.size)
         assertEquals(6, decoded.snapshot.connectorScanStatuses.size)

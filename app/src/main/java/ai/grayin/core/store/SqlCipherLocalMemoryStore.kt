@@ -332,6 +332,7 @@ class SqlCipherLocalMemoryStore(
         importedAt: Instant,
     ) {
         validateImportedSnapshotBounds(snapshot, trustedConnectorIds)
+        ClosedConnectorRecordValidator.validate(snapshot)
         trustedConnectorIds.forEach(::requireValidConnectorId)
         requireDistinctImportIds("source reference", snapshot.sourceReferences.map { it.id })
         requireDistinctImportIds("derived event", snapshot.derivedMemoryEvents.map { it.id })
@@ -1517,6 +1518,11 @@ class SqlCipherLocalMemoryStore(
 
     private fun purgeLegacyOpenConnectorRecords(db: SQLiteDatabase) {
         val migratedAt = clock.instant()
+        // Schema v8 has no canonical DailyMemorySummary or AppUsageSummary producer. Keep the
+        // tables and transfer sections for wire compatibility, but remove every legacy row rather
+        // than trying to infer whether provider-authored aggregates are safe.
+        db.delete(TABLE_DAILY_SUMMARIES, null, null)
+        db.delete(TABLE_APP_USAGE_SUMMARIES, null, null)
         LEGACY_OPEN_RECORD_CONNECTOR_IDS.forEach { connectorId ->
             fenceActiveConnectorTasks(db, connectorId, migratedAt)
             deleteConnectorRows(db, connectorId, migratedAt)

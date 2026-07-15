@@ -19,6 +19,10 @@ data class DerivedMemoryEvent(
     val createdAt: Instant,
 )
 
+/**
+ * Reserved for transfer/schema compatibility. Schema v8 has no canonical producer and requires
+ * this section to be empty on export and import.
+ */
 data class DailyMemorySummary(
     val id: String,
     val date: LocalDate,
@@ -84,6 +88,10 @@ data class NotificationDerivedEvent(
     val citationIds: List<String> = emptyList(),
 )
 
+/**
+ * Reserved for transfer/schema compatibility. Schema v8 persists App Usage as canonical
+ * per-session events and requires this aggregate section to be empty on scans, export, and import.
+ */
 data class AppUsageSummary(
     val id: String,
     val sourceReferenceIds: List<String>,
@@ -96,4 +104,3 @@ data class AppUsageSummary(
     val activeTimeBucketLabels: List<String> = emptyList(),
     val confidence: ConfidenceLevel = ConfidenceLevel.UNKNOWN,
 )
-

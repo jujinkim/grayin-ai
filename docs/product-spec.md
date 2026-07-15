@@ -156,10 +156,11 @@ It may contain:
 - keywords
 - labels
 - entities
-- embeddings
 - confidence
 - citations
 - source reference IDs
+
+The current schema does not persist embeddings.
 
 ### Zero Raw Retention
 
@@ -467,10 +468,10 @@ Encrypted export may include:
 - source references
 - derived memory events
 - citations
-- daily summaries
+- a reserved daily-summary wire section that must be empty in schema v8
 - entity graph embedded in derived events
 - place clusters
-- app usage summaries
+- a reserved app-usage-summary wire section that must be empty in schema v8
 - connector scan statuses
 
 Encrypted export must not include:
@@ -485,7 +486,7 @@ Encrypted export must not include:
 
 It also excludes local source pointers, connector permission/settings state, SQLCipher/Keystore material, indexing queue/runtime state, installed artifacts, prompts, evidence packs, and answers.
 
-Import validates and authenticates the complete graph before mutation, atomically replaces the seven SQLCipher sections, clears queue/runtime state, disables automatic indexing and online enrichment, revokes local connector access, and requires explicit re-consent for every connector before refresh or relink. Imported historical derived evidence remains available.
+Import validates and authenticates the complete graph before mutation, requires both reserved aggregate sections to be empty, atomically replaces the seven SQLCipher wire sections, clears queue/runtime state, disables automatic indexing and online enrichment, revokes local connector access, and requires explicit re-consent for every connector before refresh or relink. Imported historical derived evidence remains available.
 
 ## Development Workflow
 

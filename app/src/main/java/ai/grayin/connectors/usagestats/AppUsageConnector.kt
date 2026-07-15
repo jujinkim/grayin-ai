@@ -106,6 +106,7 @@ class AppUsageConnector(
         val from = scope.from ?: until.minus(DEFAULT_USAGE_WINDOW)
         val readResult = readUsageRows(from, until, now)
         val rows = readResult.rows
+        val emptyReadIssue = AppUsageSnapshotPolicy.emptyReadIssue(readResult.sourceAvailable)
         val eventHistoryLimitation = missingSources(
             SourceAvailability.STALE,
             ConnectorScanIssueCode.APP_USAGE_EVENT_HISTORY_LIMITED,
@@ -120,7 +121,10 @@ class AppUsageConnector(
             sourceReferences = rows.map { it.sourceReference },
             derivedEvents = rows.map { it.derivedEvent },
             citations = rows.map { it.citation },
-            replaceExistingConnectorData = !readResult.eventInputLimited,
+            replaceExistingConnectorData = AppUsageSnapshotPolicy.shouldReplace(
+                sourceAvailable = readResult.sourceAvailable,
+                eventInputLimited = readResult.eventInputLimited,
+            ),
             missingSources = buildList {
                 if (readResult.eventInputLimited) {
                     addAll(
@@ -132,8 +136,8 @@ class AppUsageConnector(
                 } else if (rows.isEmpty()) {
                     addAll(
                         missingSources(
-                            SourceAvailability.NOT_INDEXED,
-                            ConnectorScanIssueCode.NO_APP_USAGE_IN_RANGE,
+                            emptyReadIssue.availability,
+                            emptyReadIssue.issueCode,
                         ),
                     )
                 }
@@ -145,7 +149,9 @@ class AppUsageConnector(
                         ),
                     )
                 }
-                addAll(eventHistoryLimitation)
+                if (readResult.sourceAvailable) {
+                    addAll(eventHistoryLimitation)
+                }
             },
             scopeFrom = from,
             scopeUntil = until,
@@ -182,13 +188,28 @@ class AppUsageConnector(
         observedAt: Instant,
     ): AppUsageReadResult {
         val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-            ?: return AppUsageReadResult(emptyList(), eventInputLimited = false, outputLimited = false)
+            ?: return AppUsageReadResult(
+                emptyList(),
+                eventInputLimited = false,
+                outputLimited = false,
+                sourceAvailable = false,
+            )
         val effectiveUntil = minOf(until, observedAt)
         if (!from.isBefore(effectiveUntil)) {
-            return AppUsageReadResult(emptyList(), eventInputLimited = false, outputLimited = false)
+            return AppUsageReadResult(
+                emptyList(),
+                eventInputLimited = false,
+                outputLimited = false,
+                sourceAvailable = true,
+            )
         }
         val usageEvents = manager.queryEvents(from.toEpochMilli(), effectiveUntil.toEpochMilli())
-            ?: return AppUsageReadResult(emptyList(), eventInputLimited = false, outputLimited = false)
+            ?: return AppUsageReadResult(
+                emptyList(),
+                eventInputLimited = false,
+                outputLimited = false,
+                sourceAvailable = false,
+            )
         val event = UsageEvents.Event()
         var visitedEvents = 0
         val transitions = buildList {
@@ -220,7 +241,12 @@ class AppUsageConnector(
         }
         val truncated = visitedEvents >= MAX_TRANSITION_EVENTS && usageEvents.hasNextEvent()
         if (truncated) {
-            return AppUsageReadResult(emptyList(), eventInputLimited = true, outputLimited = false)
+            return AppUsageReadResult(
+                emptyList(),
+                eventInputLimited = true,
+                outputLimited = false,
+                sourceAvailable = true,
+            )
         }
         val sessions = AppUsageEventAggregator.aggregate(
             events = transitions,
@@ -236,6 +262,7 @@ class AppUsageConnector(
             rows = rows,
             eventInputLimited = false,
             outputLimited = outputLimited,
+            sourceAvailable = true,
         )
     }
 
@@ -369,6 +396,7 @@ class AppUsageConnector(
         val rows: List<AppUsageExtractionResult>,
         val eventInputLimited: Boolean,
         val outputLimited: Boolean,
+        val sourceAvailable: Boolean,
     )
 
     companion object {
@@ -399,6 +427,31 @@ class AppUsageConnector(
         private val DEFAULT_USAGE_WINDOW = Duration.ofDays(7)
         private val WORD_PATTERN = Regex("[\\p{L}\\p{Nd}]+")
         private val STOP_WORDS = setOf("com", "android", "google")
+    }
+}
+
+internal data class AppUsageEmptyReadIssue(
+    val availability: SourceAvailability,
+    val issueCode: ConnectorScanIssueCode,
+)
+
+internal object AppUsageSnapshotPolicy {
+    fun shouldReplace(sourceAvailable: Boolean, eventInputLimited: Boolean): Boolean {
+        return sourceAvailable && !eventInputLimited
+    }
+
+    fun emptyReadIssue(sourceAvailable: Boolean): AppUsageEmptyReadIssue {
+        return if (sourceAvailable) {
+            AppUsageEmptyReadIssue(
+                availability = SourceAvailability.NOT_INDEXED,
+                issueCode = ConnectorScanIssueCode.NO_APP_USAGE_IN_RANGE,
+            )
+        } else {
+            AppUsageEmptyReadIssue(
+                availability = SourceAvailability.STALE,
+                issueCode = ConnectorScanIssueCode.SOURCE_UNAVAILABLE,
+            )
+        }
     }
 }
 

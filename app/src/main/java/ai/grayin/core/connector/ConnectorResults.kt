@@ -16,6 +16,7 @@ data class ConnectorScanResult(
     val derivedEvents: List<DerivedMemoryEvent> = emptyList(),
     val citations: List<MemoryCitation> = emptyList(),
     val placeClusters: List<PlaceCluster> = emptyList(),
+    /** Reserved compatibility output; schema-v8 scans must leave this empty. */
     val appUsageSummaries: List<AppUsageSummary> = emptyList(),
     val missingSources: List<MissingSource> = emptyList(),
     val scopeFrom: Instant? = null,

@@ -115,8 +115,8 @@ private class NotificationSignalExtractor {
                 sourceReferenceIds = listOf(sourceId),
                 summary = "Notification-derived $kindLabel signal from $packageName at $postedAt.",
                 startedAt = postedAt,
-                keywords = keywords(packageName, kindLabel),
-                labels = listOfNotNull("notification", kindLabel, category),
+                keywords = NotificationDerivedValuePolicy.keywords(packageName, kindLabel),
+                labels = NotificationDerivedValuePolicy.labels(kindLabel, category),
                 entities = listOf(packageName),
                 confidence = if (kind == NotificationDerivedEventKind.OTHER) ConfidenceLevel.LOW else ConfidenceLevel.MEDIUM,
                 sensitivity = SensitivityLevel.VERY_HIGH,
@@ -146,14 +146,6 @@ private class NotificationSignalExtractor {
         )
     }
 
-    private fun keywords(packageName: String, kindLabel: String): List<String> {
-        return (packageName.split('.') + kindLabel.split('-') + "notification")
-            .map { it.lowercase() }
-            .filter { it.length >= 3 }
-            .distinct()
-            .take(MAX_KEYWORDS)
-    }
-
     private fun sha256(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) }.take(HASH_ID_CHARS)
@@ -161,6 +153,23 @@ private class NotificationSignalExtractor {
 
     private companion object {
         const val HASH_ID_CHARS = 32
-        const val MAX_KEYWORDS = 16
     }
+}
+
+internal object NotificationDerivedValuePolicy {
+    fun labels(kindLabel: String, category: String?): List<String> {
+        return listOfNotNull("notification", kindLabel, category).distinct()
+    }
+
+    fun keywords(packageName: String, kindLabel: String): List<String> {
+        return (packageName.split('.') + kindLabel.split('-') + "notification")
+            .map(String::lowercase)
+            .filter { value -> value.length in MIN_KEYWORD_CHARS..MAX_KEYWORD_CHARS }
+            .distinct()
+            .take(MAX_KEYWORDS)
+    }
+
+    private const val MIN_KEYWORD_CHARS = 3
+    private const val MAX_KEYWORD_CHARS = 32
+    private const val MAX_KEYWORDS = 16
 }

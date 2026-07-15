@@ -33,6 +33,9 @@ internal object ClosedConnectorRecordValidator {
     }
 
     private fun validate(scanResult: ConnectorScanResult, storedSnapshot: Boolean) {
+        require(scanResult.appUsageSummaries.isEmpty()) {
+            "Schema v8 has no canonical AppUsageSummary producer."
+        }
         validate(
             connectorId = scanResult.connectorId,
             sources = scanResult.sourceReferences,
@@ -45,6 +48,12 @@ internal object ClosedConnectorRecordValidator {
     }
 
     fun validate(snapshot: LocalMemorySnapshot) {
+        require(snapshot.dailySummaries.isEmpty()) {
+            "A schema-v8 snapshot cannot contain daily summaries."
+        }
+        require(snapshot.appUsageSummaries.isEmpty()) {
+            "A schema-v8 snapshot cannot contain app-usage summaries."
+        }
         connectorIds.forEach { connectorId ->
             validate(
                 connectorId = connectorId,

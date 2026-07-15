@@ -9,12 +9,12 @@ The encrypted payload contains exactly these seven derived-memory sections, incl
 1. source references
 2. derived memory events (including the entity graph carried by each event)
 3. citations
-4. daily summaries
+4. reserved daily summaries (the array must be empty in schema v8)
 5. place clusters
-6. app usage summaries
+6. reserved app usage summaries (the array must be empty in schema v8)
 7. connector scan statuses
 
-Rows are sorted by stable ID, or connector ID for scan statuses. Export validates the complete graph before encryption. Every exported `SourceReference.localPointer` is set to `null`; a backup never contains a device-local URI, path, persisted grant, or another value that can relink an imported row to its original. Allowed derived summaries, labels, citation labels, application identifiers, and one-way source hashes remain part of the seven-section snapshot.
+Rows are sorted by stable ID, or connector ID for scan statuses. Export validates the complete graph before encryption. Every exported `SourceReference.localPointer` is set to `null`; a backup never contains a device-local URI, path, persisted grant, or another value that can relink an imported row to its original. Schema v8 retains the `dailySummaries` and `appUsageSummaries` arrays for the fixed version-1 wire shape but has no canonical producer for either, so both arrays must be empty. Allowed per-session App Usage events, other event summaries, labels, citation labels, application identifiers, and one-way source hashes remain part of the other sections.
 
 The format excludes SQLCipher files and passphrases, Android Keystore/HMAC keys, connector preferences and permissions, SAF grants, notification allowlists, online-enrichment consent, automatic-indexing settings/queue/runtime, model or OCR artifacts, logs, originals, prompts, evidence packs, and answers.
 
@@ -54,10 +54,11 @@ Validation also requires a closed graph:
 - every event source and citation ID exists
 - every citation references an existing source and event
 - event-to-citation links are bidirectional
-- daily summaries, place clusters, and usage summaries reference existing events where applicable
+- both reserved aggregate arrays are empty; a legacy or otherwise arbitrary daily or app-usage summary is rejected even if its references form a valid graph
+- place clusters reference existing sources and events where applicable
 - connector scan statuses use stable issue codes only
 - Local Files rows satisfy the HMAC-only closed schema
-- Location, Photos, Calendar, Notifications, and App Usage rows satisfy the same connector-specific schema-v8 closed-record validator used for live scans; because v8 has no canonical `AppUsageSummary` producer, that section must be empty
+- Location, Photos, Calendar, Notifications, and App Usage rows satisfy the same connector-specific schema-v8 closed-record validator used for live scans; App Usage is represented by canonical per-session events, not aggregate rows
 
 An incoming live Location cluster contains one observation. A stored/exported accumulated cluster may contain multiple distinct location source references only when they cover the stored location graph exactly once, its visit count equals that reference count, its first/last times equal the referenced source extrema, its confidence equals the strongest referenced event, its centroid remains on the 0.001-degree grid, and its ID retains the closed 32-hex suffix.
 
@@ -82,7 +83,7 @@ Import is replace-only; version 1 never merges graphs.
 3. The password is entered transiently. The complete envelope is authenticated before JSON parsing or any mutation.
 4. The payload producer schema, closed Unicode, connector-specific canonical records, and complete graph are decoded and validated in memory. This completes before connector consent, settings, or the existing store can be changed.
 5. Grayin durably disables automatic indexing, synchronizes/cancels its WorkManager job, turns online enrichment off, revokes every connector's app-level consent, clears the notification allowlist, and releases all Local Files grants.
-6. One SQLCipher transaction fences the automatic-indexing generation, clears the queue/runtime, replaces all seven derived sections with conflict-aborting inserts, and installs a re-consent barrier for every trusted connector.
+6. One SQLCipher transaction fences the automatic-indexing generation, clears the queue/runtime, replaces all seven wire sections—with `dailySummaries` and `appUsageSummaries` required to be empty—using conflict-aborting inserts, and installs a re-consent barrier for every trusted connector.
 7. The encrypted stage and password are cleared after success. Password-policy, authentication, consent-reset, and store-transaction failures retain only the encrypted stage for an explicit retry; terminal format, payload, size, and I/O failures discard it.
 
 If authentication, decoding, validation, consent reset, or the SQLCipher transaction fails, the existing derived-memory snapshot is not partially replaced.

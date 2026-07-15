@@ -52,15 +52,15 @@ Grayin AI may store:
 - keywords
 - labels
 - entities
-- embedding
 - citation metadata
 - confidence
 - derived memory events
-- daily summaries
+- the reserved daily-summary table/wire slot only as an empty schema-v8 section; v8 has no canonical producer and purges all legacy rows
+- the reserved app-usage-summary table/wire slot only as an empty schema-v8 section; canonical App Usage data is stored as per-session events and v8 purges all legacy aggregate rows
 
 All derived data is still sensitive and remains encrypted in the SQLCipher store.
 
-Explicit encrypted export may copy only the validated derived-memory snapshot described in `docs/export-import.md`. It clears every local source pointer before encoding and excludes originals, connector grants/settings, key material, and runtime state. Password-derived AES-GCM ciphertext may be staged under `noBackupFilesDir`; plaintext staging is forbidden. This derived-data exception does not change the rule that raw originals are never exported.
+Explicit encrypted export may copy only the validated derived-memory snapshot described in `docs/export-import.md`. It clears every local source pointer before encoding, requires the reserved `dailySummaries` and `appUsageSummaries` arrays to be empty, and excludes originals, connector grants/settings, key material, and runtime state. Password-derived AES-GCM ciphertext may be staged under `noBackupFilesDir`; plaintext staging is forbidden. This derived-data exception does not change the rule that raw originals are never exported.
 
 ## Engineering Rule
 
@@ -87,7 +87,7 @@ Core model types must not add fields for original file bytes, raw notification t
 
 ## Local Store Rule
 
-`LocalMemoryStore` accepts only source references, derived memory events, citations, daily summaries, place clusters, app usage summaries, connector-scoped delete requests, and index invalidation requests.
+`LocalMemoryStore` accepts only source references, derived memory events, citations, place clusters, connector-scoped delete requests, index invalidation requests, and the two reserved aggregate lists only when empty. Its compatibility snapshot type still carries daily-summary and app-usage-summary lists, but schema v8 requires both to be empty at the shared scan/transfer/store boundary and deletes every legacy row from both aggregate tables during migration.
 
 It must never add a method that accepts original file bytes, raw notification text, raw message text, raw local-file content, raw calendar records, raw usage event dumps, or raw source payloads.
 

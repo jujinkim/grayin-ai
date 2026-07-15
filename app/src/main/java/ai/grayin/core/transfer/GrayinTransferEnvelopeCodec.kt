@@ -42,7 +42,8 @@ class GrayinTransferEnvelopeCodec(
     }
 
     /**
-     * Encrypts a validated, detached seven-section transfer payload.
+     * Encrypts a validated, detached seven-section transfer payload. In schema v8 the reserved
+     * daily-summary and app-usage-summary sections must be empty.
      *
      * The caller retains ownership of [password] and should clear it when the UI no longer needs it.
      */

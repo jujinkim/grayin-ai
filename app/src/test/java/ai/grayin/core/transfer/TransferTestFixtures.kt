@@ -1,6 +1,8 @@
 package ai.grayin.core.transfer
 
 import ai.grayin.core.connector.ConnectorScanStatus
+import ai.grayin.core.model.AppUsageCategory
+import ai.grayin.core.model.AppUsageSummary
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.DailyMemorySummary
 import ai.grayin.core.model.DerivedMemoryEvent
@@ -171,15 +173,6 @@ internal object TransferTestFixtures {
             sourceReferenceIds = listOf("source:location:$locationHash"),
             confidence = ConfidenceLevel.MEDIUM,
         )
-        val daily = DailyMemorySummary(
-            id = "daily:2026-07-15",
-            date = LocalDate.parse("2026-07-15"),
-            summary = "A bounded daily summary.",
-            derivedMemoryEventIds = events.map(DerivedMemoryEvent::id),
-            placeClusterIds = listOf(cluster.id),
-            appUsageSummaryIds = emptyList(),
-            confidence = ConfidenceLevel.MEDIUM,
-        )
         val statuses = listOf(
             "location",
             "photos",
@@ -199,10 +192,33 @@ internal object TransferTestFixtures {
             sourceReferences = sources,
             derivedMemoryEvents = events,
             citations = citations,
-            dailySummaries = listOf(daily),
+            dailySummaries = emptyList(),
             placeClusters = listOf(cluster),
             appUsageSummaries = emptyList(),
             connectorScanStatuses = statuses,
+        )
+    }
+
+    fun legacyDailySummary(): DailyMemorySummary {
+        return DailyMemorySummary(
+            id = "daily:legacy-unowned",
+            date = LocalDate.parse("2026-07-15"),
+            summary = "Legacy daily summary without a schema-v8 producer.",
+            confidence = ConfidenceLevel.MEDIUM,
+        )
+    }
+
+    fun legacyAppUsageSummary(): AppUsageSummary {
+        return AppUsageSummary(
+            id = "app-usage:app_usage:legacy",
+            sourceReferenceIds = listOf("source:app_usage:$usageHash"),
+            date = LocalDate.parse("2026-07-15"),
+            packageName = "com.example.app",
+            appAlias = "Legacy aggregate",
+            category = AppUsageCategory.OTHER,
+            totalDurationMinutes = 30,
+            launchCount = 1,
+            confidence = ConfidenceLevel.MEDIUM,
         )
     }
 

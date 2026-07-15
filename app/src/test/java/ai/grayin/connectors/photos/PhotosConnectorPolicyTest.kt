@@ -4,6 +4,8 @@ import android.Manifest
 import android.os.Build
 import android.provider.MediaStore
 import ai.grayin.core.connector.ConnectorPermissionAccess
+import ai.grayin.core.model.ConnectorScanIssueCode
+import ai.grayin.core.model.SourceAvailability
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -78,5 +80,18 @@ class PhotosConnectorPolicyTest {
     fun `completed range query replaces the previous photo snapshot`() {
         assertTrue(PhotoSnapshotPolicy.shouldReplace(queryCompleted = true))
         assertTrue(!PhotoSnapshotPolicy.shouldReplace(queryCompleted = false))
+    }
+
+    @Test
+    fun `photos distinguish unavailable provider from authoritative empty range`() {
+        val unavailable = PhotoSnapshotPolicy.emptyReadIssue(queryCompleted = false)
+        assertEquals(SourceAvailability.STALE, unavailable.availability)
+        assertEquals(ConnectorScanIssueCode.SOURCE_UNAVAILABLE, unavailable.issueCode)
+        assertTrue(!PhotoSnapshotPolicy.shouldReplace(queryCompleted = false))
+
+        val emptyRange = PhotoSnapshotPolicy.emptyReadIssue(queryCompleted = true)
+        assertEquals(SourceAvailability.NOT_INDEXED, emptyRange.availability)
+        assertEquals(ConnectorScanIssueCode.NO_PHOTOS_IN_RANGE, emptyRange.issueCode)
+        assertTrue(PhotoSnapshotPolicy.shouldReplace(queryCompleted = true))
     }
 }

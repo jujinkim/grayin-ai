@@ -208,6 +208,18 @@ class LocationPlaceClusterPolicyTest {
         )
     }
 
+    @Test
+    fun `location values remove duplicate place and reserved signals in stable order`() {
+        assertEquals(
+            listOf("location", "place", "gps", "Singapore", "weather"),
+            LocationDerivedValuePolicy.stableDistinct(
+                listOf("location", "place", "gps"),
+                listOf("Singapore", "Singapore", "gps", "location"),
+                listOf("weather", "weather"),
+            ),
+        )
+    }
+
     private fun cluster(coordinate: GeoCoordinate) = LocationPlaceClusterPolicy.create(
         coordinate = coordinate,
         sourceReferenceId = SOURCE_ID,

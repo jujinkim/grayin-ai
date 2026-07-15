@@ -221,14 +221,16 @@ class LocationConnector(
                 sourceReferenceIds = listOf(sourceId),
                 summary = "Location sample indexed near $region at $sampleAt.${weatherSignals.summarySuffix}",
                 startedAt = sampleAt,
-                keywords = listOf("location", "place", closedProvider)
-                    .plus(placeKeywords)
-                    .plus(weatherSignals.keywords)
-                    .filter { it.isNotBlank() },
-                labels = listOf("location", "place-visit", closedProvider)
-                    .plus(placeKeywords)
-                    .plus(weatherSignals.labels)
-                    .filter { it.isNotBlank() },
+                keywords = LocationDerivedValuePolicy.stableDistinct(
+                    listOf("location", "place", closedProvider),
+                    placeKeywords,
+                    weatherSignals.keywords,
+                ),
+                labels = LocationDerivedValuePolicy.stableDistinct(
+                    listOf("location", "place-visit", closedProvider),
+                    placeKeywords,
+                    weatherSignals.labels,
+                ),
                 confidence = confidence,
                 sensitivity = SensitivityLevel.HIGH,
                 citationIds = listOf(citationId),
@@ -400,6 +402,17 @@ internal data class ClosedLocationWeatherSignals(
     val keywords: List<String> = emptyList(),
     val labels: List<String> = emptyList(),
 )
+
+internal object LocationDerivedValuePolicy {
+    fun stableDistinct(vararg groups: List<String>): List<String> {
+        return groups
+            .asSequence()
+            .flatten()
+            .filter(String::isNotBlank)
+            .distinct()
+            .toList()
+    }
+}
 
 internal object LocationWeatherSignalPolicy {
     fun close(weather: WeatherLookupResult?): ClosedLocationWeatherSignals {

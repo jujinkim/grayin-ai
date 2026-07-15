@@ -114,6 +114,7 @@ class PhotosConnector(
         val until = scope.until ?: now
         val readResult = readPhotoRows(from, until, now)
         val rows = readResult.rows
+        val emptyReadIssue = PhotoSnapshotPolicy.emptyReadIssue(readResult.queryCompleted)
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = if (rows.isEmpty()) ProcessingState.SKIPPED else ProcessingState.COMPLETED,
@@ -125,8 +126,8 @@ class PhotosConnector(
                 if (rows.isEmpty()) {
                     addAll(
                         missingSources(
-                            SourceAvailability.NOT_INDEXED,
-                            ConnectorScanIssueCode.NO_PHOTOS_IN_RANGE,
+                            emptyReadIssue.availability,
+                            emptyReadIssue.issueCode,
                         ),
                     )
                 }
@@ -348,9 +349,28 @@ class PhotosConnector(
     }
 }
 
+internal data class PhotoEmptyReadIssue(
+    val availability: SourceAvailability,
+    val issueCode: ConnectorScanIssueCode,
+)
+
 internal object PhotoSnapshotPolicy {
     /** A completed MediaStore query is the complete persisted snapshot for that requested range. */
     fun shouldReplace(queryCompleted: Boolean): Boolean = queryCompleted
+
+    fun emptyReadIssue(queryCompleted: Boolean): PhotoEmptyReadIssue {
+        return if (queryCompleted) {
+            PhotoEmptyReadIssue(
+                availability = SourceAvailability.NOT_INDEXED,
+                issueCode = ConnectorScanIssueCode.NO_PHOTOS_IN_RANGE,
+            )
+        } else {
+            PhotoEmptyReadIssue(
+                availability = SourceAvailability.STALE,
+                issueCode = ConnectorScanIssueCode.SOURCE_UNAVAILABLE,
+            )
+        }
+    }
 }
 
 internal object PhotoPermissionPolicy {

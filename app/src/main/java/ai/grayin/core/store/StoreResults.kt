@@ -31,8 +31,10 @@ data class LocalMemorySnapshot(
     val sourceReferences: List<SourceReference>,
     val derivedMemoryEvents: List<DerivedMemoryEvent>,
     val citations: List<MemoryCitation>,
+    /** Reserved wire/table section that must be empty for canonical schema-v8 snapshots. */
     val dailySummaries: List<DailyMemorySummary>,
     val placeClusters: List<PlaceCluster>,
+    /** Reserved wire/table section that must be empty for canonical schema-v8 snapshots. */
     val appUsageSummaries: List<AppUsageSummary>,
     val connectorScanStatuses: List<ConnectorScanStatus>,
 )

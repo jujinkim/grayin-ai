@@ -104,18 +104,20 @@ class CalendarConnector(
         val until = scope.until ?: now.plus(DEFAULT_FUTURE_WINDOW)
         val readResult = readCalendarRows(from, until, now)
         val rows = readResult.rows
+        val emptyReadIssue = CalendarScanPolicy.emptyReadIssue(readResult.queryCompleted)
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = if (rows.isEmpty()) ProcessingState.SKIPPED else ProcessingState.COMPLETED,
             sourceReferences = rows.map { it.sourceReference },
             derivedEvents = rows.map { it.derivedEvent },
             citations = rows.map { it.citation },
+            replaceExistingConnectorData = CalendarScanPolicy.shouldReplace(),
             missingSources = buildList {
                 if (rows.isEmpty()) {
                     addAll(
                         missingSources(
-                            SourceAvailability.NOT_INDEXED,
-                            ConnectorScanIssueCode.NO_CALENDAR_EVENTS_IN_RANGE,
+                            emptyReadIssue.availability,
+                            emptyReadIssue.issueCode,
                         ),
                     )
                 }
@@ -193,8 +195,8 @@ class CalendarConnector(
                         rows += cursor.toExtractionResult(observedAt)
                     }
             }
-            CalendarReadResult(rows, outputLimited)
-        } ?: CalendarReadResult(emptyList(), outputLimited = false)
+            CalendarReadResult(rows, outputLimited, queryCompleted = true)
+        } ?: CalendarReadResult(emptyList(), outputLimited = false, queryCompleted = false)
     }
 
     private fun android.database.Cursor.toExtractionResult(observedAt: Instant): CalendarExtractionResult {
@@ -332,6 +334,7 @@ class CalendarConnector(
     private data class CalendarReadResult(
         val rows: List<CalendarExtractionResult>,
         val outputLimited: Boolean,
+        val queryCompleted: Boolean,
     )
 
     companion object {
@@ -369,6 +372,30 @@ class CalendarConnector(
             CalendarContract.Instances.ALL_DAY,
         )
     }
+}
+
+internal data class CalendarEmptyReadIssue(
+    val availability: SourceAvailability,
+    val issueCode: ConnectorScanIssueCode,
+)
+
+internal object CalendarScanPolicy {
+    fun emptyReadIssue(queryCompleted: Boolean): CalendarEmptyReadIssue {
+        return if (queryCompleted) {
+            CalendarEmptyReadIssue(
+                availability = SourceAvailability.NOT_INDEXED,
+                issueCode = ConnectorScanIssueCode.NO_CALENDAR_EVENTS_IN_RANGE,
+            )
+        } else {
+            CalendarEmptyReadIssue(
+                availability = SourceAvailability.STALE,
+                issueCode = ConnectorScanIssueCode.SOURCE_UNAVAILABLE,
+            )
+        }
+    }
+
+    /** Calendar scans remain incremental and never replace their prior connector graph. */
+    fun shouldReplace(): Boolean = false
 }
 
 internal data class ClosedCalendarFields(

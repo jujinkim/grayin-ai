@@ -66,9 +66,10 @@ Examples:
 - payment events
 - app usage patterns
 - photo keywords
-- OCR text
+- OCR-derived structural and keyword signals, never extracted text or a transcript
 - calendar summaries
-- daily summaries
+- future daily summaries only after a canonical producer and schema review; schema v8 stores none
+- future app-usage aggregate summaries only after a canonical producer and schema review; schema v8 stores only per-session App Usage events
 
 Local derived-memory storage is encrypted with SQLCipher and an Android Keystore-protected passphrase.
 
@@ -78,7 +79,7 @@ Local derived-memory storage is encrypted with SQLCipher and an Android Keystore
 - Android Keystore protects the generated SQLCipher passphrase.
 - Store APIs must accept only source references, derived memory, citations, summaries, clusters, and index metadata.
 - Android backup remains disabled through the manifest plus explicit legacy and Android 12+ cloud/device-transfer exclusion rules. Encrypted export/import remains an explicit user action and does not enable platform backup.
-- Version 1 export contains only the validated seven-section derived snapshot, nulls local pointers, uses password-derived AES-GCM authentication, and stages ciphertext only under `noBackupFilesDir`.
+- Version 1 export contains only the validated seven-section wire snapshot, requires the reserved schema-v8 daily-summary and app-usage-summary arrays to be empty, nulls local pointers, uses password-derived AES-GCM authentication, and stages ciphertext only under `noBackupFilesDir`.
 
 ## Optional Screen and App Lock
 
