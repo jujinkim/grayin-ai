@@ -326,6 +326,7 @@ internal class CiphertextStagingArea(
         val finalFile = finalFile(token)
         try {
             var copiedBytes = 0L
+            var streamFailure: BackupFileFailureCode? = null
             FileOutputStream(partFile, false).use { target ->
                 val buffer = ByteArray(COPY_BUFFER_BYTES)
                 while (true) {
@@ -337,20 +338,25 @@ internal class CiphertextStagingArea(
                         if (single < 0) break
                         copiedBytes += 1L
                         if (copiedBytes > maxCiphertextBytes) {
-                            return failedPart(partFile, BackupFileFailureCode.CIPHERTEXT_TOO_LARGE)
+                            streamFailure = BackupFileFailureCode.CIPHERTEXT_TOO_LARGE
+                            break
                         }
                         target.write(single)
                         continue
                     }
                     copiedBytes += read
                     if (copiedBytes > maxCiphertextBytes) {
-                        return failedPart(partFile, BackupFileFailureCode.CIPHERTEXT_TOO_LARGE)
+                        streamFailure = BackupFileFailureCode.CIPHERTEXT_TOO_LARGE
+                        break
                     }
                     target.write(buffer, 0, read)
                 }
-                target.flush()
-                target.fd.sync()
+                if (streamFailure == null) {
+                    target.flush()
+                    target.fd.sync()
+                }
             }
+            streamFailure?.let { failure -> return failedPart(partFile, failure) }
             if (copiedBytes == 0L) {
                 return failedPart(partFile, BackupFileFailureCode.EMPTY_CIPHERTEXT)
             }

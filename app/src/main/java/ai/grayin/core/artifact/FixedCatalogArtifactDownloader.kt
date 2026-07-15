@@ -204,6 +204,7 @@ internal class FixedCatalogArtifactDownloader(
 
             val digest = MessageDigest.getInstance("SHA-256")
             var copiedBytes = 0L
+            var streamFailure: ArtifactDownloadFailureCode? = null
             response.openBody().use { source ->
                 FileOutputStream(partFile).use { target ->
                     val buffer = ByteArray(COPY_BUFFER_BYTES)
@@ -213,15 +214,19 @@ internal class FixedCatalogArtifactDownloader(
                         if (read < 0) break
                         copiedBytes += read
                         if (copiedBytes > artifact.expectedSizeBytes) {
-                            return failed(partFile, ArtifactDownloadFailureCode.SIZE_MISMATCH)
+                            streamFailure = ArtifactDownloadFailureCode.SIZE_MISMATCH
+                            break
                         }
                         target.write(buffer, 0, read)
                         digest.update(buffer, 0, read)
                         onProgress(copiedBytes, artifact.expectedSizeBytes)
                     }
-                    target.fd.sync()
+                    if (streamFailure == null) {
+                        target.fd.sync()
+                    }
                 }
             }
+            streamFailure?.let { failure -> return failed(partFile, failure) }
             if (copiedBytes != artifact.expectedSizeBytes) {
                 return failed(partFile, ArtifactDownloadFailureCode.SIZE_MISMATCH)
             }

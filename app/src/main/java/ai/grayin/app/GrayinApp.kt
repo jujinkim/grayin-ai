@@ -89,6 +89,7 @@ import ai.grayin.core.security.AppSecurityAuthCapability
 import ai.grayin.core.security.AppSecurityFailure
 import ai.grayin.core.security.AppSecurityState
 import ai.grayin.core.indexing.ManualIndexDateRange
+import ai.grayin.core.model.SensitivityLevel
 import java.time.LocalDate
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
@@ -1784,7 +1785,7 @@ private fun SourceRow(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         StatusPill(
                             text = source.sensitivity,
-                            tone = if (source.sensitivity == strings.veryHighSensitivity) {
+                            tone = if (source.sensitivityLevel == SensitivityLevel.VERY_HIGH) {
                                 PillTone.Warning
                             } else {
                                 PillTone.Neutral
@@ -2659,7 +2660,9 @@ private fun sourceStatusTone(
     return when (source.status) {
         strings.indexed -> PillTone.Success
         strings.selected -> PillTone.Info
-        strings.notImplemented -> PillTone.Warning
+        strings.reconnectionRequired,
+        strings.sourcePermissionDenied,
+        strings.connectorConnectionUnavailable -> PillTone.Warning
         else -> PillTone.Neutral
     }
 }

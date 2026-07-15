@@ -43,6 +43,7 @@ import ai.grayin.core.model.EvidencePack
 import ai.grayin.core.model.MemoryCitation
 import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.ProcessingState
+import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceReference
 import ai.grayin.core.enrichment.OnlineEnrichmentPreferences
 import ai.grayin.core.indexing.ConnectorScanWriter
@@ -92,6 +93,7 @@ data class ConnectorUiState(
     val name: String,
     val status: String,
     val sensitivity: String,
+    val sensitivityLevel: SensitivityLevel,
     val indexedSourceReferenceCount: Int = 0,
     val canInvoke: Boolean = false,
     val invokeLabel: String,
@@ -975,6 +977,7 @@ class GrayinMemoryController(
                 strings = strings,
             ),
             sensitivity = strings.sensitivityLabel(connector.metadata.sensitivity),
+            sensitivityLevel = connector.metadata.sensitivity,
             indexedSourceReferenceCount = sourceReferences.count { it.connectorId == connectorId },
             canInvoke = !isLocalFiles && permissionState.canRequestPermission &&
                 (
