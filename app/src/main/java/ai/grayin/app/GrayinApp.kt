@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -92,6 +93,7 @@ fun GrayinApp() {
     val languageStore = remember(context) { LanguagePreferenceStore(context) }
     val sourceIntroStore = remember(context) { SourceIntroPreferenceStore(context) }
     val automaticIndexingStore = remember(context) { AutomaticIndexingPreferenceStore(context) }
+    val automaticIndexingScheduler = remember(context) { AutomaticIndexingScheduler(context) }
     val scope = rememberCoroutineScope()
     var selectedScreenName by rememberSaveable {
         mutableStateOf(initialScreenForSourcesIntro(sourceIntroStore.hasSeenSourcesIntro()).name)
@@ -236,12 +238,36 @@ fun GrayinApp() {
     fun updateAutomaticIndexing(state: AutomaticIndexingUiState) {
         automaticIndexingStore.save(state)
         automaticIndexingState = state
-        statusMessage = strings.automaticIndexingSaved(state.enabled)
+        statusMessage = ""
+        val syncRequest = automaticIndexingScheduler.requestSync()
+        scope.launch {
+            try {
+                syncRequest.await()
+                statusMessage = strings.automaticIndexingSaved(state.enabled)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                statusMessage = strings.indexingFailed
+            } finally {
+                snapshot = controller.snapshot(strings)
+            }
+        }
     }
 
     LaunchedEffect(sourceIntroStore) {
         if (!sourceIntroStore.hasSeenSourcesIntro()) {
             sourceIntroStore.markSourcesIntroSeen()
+        }
+    }
+
+    LaunchedEffect(automaticIndexingScheduler) {
+        val syncRequest = automaticIndexingScheduler.requestSync()
+        try {
+            syncRequest.await()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            statusMessage = strings.indexingFailed
         }
     }
 

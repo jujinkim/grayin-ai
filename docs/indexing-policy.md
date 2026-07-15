@@ -1,6 +1,6 @@
 # Indexing Policy
 
-Grayin persists connector-level indexing tasks in the same SQLCipher database as derived memory. Manual source actions now enqueue and execute through one shared command executor. WorkManager scheduling is the next runtime layer; automatic settings alone do not imply that background work has run.
+Grayin persists connector-level indexing tasks in the same SQLCipher database as derived memory. Manual source actions and the WorkManager runtime enqueue and execute through one shared command executor.
 
 ## Processing States
 
@@ -33,7 +33,11 @@ The Sources page lets the user persist automatic indexing preferences:
 - charging-only requirement
 - low-usage start and end hour
 
-The background scheduler must read these preferences and re-evaluate live device conditions on every run. Manual indexing remains available even when automatic indexing is off.
+When automatic indexing is enabled, Grayin registers one unique periodic WorkManager request with a one-hour interval and 15-minute flex. It requires battery-not-low and storage-not-low, adds WorkManager's charging constraint when charging-only is selected, and deliberately has no network constraint because scheduled connectors are local-only. Preference changes launch reconciliation in a process-level scope, so closing the Sources screen or Activity does not abandon an opt-out. Disabling first commits a disabled control generation and atomically fences pending/running automatic tasks as skipped, then waits for WorkManager cancellation. App startup re-applies persisted control and schedule state; expired leases are recovered by the next executor run.
+
+Every worker run reloads the preference and re-evaluates the exact low-usage window, charging state, battery percentage, and thermal state. WorkManager timing is best-effort, so the runtime check—not the periodic interval—is authoritative. A deterministic key identifies one local low-usage window; the post-midnight portion of a cross-midnight window uses the date on which that window started. Manual indexing remains available even when automatic indexing is off.
+
+Automatic settings are represented by a durable SQLCipher control generation. A settings change advances the generation and administratively skips older pending/running work. Automatic enqueue, claim, derived-scan commit, and runtime-status writes all require the currently enabled generation. This prevents a canceled or blocking old worker from publishing after disable/reconfiguration, while a later generation can use the same low-usage-window key without colliding with terminal history.
 
 ## Connector Execution Modes
 
@@ -49,12 +53,12 @@ Manual indexing command models support:
 - index one connector
 - index one date range, optionally scoped to one connector
 
-The shared executor expands commands into connector tasks, atomically claims only the requested trigger, rechecks connector mode, consent, source enablement, and permission, then scans and commits derived output. The executor and SQLCipher store both require the scan connector ID to match the claimed task. The store checks that identity plus the live item ID, lease owner, attempt number, and lease expiry in the same transaction that writes the derived rows and marks the task complete. A reclaimed or expired worker therefore cannot write stale scan output. Manual expansion excludes event-driven notifications. Automatic expansion includes only background-scannable connectors; Location remains manual foreground-only.
+The shared executor expands commands into connector tasks, atomically claims only the requested trigger, rechecks connector mode, consent, source enablement, and permission, then scans and commits derived output. Connector readiness and scan calls have a timeout shorter than the 15-minute lease, while connector implementations also cap each scan's item/byte work. The executor and SQLCipher store both require the scan connector ID to match the claimed task. The store checks that identity plus the live item ID, lease owner, attempt number, and lease expiry in the same transaction that writes the derived rows and marks the task complete. Metadata-only completed/skipped/failed transitions use the same live-expiry fence. A reclaimed, canceled, timed-out, or expired worker therefore cannot write stale output or acknowledge an expired lease. Manual expansion excludes event-driven notifications. Automatic expansion includes only background-scannable connectors; Location remains manual foreground-only.
 
-Connector scan and store exceptions become stable failure codes without exception text. Missing permission, disabled source, ineligible mode, and no indexable output become stable skip reasons. Coroutine cancellation is rethrown and the running lease is left for bounded recovery. After the encrypted derived-memory commit and queue completion, connector UI checkpoint updates are best-effort; a checkpoint exception does not make committed data appear failed.
+Connector scan, timeout, and store exceptions become stable failure codes without exception text. Missing permission, disabled source, ineligible mode, and no indexable output become stable skip reasons. Coroutine cancellation is checked again after potentially blocking connector calls, rethrown, and the running lease is left for bounded recovery. A normal WorkManager stop records a stable stopped outcome instead of an internal error. After the encrypted derived-memory commit and queue completion, connector UI checkpoint updates are best-effort; a checkpoint exception does not make committed data appear failed.
 
 ## UI Status
 
-The encrypted queue exposes queue depth, running connector IDs, last completion time, recent task states, stable skipped/failure reasons, and indexed-event counts. A separate singleton runtime row records the last automatic check/run outcome without source data.
+The encrypted queue exposes queue depth, running connector IDs, last completion time, recent task states, stable skipped/failure reasons, and indexed-event counts. A separate singleton runtime row records the last automatic check, start, completion, outcome, stable reason, and derived-event count without source data. The worker bounds each drain, recovers expired leases, and prunes old terminal rows while retaining the latest status history.
 
 Status text must describe indexing state without logging or retaining source originals.

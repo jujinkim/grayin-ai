@@ -23,6 +23,10 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -50,12 +54,14 @@ class IndexingCommandExecutorTest {
             command = IndexNow,
             trigger = IndexingTrigger.AUTOMATIC,
             automaticWindowKey = "2026-07-15:02-05",
+            automaticGeneration = 7L,
         )
 
         assertEquals(listOf("background", "foreground"), manual.map { it.connectorId })
         assertEquals(listOf("background"), automatic.map { it.connectorId })
         assertEquals(listOf(true, true), manual.map { it.task.forceRefresh })
         assertFalse(automatic.single().task.forceRefresh)
+        assertEquals(7L, automatic.single().task.automaticGeneration)
     }
 
     @Test
@@ -122,12 +128,41 @@ class IndexingCommandExecutorTest {
             command = IndexConnector(foreground.id),
             trigger = IndexingTrigger.AUTOMATIC,
             automaticWindowKey = "2026-07-15:02-05",
+            automaticGeneration = 7L,
         )
-        val ineligible = executor.executeNext(IndexingTrigger.AUTOMATIC, "automatic-worker")
+        val ineligible = executor.executeNext(
+            trigger = IndexingTrigger.AUTOMATIC,
+            leaseOwner = "automatic-worker",
+            automaticGeneration = 7L,
+        )
 
         assertEquals(IndexingFailureCode.CONNECTOR_NOT_FOUND, missing?.failureCode)
         assertEquals(IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE, ineligible?.skipReason)
         assertNull(foreground.lastScope)
+    }
+
+    @Test
+    fun `automatic generation is propagated to queue claims`() = runBlocking {
+        val connector = FakeConnector(
+            id = "calendar",
+            mode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
+        )
+        val queue = RecordingQueue()
+        val executor = executor(listOf(connector), queue)
+        executor.enqueue(
+            command = IndexConnector(connector.id),
+            trigger = IndexingTrigger.AUTOMATIC,
+            automaticWindowKey = "2026-07-15:02-05",
+            automaticGeneration = 11L,
+        )
+
+        executor.executeNext(
+            trigger = IndexingTrigger.AUTOMATIC,
+            leaseOwner = "automatic-worker",
+            automaticGeneration = 11L,
+        )
+
+        assertEquals(11L, queue.lastClaimAutomaticGeneration)
     }
 
     @Test
@@ -196,6 +231,33 @@ class IndexingCommandExecutorTest {
     }
 
     @Test
+    fun `connector operation timeout fails without committing scan output`() = runBlocking {
+        var writerCalled = false
+        val connector = FakeConnector(
+            id = "slow-scan",
+            mode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
+            scanResult = successfulScan("slow-scan"),
+            afterScan = { delay(500) },
+        )
+        val queue = RecordingQueue()
+        val executor = executor(
+            connectors = listOf(connector),
+            queue = queue,
+            writer = ConnectorScanWriter { _, _, _, _ ->
+                writerCalled = true
+                ConnectorScanCommitResult.LeaseLost
+            },
+            connectorOperationTimeout = Duration.ofMillis(50),
+        )
+        executor.enqueue(IndexConnector(connector.id), IndexingTrigger.MANUAL)
+
+        val result = executor.executeNext(IndexingTrigger.MANUAL, "manual-ui")
+
+        assertEquals(IndexingFailureCode.CONNECTOR_OPERATION_TIMED_OUT, result?.failureCode)
+        assertFalse(writerCalled)
+    }
+
+    @Test
     fun `connector cannot commit output under another connector id`() = runBlocking {
         val connector = FakeConnector(
             id = "expected",
@@ -244,6 +306,41 @@ class IndexingCommandExecutorTest {
     }
 
     @Test
+    fun `cancellation raised by a non cooperative scan is checked before commit`() = runBlocking {
+        var writerCalled = false
+        val connector = FakeConnector(
+            id = "late-cancel",
+            mode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
+            scanResult = successfulScan("late-cancel"),
+            afterScan = {
+                currentCoroutineContext().cancel(CancellationException("stopped after scan"))
+            },
+        )
+        val queue = RecordingQueue()
+        val executor = executor(
+            connectors = listOf(connector),
+            queue = queue,
+            writer = ConnectorScanWriter { _, _, _, _ ->
+                writerCalled = true
+                ConnectorScanCommitResult.LeaseLost
+            },
+        )
+        executor.enqueue(IndexConnector(connector.id), IndexingTrigger.MANUAL)
+
+        val execution = async {
+            executor.executeNext(IndexingTrigger.MANUAL, "manual-ui")
+        }
+        try {
+            execution.await()
+            fail("Expected cancellation before commit.")
+        } catch (_: CancellationException) {
+        }
+
+        assertFalse(writerCalled)
+        assertEquals(IndexingQueueState.RUNNING, queue.items.single().state)
+    }
+
+    @Test
     fun `lost lease stops without a terminal write or connector checkpoint`() = runBlocking {
         val operations = mutableListOf<String>()
         val connector = FakeConnector(
@@ -278,6 +375,7 @@ class IndexingCommandExecutorTest {
         queue: RecordingQueue,
         writer: ConnectorScanWriter? = null,
         taskIdFactory: (String) -> String = { connectorId -> "task:$connectorId" },
+        connectorOperationTimeout: Duration = Duration.ofMinutes(4),
     ): IndexingCommandExecutor {
         return IndexingCommandExecutor(
             connectorRegistry = MemoryConnectorRegistry(connectors),
@@ -296,6 +394,7 @@ class IndexingCommandExecutorTest {
             clock = Clock.fixed(NOW, ZoneOffset.UTC),
             taskIdFactory = taskIdFactory,
             leaseDuration = Duration.ofMinutes(5),
+            connectorOperationTimeout = connectorOperationTimeout,
             maxAttempts = 3,
         )
     }
@@ -308,6 +407,7 @@ class IndexingCommandExecutorTest {
         private val operations: MutableList<String> = mutableListOf(),
         private val scanResult: ConnectorScanResult = successfulScan(id),
         private val scanError: Exception? = null,
+        private val afterScan: suspend () -> Unit = {},
     ) : MemoryConnector {
         override val metadata = ConnectorMetadata(
             connectorId = id,
@@ -353,6 +453,7 @@ class IndexingCommandExecutorTest {
             operations += "scan"
             lastScope = scope
             scanError?.let { throw it }
+            afterScan()
             return scanResult
         }
 
@@ -381,6 +482,7 @@ class IndexingCommandExecutorTest {
         var lastTerminalLeaseOwner: String? = null
         var lastTerminalAttemptCount: Int? = null
         var lastRecoveryMaxAttempts: Int? = null
+        var lastClaimAutomaticGeneration: Long? = null
 
         override suspend fun enqueue(tasks: List<IndexingTask>): List<IndexingQueueItem> {
             return tasks.map { task -> IndexingQueueItem(task) }.also(items::addAll)
@@ -391,10 +493,17 @@ class IndexingCommandExecutorTest {
             claimedAt: Instant,
             leaseUntil: Instant,
             trigger: IndexingTrigger?,
+            automaticGeneration: Long?,
         ): IndexingQueueItem? {
             operations += "claim:$trigger"
+            lastClaimAutomaticGeneration = automaticGeneration
             val index = items.indexOfFirst { item ->
-                item.state == IndexingQueueState.PENDING && (trigger == null || item.task.trigger == trigger)
+                item.state == IndexingQueueState.PENDING &&
+                    (trigger == null || item.task.trigger == trigger) &&
+                    (
+                        automaticGeneration == null ||
+                            item.task.automaticGeneration == automaticGeneration
+                    )
             }
             if (index < 0) return null
             val pending = items[index]

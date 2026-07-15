@@ -10,6 +10,10 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeout
 
 sealed interface ConnectorScanCommitResult {
     data class Committed(val item: IndexingQueueItem) : ConnectorScanCommitResult
@@ -36,11 +40,18 @@ class IndexingCommandExecutor(
         "indexing:$connectorId:${UUID.randomUUID()}"
     },
     private val leaseDuration: Duration = DEFAULT_LEASE_DURATION,
+    private val connectorOperationTimeout: Duration = leaseDuration.minus(DEFAULT_TIMEOUT_MARGIN),
     private val maxAttempts: Int = DEFAULT_MAX_ATTEMPTS,
 ) {
     init {
         require(!leaseDuration.isZero && !leaseDuration.isNegative) {
             "Lease duration must be positive."
+        }
+        require(!connectorOperationTimeout.isZero && !connectorOperationTimeout.isNegative) {
+            "Connector operation timeout must be positive."
+        }
+        require(connectorOperationTimeout < leaseDuration) {
+            "Connector operation timeout must be shorter than the queue lease."
         }
         require(maxAttempts > 0) { "Maximum attempts must be positive." }
     }
@@ -49,7 +60,9 @@ class IndexingCommandExecutor(
         command: IndexingCommand,
         trigger: IndexingTrigger,
         automaticWindowKey: String? = null,
+        automaticGeneration: Long? = null,
     ): List<IndexingQueueItem> {
+        requireValidAutomaticGeneration(trigger, automaticGeneration)
         require(
             (trigger == IndexingTrigger.AUTOMATIC && !automaticWindowKey.isNullOrBlank()) ||
                 (trigger == IndexingTrigger.MANUAL && automaticWindowKey == null),
@@ -73,6 +86,7 @@ class IndexingCommandExecutor(
                 until = until,
                 forceRefresh = trigger == IndexingTrigger.MANUAL,
                 automaticWindowKey = automaticWindowKey,
+                automaticGeneration = automaticGeneration,
             )
         }
         return queue.enqueue(tasks)
@@ -81,8 +95,10 @@ class IndexingCommandExecutor(
     suspend fun executeNext(
         trigger: IndexingTrigger,
         leaseOwner: String,
+        automaticGeneration: Long? = null,
     ): IndexingQueueItem? {
         require(leaseOwner.isNotBlank()) { "Lease owner must not be blank." }
+        requireValidAutomaticGeneration(trigger, automaticGeneration)
         val claimedAt = clock.instant()
         queue.recoverExpiredLeases(now = claimedAt, maxAttempts = maxAttempts)
         val item = queue.claimNextAtomically(
@@ -90,6 +106,7 @@ class IndexingCommandExecutor(
             claimedAt = claimedAt,
             leaseUntil = claimedAt.plus(leaseDuration),
             trigger = trigger,
+            automaticGeneration = automaticGeneration,
         ) ?: return null
 
         val connector = connectorRegistry.find(item.connectorId)
@@ -98,22 +115,34 @@ class IndexingCommandExecutor(
             return skip(item, IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE)
         }
 
-        val ready = connectorReadiness(connector, item)
+        val ready = try {
+            withTimeout(connectorOperationTimeout.toMillis()) {
+                connectorReadiness(connector, item)
+            }
+        } catch (_: TimeoutCancellationException) {
+            return fail(item, IndexingFailureCode.CONNECTOR_OPERATION_TIMED_OUT)
+        }
+        currentCoroutineContext().ensureActive()
         if (ready != null) return ready
 
         val scanResult = try {
-            connector.scan(
-                ConnectorScanScope(
-                    from = item.task.from,
-                    until = item.task.until,
-                    forceRefresh = item.task.forceRefresh,
-                ),
-            )
+            withTimeout(connectorOperationTimeout.toMillis()) {
+                connector.scan(
+                    ConnectorScanScope(
+                        from = item.task.from,
+                        until = item.task.until,
+                        forceRefresh = item.task.forceRefresh,
+                    ),
+                )
+            }
+        } catch (_: TimeoutCancellationException) {
+            return fail(item, IndexingFailureCode.CONNECTOR_OPERATION_TIMED_OUT)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
             return fail(item, IndexingFailureCode.CONNECTOR_SCAN_FAILED)
         }
+        currentCoroutineContext().ensureActive()
 
         if (scanResult.connectorId != item.connectorId) {
             return fail(item, IndexingFailureCode.CONNECTOR_SCAN_FAILED)
@@ -122,6 +151,7 @@ class IndexingCommandExecutor(
         if (!scanResult.hasIndexableOutput()) {
             return skip(item, IndexingSkipReason.NO_INDEXABLE_DATA)
         }
+        currentCoroutineContext().ensureActive()
 
         val commitResult = try {
             scanWriter.commitClaimedConnectorScan(
@@ -154,12 +184,35 @@ class IndexingCommandExecutor(
         trigger: IndexingTrigger,
         leaseOwner: String,
         maxTasks: Int = DEFAULT_MAX_DRAIN_TASKS,
+        automaticGeneration: Long? = null,
     ): List<IndexingQueueItem> {
         require(maxTasks > 0) { "Maximum drain task count must be positive." }
+        requireValidAutomaticGeneration(trigger, automaticGeneration)
         return buildList {
             repeat(maxTasks) {
-                val item = executeNext(trigger = trigger, leaseOwner = leaseOwner) ?: return@buildList
+                val item = executeNext(
+                    trigger = trigger,
+                    leaseOwner = leaseOwner,
+                    automaticGeneration = automaticGeneration,
+                ) ?: return@buildList
                 add(item)
+            }
+        }
+    }
+
+    private fun requireValidAutomaticGeneration(
+        trigger: IndexingTrigger,
+        automaticGeneration: Long?,
+    ) {
+        when (trigger) {
+            IndexingTrigger.MANUAL -> require(automaticGeneration == null) {
+                "Manual indexing must not have an automatic generation."
+            }
+
+            IndexingTrigger.AUTOMATIC -> require(
+                automaticGeneration != null && automaticGeneration >= 0L,
+            ) {
+                "Automatic indexing requires a non-negative generation."
             }
         }
     }
@@ -222,6 +275,7 @@ class IndexingCommandExecutor(
         item: IndexingQueueItem,
         reason: IndexingSkipReason,
     ): IndexingQueueItem {
+        currentCoroutineContext().ensureActive()
         return queue.skip(
             itemId = item.id,
             leaseOwner = checkNotNull(item.leaseOwner),
@@ -235,6 +289,7 @@ class IndexingCommandExecutor(
         item: IndexingQueueItem,
         code: IndexingFailureCode,
     ): IndexingQueueItem {
+        currentCoroutineContext().ensureActive()
         return queue.fail(
             itemId = item.id,
             leaseOwner = checkNotNull(item.leaseOwner),
@@ -260,6 +315,7 @@ class IndexingCommandExecutor(
 
     private companion object {
         val DEFAULT_LEASE_DURATION: Duration = Duration.ofMinutes(15)
+        val DEFAULT_TIMEOUT_MARGIN: Duration = Duration.ofMinutes(1)
         const val DEFAULT_MAX_ATTEMPTS = 3
         const val DEFAULT_MAX_DRAIN_TASKS = 32
     }

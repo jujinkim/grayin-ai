@@ -309,7 +309,7 @@ Rules:
 
 Automatic indexing should run only when:
 
-- device is charging
+- device is charging when the user keeps the charging-only guard enabled
 - it is a user-configured low-usage time window such as night
 - battery is sufficient
 - thermal state is acceptable

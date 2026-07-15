@@ -17,6 +17,8 @@ enum class IndexingQueueState {
 
 enum class IndexingSkipReason {
     AUTOMATIC_INDEXING_DISABLED,
+    AUTOMATIC_INDEXING_CONFIGURATION_CHANGED,
+    WORK_MANAGER_STOPPED,
     INVALID_LOW_USAGE_WINDOW,
     OUTSIDE_LOW_USAGE_WINDOW,
     NOT_CHARGING,
@@ -33,6 +35,7 @@ enum class IndexingSkipReason {
 enum class IndexingFailureCode {
     CONNECTOR_NOT_FOUND,
     CONNECTOR_SCAN_FAILED,
+    CONNECTOR_OPERATION_TIMED_OUT,
     STORE_WRITE_FAILED,
     LEASE_EXPIRED,
     ATTEMPT_LIMIT_REACHED,
@@ -48,18 +51,25 @@ data class IndexingTask(
     val until: Instant? = null,
     val forceRefresh: Boolean = false,
     val automaticWindowKey: String? = null,
+    val automaticGeneration: Long? = null,
 ) {
     init {
         require(id.isNotBlank()) { "Task id must not be blank." }
         require(connectorId.isNotBlank()) { "Connector id must not be blank." }
         IndexingQueueValidator.requireValidDateRange(from, until)
         when (trigger) {
-            IndexingTrigger.MANUAL -> require(automaticWindowKey == null) {
-                "Manual tasks must not have an automatic window key."
+            IndexingTrigger.MANUAL -> require(
+                automaticWindowKey == null && automaticGeneration == null,
+            ) {
+                "Manual tasks must not have an automatic window key or generation."
             }
 
-            IndexingTrigger.AUTOMATIC -> require(!automaticWindowKey.isNullOrBlank()) {
-                "Automatic tasks require a non-blank automatic window key."
+            IndexingTrigger.AUTOMATIC -> require(
+                !automaticWindowKey.isNullOrBlank() &&
+                    automaticGeneration != null &&
+                    automaticGeneration >= 0L,
+            ) {
+                "Automatic tasks require a non-blank window key and non-negative generation."
             }
         }
     }
@@ -181,6 +191,7 @@ object IndexingQueueValidator {
         return when (from) {
             IndexingQueueState.PENDING -> to in setOf(
                 IndexingQueueState.RUNNING,
+                IndexingQueueState.SKIPPED,
             )
 
             IndexingQueueState.RUNNING -> to in setOf(
@@ -217,6 +228,7 @@ interface IndexingQueue {
         claimedAt: Instant,
         leaseUntil: Instant,
         trigger: IndexingTrigger? = null,
+        automaticGeneration: Long? = null,
     ): IndexingQueueItem?
 
     suspend fun complete(

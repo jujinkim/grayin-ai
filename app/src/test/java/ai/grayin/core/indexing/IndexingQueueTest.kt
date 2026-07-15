@@ -28,6 +28,7 @@ class IndexingQueueTest {
     fun `only pending and running states have valid outgoing transitions`() {
         val validTransitions = setOf(
             IndexingQueueState.PENDING to IndexingQueueState.RUNNING,
+            IndexingQueueState.PENDING to IndexingQueueState.SKIPPED,
             IndexingQueueState.RUNNING to IndexingQueueState.PENDING,
             IndexingQueueState.RUNNING to IndexingQueueState.COMPLETED,
             IndexingQueueState.RUNNING to IndexingQueueState.SKIPPED,
@@ -52,31 +53,54 @@ class IndexingQueueTest {
     }
 
     @Test
-    fun `automatic tasks require a stable window key and manual tasks reject it`() {
+    fun `automatic tasks require a stable window key and non-negative generation`() {
         val requestedAt = Instant.parse("2026-07-15T00:00:00Z")
 
-        IndexingTask(
+        val automatic = IndexingTask(
             id = "task-calendar-1",
             connectorId = "calendar",
             trigger = IndexingTrigger.AUTOMATIC,
             requestedAt = requestedAt,
             automaticWindowKey = "2026-07-15@Asia-Seoul",
+            automaticGeneration = 7L,
         )
+        assertEquals(7L, automatic.automaticGeneration)
         assertThrows(IllegalArgumentException::class.java) {
             IndexingTask(
                 id = "task-calendar-2",
                 connectorId = "calendar",
                 trigger = IndexingTrigger.AUTOMATIC,
                 requestedAt = requestedAt,
+                automaticWindowKey = "2026-07-15@Asia-Seoul",
             )
         }
         assertThrows(IllegalArgumentException::class.java) {
             IndexingTask(
                 id = "task-calendar-3",
                 connectorId = "calendar",
+                trigger = IndexingTrigger.AUTOMATIC,
+                requestedAt = requestedAt,
+                automaticGeneration = 7L,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            IndexingTask(
+                id = "task-calendar-4",
+                connectorId = "calendar",
+                trigger = IndexingTrigger.AUTOMATIC,
+                requestedAt = requestedAt,
+                automaticWindowKey = "2026-07-15@Asia-Seoul",
+                automaticGeneration = -1L,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            IndexingTask(
+                id = "task-calendar-5",
+                connectorId = "calendar",
                 trigger = IndexingTrigger.MANUAL,
                 requestedAt = requestedAt,
                 automaticWindowKey = "unexpected",
+                automaticGeneration = 7L,
             )
         }
     }

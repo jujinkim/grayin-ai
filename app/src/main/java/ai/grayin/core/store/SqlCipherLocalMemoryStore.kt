@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import ai.grayin.core.connector.ConnectorScanResult
+import ai.grayin.core.indexing.AutomaticIndexingControl
 import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.AutomaticIndexingOutcome
 import ai.grayin.core.indexing.AutomaticIndexingRuntimeStatus
@@ -65,10 +66,16 @@ class SqlCipherLocalMemoryStore(
         try {
             val completedAt = clock.instant()
             val current = readQueueItem(db, itemId)
+            val automaticControlIsCurrent = current?.task?.let { task ->
+                task.trigger != IndexingTrigger.AUTOMATIC || readAutomaticIndexingControl(db).let { control ->
+                    control.enabled && task.automaticGeneration == control.generation
+                }
+            } == true
             val ownsLiveLease = current?.state == IndexingQueueState.RUNNING &&
                 current.leaseOwner == leaseOwner &&
                 current.attemptCount == attemptCount &&
-                current.leaseUntil?.isAfter(completedAt) == true
+                current.leaseUntil?.isAfter(completedAt) == true &&
+                automaticControlIsCurrent
             if (!ownsLiveLease) {
                 db.setTransactionSuccessful()
                 return@withDatabase ConnectorScanCommitResult.LeaseLost
@@ -240,7 +247,14 @@ class SqlCipherLocalMemoryStore(
     override suspend fun enqueue(tasks: List<IndexingTask>): List<IndexingQueueItem> = withDatabase { db ->
         db.beginTransaction()
         try {
-            val items = tasks.map { task ->
+            val automaticControl = readAutomaticIndexingControl(db)
+            val items = tasks.mapNotNull { task ->
+                if (
+                    task.trigger == IndexingTrigger.AUTOMATIC &&
+                    (!automaticControl.enabled || task.automaticGeneration != automaticControl.generation)
+                ) {
+                    return@mapNotNull null
+                }
                 val item = IndexingQueueItem(task = task)
                 val inserted = db.insertWithOnConflict(
                     TABLE_INDEXING_QUEUE,
@@ -257,6 +271,7 @@ class SqlCipherLocalMemoryStore(
                             db = db,
                             connectorId = task.connectorId,
                             automaticWindowKey = checkNotNull(task.automaticWindowKey),
+                            automaticGeneration = checkNotNull(task.automaticGeneration),
                         )
                     }
                     checkNotNull(existing) { "Could not resolve an indexing queue conflict." }
@@ -278,19 +293,64 @@ class SqlCipherLocalMemoryStore(
         claimedAt: Instant,
         leaseUntil: Instant,
         trigger: IndexingTrigger?,
+        automaticGeneration: Long?,
     ): IndexingQueueItem? = withDatabase { db ->
         require(leaseOwner.isNotBlank()) { "Lease owner must not be blank." }
         require(leaseUntil.isAfter(claimedAt)) { "Lease expiry must be after claim time." }
+        when (trigger) {
+            IndexingTrigger.AUTOMATIC -> require(
+                automaticGeneration != null && automaticGeneration >= 0L,
+            ) { "Automatic claims require a non-negative generation." }
+
+            IndexingTrigger.MANUAL,
+            null,
+            -> require(automaticGeneration == null) {
+                "Only automatic claims may specify an automatic generation."
+            }
+        }
         db.beginTransaction()
         try {
+            val automaticControl = readAutomaticIndexingControl(db)
+            if (
+                trigger == IndexingTrigger.AUTOMATIC &&
+                (!automaticControl.enabled || automaticGeneration != automaticControl.generation)
+            ) {
+                db.setTransactionSuccessful()
+                return@withDatabase null
+            }
+            val (selection, selectionArgs) = when (trigger) {
+                IndexingTrigger.MANUAL -> {
+                    "state = ? AND trigger = ?" to arrayOf(
+                        IndexingQueueState.PENDING.name,
+                        IndexingTrigger.MANUAL.name,
+                    )
+                }
+
+                IndexingTrigger.AUTOMATIC -> {
+                    "state = ? AND trigger = ? AND automatic_generation = ?" to arrayOf(
+                        IndexingQueueState.PENDING.name,
+                        IndexingTrigger.AUTOMATIC.name,
+                        checkNotNull(automaticGeneration).toString(),
+                    )
+                }
+
+                null -> if (automaticControl.enabled) {
+                    "state = ? AND (trigger != ? OR automatic_generation = ?)" to arrayOf(
+                        IndexingQueueState.PENDING.name,
+                        IndexingTrigger.AUTOMATIC.name,
+                        automaticControl.generation.toString(),
+                    )
+                } else {
+                    "state = ? AND trigger != ?" to arrayOf(
+                        IndexingQueueState.PENDING.name,
+                        IndexingTrigger.AUTOMATIC.name,
+                    )
+                }
+            }
             val pending = readQueueItems(
                 db = db,
-                selection = if (trigger == null) "state = ?" else "state = ? AND trigger = ?",
-                selectionArgs = if (trigger == null) {
-                    arrayOf(IndexingQueueState.PENDING.name)
-                } else {
-                    arrayOf(IndexingQueueState.PENDING.name, trigger.name)
-                },
+                selection = selection,
+                selectionArgs = selectionArgs,
                 orderBy = "requested_at_ms ASC, id ASC",
                 limit = 1,
             ).firstOrNull()
@@ -303,11 +363,21 @@ class SqlCipherLocalMemoryStore(
                     leaseOwner = leaseOwner,
                     leaseUntil = leaseUntil,
                 )
+                val updateSelection = if (item.task.trigger == IndexingTrigger.AUTOMATIC) {
+                    "id = ? AND state = ? AND automatic_generation = ?"
+                } else {
+                    "id = ? AND state = ?"
+                }
+                val updateArgs = buildList {
+                    add(item.id)
+                    add(IndexingQueueState.PENDING.name)
+                    item.task.automaticGeneration?.let { add(it.toString()) }
+                }.toTypedArray()
                 val count = db.update(
                     TABLE_INDEXING_QUEUE,
                     updated.toValues(),
-                    "id = ? AND state = ?",
-                    arrayOf(item.id, IndexingQueueState.PENDING.name),
+                    updateSelection,
+                    updateArgs,
                 )
                 if (count == 1) updated else null
             }
@@ -485,55 +555,94 @@ class SqlCipherLocalMemoryStore(
         }
     }
 
-    override suspend fun loadAutomaticIndexingRuntime(): AutomaticIndexingRuntimeStatus = withDatabase { db ->
-        db.query(
-            TABLE_AUTOMATIC_INDEXING_RUNTIME,
-            null,
-            "singleton_id = 1",
-            null,
-            null,
-            null,
-            null,
-        ).use { cursor ->
-            if (!cursor.moveToFirst()) {
-                AutomaticIndexingRuntimeStatus()
-            } else {
-                AutomaticIndexingRuntimeStatus(
-                    lastCheckedAt = cursor.nullableInstantFromMillis("last_checked_at_ms"),
-                    lastStartedAt = cursor.nullableInstantFromMillis("last_started_at_ms"),
-                    lastCompletedAt = cursor.nullableInstantFromMillis("last_completed_at_ms"),
-                    lastOutcome = cursor.nullableString("last_outcome")
-                        ?.let { enumValueOf<AutomaticIndexingOutcome>(it) },
-                    lastSkipReason = cursor.nullableString("last_skip_reason")
-                        ?.let { enumValueOf<IndexingSkipReason>(it) },
-                    lastFailureCode = cursor.nullableString("last_failure_code")
-                        ?.let { enumValueOf<IndexingFailureCode>(it) },
-                    lastIndexedEventCount = cursor.int("last_indexed_event_count"),
-                )
+    override suspend fun loadAutomaticIndexingControl(): AutomaticIndexingControl = withDatabase { db ->
+        readAutomaticIndexingControl(db)
+    }
+
+    override suspend fun synchronizeAutomaticIndexingControl(
+        enabled: Boolean,
+        settingsKey: String,
+        changedAt: Instant,
+    ): AutomaticIndexingControl = withDatabase { db ->
+        require(settingsKey.isNotBlank()) { "Automatic indexing settings key must not be blank." }
+        db.beginTransaction()
+        try {
+            val current = readAutomaticIndexingControl(db)
+            val changed = current.enabled != enabled || current.settingsKey != settingsKey
+            check(!changed || current.generation < Long.MAX_VALUE) {
+                "Automatic indexing generation is exhausted."
             }
+            val synchronized = AutomaticIndexingControl(
+                enabled = enabled,
+                generation = if (changed) current.generation + 1L else current.generation,
+                settingsKey = settingsKey,
+            )
+            writeAutomaticIndexingControl(db, synchronized)
+
+            if (!enabled || changed) {
+                val reason = if (enabled) {
+                    IndexingSkipReason.AUTOMATIC_INDEXING_CONFIGURATION_CHANGED
+                } else {
+                    IndexingSkipReason.AUTOMATIC_INDEXING_DISABLED
+                }
+                val (activeItems, reconciledAt) = skipActiveAutomaticItems(
+                    db = db,
+                    completedAt = changedAt,
+                    reason = reason,
+                )
+                val status = AutomaticIndexingRuntimeStatus(
+                    lastCheckedAt = reconciledAt,
+                    lastStartedAt = activeItems.mapNotNull { item -> item.startedAt }.maxOrNull(),
+                    lastCompletedAt = reconciledAt,
+                    lastOutcome = AutomaticIndexingOutcome.SKIPPED,
+                    lastSkipReason = reason,
+                )
+                writeAutomaticIndexingRuntime(db, status, synchronized.generation)
+            }
+            db.setTransactionSuccessful()
+            synchronized
+        } finally {
+            db.endTransaction()
         }
     }
 
-    override suspend fun saveAutomaticIndexingRuntime(status: AutomaticIndexingRuntimeStatus) {
-        withDatabase { db ->
-            val values = ContentValues().apply {
-                put("singleton_id", 1)
-                putNullableLong("last_checked_at_ms", status.lastCheckedAt?.toEpochMilli())
-                putNullableLong("last_started_at_ms", status.lastStartedAt?.toEpochMilli())
-                putNullableLong("last_completed_at_ms", status.lastCompletedAt?.toEpochMilli())
-                put("last_outcome", status.lastOutcome?.name)
-                put("last_skip_reason", status.lastSkipReason?.name)
-                put("last_failure_code", status.lastFailureCode?.name)
-                put("last_indexed_event_count", status.lastIndexedEventCount)
+    override suspend fun loadAutomaticIndexingRuntime(): AutomaticIndexingRuntimeStatus = withDatabase { db ->
+        readAutomaticIndexingRuntime(db)?.status ?: AutomaticIndexingRuntimeStatus()
+    }
+
+    override suspend fun saveAutomaticIndexingRuntime(
+        status: AutomaticIndexingRuntimeStatus,
+        expectedGeneration: Long,
+    ): Boolean = withDatabase { db ->
+        require(expectedGeneration >= 0L) {
+            "Expected automatic indexing generation must not be negative."
+        }
+        db.beginTransaction()
+        try {
+            val control = readAutomaticIndexingControl(db)
+            if (!control.enabled || expectedGeneration != control.generation) {
+                db.setTransactionSuccessful()
+                return@withDatabase false
             }
-            check(
-                db.insertWithOnConflict(
-                    TABLE_AUTOMATIC_INDEXING_RUNTIME,
-                    null,
-                    values,
-                    SQLiteDatabase.CONFLICT_REPLACE,
-                ) >= 0L,
-            ) { "Could not persist automatic indexing status." }
+            val targetGeneration = expectedGeneration
+            val stored = readAutomaticIndexingRuntime(db)
+            val staleGeneration = stored != null && stored.generation > targetGeneration
+            val staleTimestamp = stored != null &&
+                stored.generation == targetGeneration &&
+                stored.status.lastCheckedAt != null &&
+                (
+                    status.lastCheckedAt == null ||
+                        stored.status.lastCheckedAt.isAfter(status.lastCheckedAt)
+                    )
+            if (staleGeneration || staleTimestamp) {
+                db.setTransactionSuccessful()
+                return@withDatabase false
+            }
+            writeAutomaticIndexingRuntime(db, status, targetGeneration)
+            db.setTransactionSuccessful()
+            true
+        } finally {
+            db.endTransaction()
         }
     }
 
@@ -645,11 +754,23 @@ class SqlCipherLocalMemoryStore(
             require(current.attemptCount == attemptCount) { "Indexing attempt does not match." }
             val updated = transition(current)
             check(updated.state == targetState) { "Indexing transition produced the wrong state." }
+            val completedAt = checkNotNull(updated.completedAt) {
+                "A terminal indexing transition must have a completion timestamp."
+            }
+            require(current.leaseUntil?.isAfter(completedAt) == true) {
+                "Indexing lease expired before the terminal transition."
+            }
             val count = db.update(
                 TABLE_INDEXING_QUEUE,
                 updated.toValues(),
-                "id = ? AND state = ? AND lease_owner = ? AND attempt_count = ?",
-                arrayOf(itemId, current.state.name, leaseOwner, attemptCount.toString()),
+                "id = ? AND state = ? AND lease_owner = ? AND attempt_count = ? AND lease_until_ms > ?",
+                arrayOf(
+                    itemId,
+                    current.state.name,
+                    leaseOwner,
+                    attemptCount.toString(),
+                    completedAt.toEpochMilli().toString(),
+                ),
             )
             check(count == 1) { "Indexing queue item changed concurrently." }
             db.setTransactionSuccessful()
@@ -692,7 +813,9 @@ class SqlCipherLocalMemoryStore(
             null,
         )
         try {
-            ensureSchema(db)
+            synchronized(SCHEMA_MIGRATION_LOCK) {
+                ensureSchema(db)
+            }
             return block(db)
         } finally {
             db.close()
@@ -712,6 +835,9 @@ class SqlCipherLocalMemoryStore(
         }
         if (version < INDEXING_SCHEMA_VERSION) {
             runMigration(db, INDEXING_SCHEMA_VERSION, ::createIndexingTables)
+        }
+        if (version < AUTOMATIC_CONTROL_SCHEMA_VERSION) {
+            runMigration(db, AUTOMATIC_CONTROL_SCHEMA_VERSION, ::addAutomaticIndexingControl)
         }
     }
 
@@ -881,6 +1007,47 @@ class SqlCipherLocalMemoryStore(
         )
     }
 
+    private fun addAutomaticIndexingControl(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE $TABLE_INDEXING_QUEUE ADD COLUMN automatic_generation INTEGER")
+        db.execSQL(
+            """
+            UPDATE $TABLE_INDEXING_QUEUE
+            SET automatic_generation = 0
+            WHERE trigger = 'AUTOMATIC' AND automatic_generation IS NULL
+            """.trimIndent(),
+        )
+        db.execSQL("DROP INDEX IF EXISTS indexing_queue_automatic_window_idx")
+        db.execSQL(
+            """
+            CREATE UNIQUE INDEX indexing_queue_automatic_window_idx
+            ON $TABLE_INDEXING_QUEUE(automatic_generation, automatic_window_key, connector_id)
+            WHERE trigger = 'AUTOMATIC'
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "ALTER TABLE $TABLE_AUTOMATIC_INDEXING_RUNTIME " +
+                "ADD COLUMN runtime_generation INTEGER NOT NULL DEFAULT 0",
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_AUTOMATIC_INDEXING_CONTROL (
+                singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+                enabled INTEGER NOT NULL,
+                generation INTEGER NOT NULL CHECK(generation >= 0),
+                settings_key TEXT NOT NULL CHECK(length(settings_key) > 0)
+            )
+            """.trimIndent(),
+        )
+        writeAutomaticIndexingControl(
+            db,
+            AutomaticIndexingControl(
+                enabled = false,
+                generation = 0L,
+                settingsKey = UNINITIALIZED_AUTOMATIC_SETTINGS_KEY,
+            ),
+        )
+    }
+
     private fun IndexingQueueItem.toValues(): ContentValues = ContentValues().apply {
         put("id", task.id)
         put("connector_id", task.connectorId)
@@ -890,6 +1057,7 @@ class SqlCipherLocalMemoryStore(
         putNullableLong("until_at_ms", task.until?.toEpochMilli())
         put("force_refresh", if (task.forceRefresh) 1 else 0)
         put("automatic_window_key", task.automaticWindowKey)
+        put("automatic_generation", task.automaticGeneration)
         put("state", state.name)
         put("attempt_count", attemptCount)
         put("indexed_event_count", indexedEventCount)
@@ -906,6 +1074,160 @@ class SqlCipherLocalMemoryStore(
         if (value == null) putNull(key) else put(key, value)
     }
 
+    private fun AutomaticIndexingRuntimeStatus.toAutomaticRuntimeValues(
+        generation: Long,
+    ): ContentValues {
+        return ContentValues().apply {
+            put("singleton_id", 1)
+            put("runtime_generation", generation)
+            putNullableLong("last_checked_at_ms", lastCheckedAt?.toEpochMilli())
+            putNullableLong("last_started_at_ms", lastStartedAt?.toEpochMilli())
+            putNullableLong("last_completed_at_ms", lastCompletedAt?.toEpochMilli())
+            put("last_outcome", lastOutcome?.name)
+            put("last_skip_reason", lastSkipReason?.name)
+            put("last_failure_code", lastFailureCode?.name)
+            put("last_indexed_event_count", lastIndexedEventCount)
+        }
+    }
+
+    private fun readAutomaticIndexingControl(db: SQLiteDatabase): AutomaticIndexingControl {
+        return db.query(
+            TABLE_AUTOMATIC_INDEXING_CONTROL,
+            null,
+            "singleton_id = 1",
+            null,
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) {
+                AutomaticIndexingControl(
+                    enabled = false,
+                    generation = 0L,
+                    settingsKey = UNINITIALIZED_AUTOMATIC_SETTINGS_KEY,
+                )
+            } else {
+                AutomaticIndexingControl(
+                    enabled = cursor.int("enabled") == 1,
+                    generation = cursor.long("generation"),
+                    settingsKey = cursor.string("settings_key"),
+                )
+            }
+        }
+    }
+
+    private fun writeAutomaticIndexingControl(
+        db: SQLiteDatabase,
+        control: AutomaticIndexingControl,
+    ) {
+        val values = ContentValues().apply {
+            put("singleton_id", 1)
+            put("enabled", if (control.enabled) 1 else 0)
+            put("generation", control.generation)
+            put("settings_key", control.settingsKey)
+        }
+        check(
+            db.insertWithOnConflict(
+                TABLE_AUTOMATIC_INDEXING_CONTROL,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_REPLACE,
+            ) >= 0L,
+        ) { "Could not persist automatic indexing control." }
+    }
+
+    private fun readAutomaticIndexingRuntime(db: SQLiteDatabase): StoredAutomaticRuntime? {
+        return db.query(
+            TABLE_AUTOMATIC_INDEXING_RUNTIME,
+            null,
+            "singleton_id = 1",
+            null,
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) {
+                null
+            } else {
+                StoredAutomaticRuntime(
+                    generation = cursor.long("runtime_generation"),
+                    status = AutomaticIndexingRuntimeStatus(
+                        lastCheckedAt = cursor.nullableInstantFromMillis("last_checked_at_ms"),
+                        lastStartedAt = cursor.nullableInstantFromMillis("last_started_at_ms"),
+                        lastCompletedAt = cursor.nullableInstantFromMillis("last_completed_at_ms"),
+                        lastOutcome = cursor.nullableString("last_outcome")
+                            ?.let { enumValueOf<AutomaticIndexingOutcome>(it) },
+                        lastSkipReason = cursor.nullableString("last_skip_reason")
+                            ?.let { enumValueOf<IndexingSkipReason>(it) },
+                        lastFailureCode = cursor.nullableString("last_failure_code")
+                            ?.let { enumValueOf<IndexingFailureCode>(it) },
+                        lastIndexedEventCount = cursor.int("last_indexed_event_count"),
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun writeAutomaticIndexingRuntime(
+        db: SQLiteDatabase,
+        status: AutomaticIndexingRuntimeStatus,
+        generation: Long,
+    ) {
+        check(
+            db.insertWithOnConflict(
+                TABLE_AUTOMATIC_INDEXING_RUNTIME,
+                null,
+                status.toAutomaticRuntimeValues(generation),
+                SQLiteDatabase.CONFLICT_REPLACE,
+            ) >= 0L,
+        ) { "Could not persist automatic indexing status." }
+    }
+
+    private fun skipActiveAutomaticItems(
+        db: SQLiteDatabase,
+        completedAt: Instant,
+        reason: IndexingSkipReason,
+    ): Pair<List<IndexingQueueItem>, Instant> {
+        val activeItems = readQueueItems(
+            db = db,
+            selection = "trigger = ? AND state IN (?, ?)",
+            selectionArgs = arrayOf(
+                IndexingTrigger.AUTOMATIC.name,
+                IndexingQueueState.PENDING.name,
+                IndexingQueueState.RUNNING.name,
+            ),
+            orderBy = "requested_at_ms ASC, id ASC",
+        )
+        val reconciledAt = activeItems.fold(completedAt) { latest, item ->
+            listOfNotNull(item.task.requestedAt, item.startedAt, latest).max()
+        }
+        activeItems.forEach { item ->
+            IndexingQueueValidator.requireValidTransition(item.state, IndexingQueueState.SKIPPED)
+            val updated = item.copy(
+                state = IndexingQueueState.SKIPPED,
+                indexedEventCount = 0,
+                completedAt = reconciledAt,
+                leaseOwner = null,
+                leaseUntil = null,
+                skipReason = reason,
+                failureCode = null,
+            )
+            val count = db.update(
+                TABLE_INDEXING_QUEUE,
+                updated.toValues(),
+                "id = ? AND trigger = ? AND state = ? AND attempt_count = ?",
+                arrayOf(
+                    item.id,
+                    IndexingTrigger.AUTOMATIC.name,
+                    item.state.name,
+                    item.attemptCount.toString(),
+                ),
+            )
+            check(count == 1) { "Automatic indexing task changed during control synchronization." }
+        }
+        return activeItems to reconciledAt
+    }
+
     private fun readQueueItem(db: SQLiteDatabase, itemId: String): IndexingQueueItem? {
         return readQueueItems(
             db = db,
@@ -920,11 +1242,18 @@ class SqlCipherLocalMemoryStore(
         db: SQLiteDatabase,
         connectorId: String,
         automaticWindowKey: String,
+        automaticGeneration: Long,
     ): IndexingQueueItem? {
         return readQueueItems(
             db = db,
-            selection = "trigger = ? AND connector_id = ? AND automatic_window_key = ?",
-            selectionArgs = arrayOf(IndexingTrigger.AUTOMATIC.name, connectorId, automaticWindowKey),
+            selection = "trigger = ? AND connector_id = ? AND automatic_window_key = ? " +
+                "AND automatic_generation = ?",
+            selectionArgs = arrayOf(
+                IndexingTrigger.AUTOMATIC.name,
+                connectorId,
+                automaticWindowKey,
+                automaticGeneration.toString(),
+            ),
             orderBy = "requested_at_ms ASC",
             limit = 1,
         ).firstOrNull()
@@ -959,6 +1288,7 @@ class SqlCipherLocalMemoryStore(
             until = nullableInstantFromMillis("until_at_ms"),
             forceRefresh = int("force_refresh") == 1,
             automaticWindowKey = nullableString("automatic_window_key"),
+            automaticGeneration = nullableLong("automatic_generation"),
         )
         return IndexingQueueItem(
             task = task,
@@ -1264,6 +1594,11 @@ class SqlCipherLocalMemoryStore(
 
     private fun Cursor.long(columnName: String): Long = getLong(getColumnIndexOrThrow(columnName))
 
+    private fun Cursor.nullableLong(columnName: String): Long? {
+        val index = getColumnIndexOrThrow(columnName)
+        return if (isNull(index)) null else getLong(index)
+    }
+
     private fun Cursor.nullableString(columnName: String): String? {
         val index = getColumnIndexOrThrow(columnName)
         return if (isNull(index)) null else getString(index)
@@ -1292,6 +1627,11 @@ class SqlCipherLocalMemoryStore(
         return if (isNull(index)) null else getInt(index)
     }
 
+    private data class StoredAutomaticRuntime(
+        val generation: Long,
+        val status: AutomaticIndexingRuntimeStatus,
+    )
+
     private companion object {
         const val DB_NAME = "grayin-memory.db"
         const val TABLE_SOURCE_REFERENCES = "source_references"
@@ -1302,16 +1642,20 @@ class SqlCipherLocalMemoryStore(
         const val TABLE_APP_USAGE_SUMMARIES = "app_usage_summaries"
         const val TABLE_INDEXING_QUEUE = "indexing_queue"
         const val TABLE_AUTOMATIC_INDEXING_RUNTIME = "automatic_indexing_runtime"
+        const val TABLE_AUTOMATIC_INDEXING_CONTROL = "automatic_indexing_control"
         const val SQLITE_BIND_LIMIT = 900
         const val CORE_SCHEMA_VERSION = 1
         const val INDEXING_SCHEMA_VERSION = 2
-        const val SCHEMA_VERSION = INDEXING_SCHEMA_VERSION
+        const val AUTOMATIC_CONTROL_SCHEMA_VERSION = 3
+        const val SCHEMA_VERSION = AUTOMATIC_CONTROL_SCHEMA_VERSION
         const val MAX_QUEUE_SNAPSHOT_ITEMS = 500
+        const val UNINITIALIZED_AUTOMATIC_SETTINGS_KEY = "v1:uninitialized"
 
         @Volatile
         var loaded = false
 
         val SQLCIPHER_LOAD_LOCK = Any()
+        val SCHEMA_MIGRATION_LOCK = Any()
 
         fun loadSqlCipher() {
             if (loaded) return

@@ -9,6 +9,17 @@ enum class AutomaticIndexingOutcome {
     FAILED,
 }
 
+data class AutomaticIndexingControl(
+    val enabled: Boolean,
+    val generation: Long,
+    val settingsKey: String,
+) {
+    init {
+        require(generation >= 0L) { "Automatic indexing generation must not be negative." }
+        require(settingsKey.isNotBlank()) { "Automatic indexing settings key must not be blank." }
+    }
+}
+
 data class AutomaticIndexingRuntimeStatus(
     val lastCheckedAt: Instant? = null,
     val lastStartedAt: Instant? = null,
@@ -30,7 +41,19 @@ data class AutomaticIndexingRuntimeStatus(
 }
 
 interface AutomaticIndexingRuntimeStore {
+    suspend fun loadAutomaticIndexingControl(): AutomaticIndexingControl
+
+    suspend fun synchronizeAutomaticIndexingControl(
+        enabled: Boolean,
+        settingsKey: String,
+        changedAt: Instant,
+    ): AutomaticIndexingControl
+
     suspend fun loadAutomaticIndexingRuntime(): AutomaticIndexingRuntimeStatus
 
-    suspend fun saveAutomaticIndexingRuntime(status: AutomaticIndexingRuntimeStatus)
+    /** Returns false when the expected control generation is no longer current. */
+    suspend fun saveAutomaticIndexingRuntime(
+        status: AutomaticIndexingRuntimeStatus,
+        expectedGeneration: Long,
+    ): Boolean
 }

@@ -9,6 +9,7 @@ import ai.grayin.core.indexing.AutomaticIndexingRuntimeStatus
 import ai.grayin.core.indexing.ConnectorScanCommitResult
 import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.IndexingQueueState
+import ai.grayin.core.indexing.IndexingSkipReason
 import ai.grayin.core.indexing.IndexingTask
 import ai.grayin.core.indexing.IndexingTrigger
 import ai.grayin.core.model.DerivedMemoryEvent
@@ -27,8 +28,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -99,11 +102,13 @@ class SqlCipherIndexingQueueInstrumentedTest {
         val databaseName = newDatabaseName()
         val requestedAt = Instant.parse("2026-07-15T01:30:00Z")
         val queue = store(databaseName)
+        val generation = enableAutomatic(queue, requestedAt.minusSeconds(1))
         val manual = manualTask(id = "manual-first", requestedAt = requestedAt)
         val automatic = automaticTask(
             id = "automatic-second",
             requestedAt = requestedAt.plusSeconds(1),
             windowKey = "2026-07-15:02-05",
+            generation = generation,
         )
         queue.enqueue(listOf(manual, automatic))
 
@@ -113,6 +118,7 @@ class SqlCipherIndexingQueueInstrumentedTest {
             claimedAt = claimedAt,
             leaseUntil = claimedAt.plusSeconds(60),
             trigger = IndexingTrigger.AUTOMATIC,
+            automaticGeneration = generation,
         )
 
         assertEquals(automatic.id, checkNotNull(claimed).id)
@@ -184,6 +190,66 @@ class SqlCipherIndexingQueueInstrumentedTest {
     }
 
     @Test
+    fun disablingAutomaticIndexingFencesRunningTaskAndRuntime() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T01:55:00Z")
+        val queue = store(databaseName)
+        val generation = enableAutomatic(queue, requestedAt.minusSeconds(1))
+        val task = automaticTask(
+            id = "automatic-disable",
+            requestedAt = requestedAt,
+            windowKey = "2026-07-15:02-05",
+            generation = generation,
+        )
+        queue.enqueue(listOf(task))
+        val claimedAt = requestedAt.plusSeconds(1)
+        val claimed = checkNotNull(
+            queue.claimNextAtomically(
+                leaseOwner = "automatic-worker",
+                claimedAt = claimedAt,
+                leaseUntil = claimedAt.plusSeconds(60),
+                trigger = IndexingTrigger.AUTOMATIC,
+                automaticGeneration = generation,
+            ),
+        )
+        assertTrue(
+            queue.saveAutomaticIndexingRuntime(
+                AutomaticIndexingRuntimeStatus(
+                    lastCheckedAt = requestedAt,
+                    lastStartedAt = claimedAt,
+                    lastOutcome = AutomaticIndexingOutcome.RUNNING,
+                ),
+                expectedGeneration = generation,
+            ),
+        )
+
+        val disabledAt = claimedAt.plusSeconds(2)
+        val disabledControl = queue.synchronizeAutomaticIndexingControl(
+            enabled = false,
+            settingsKey = "v1:test-disabled",
+            changedAt = disabledAt,
+        )
+        val status = queue.loadAutomaticIndexingRuntime()
+
+        assertTrue(disabledControl.generation > generation)
+        assertEquals(AutomaticIndexingOutcome.SKIPPED, status.lastOutcome)
+        assertEquals(IndexingSkipReason.AUTOMATIC_INDEXING_DISABLED, status.lastSkipReason)
+        assertEquals(status, queue.loadAutomaticIndexingRuntime())
+        val skipped = queue.snapshot().items.single()
+        assertEquals(IndexingQueueState.SKIPPED, skipped.state)
+        assertEquals(IndexingSkipReason.AUTOMATIC_INDEXING_DISABLED, skipped.skipReason)
+        assertNull(skipped.leaseOwner)
+        val staleCommit = queue.commitClaimedConnectorScan(
+            scanResult = scanResult("disabled-stale"),
+            itemId = claimed.id,
+            leaseOwner = checkNotNull(claimed.leaseOwner),
+            attemptCount = claimed.attemptCount,
+        )
+        assertEquals(ConnectorScanCommitResult.LeaseLost, staleCommit)
+        assertEquals(emptyList<DerivedMemoryEvent>(), queue.loadDerivedMemoryEvents())
+    }
+
+    @Test
     fun expiredLeaseRequeuesThenFailsAtAttemptLimit() = runBlocking {
         val databaseName = newDatabaseName()
         val requestedAt = Instant.parse("2026-07-15T02:00:00Z")
@@ -242,32 +308,208 @@ class SqlCipherIndexingQueueInstrumentedTest {
     }
 
     @Test
+    fun expiredLeaseCannotBeAcknowledgedBeforeRecovery() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T02:30:00Z")
+        val queue = store(databaseName)
+        queue.enqueue(listOf(manualTask(id = "expired-terminal", requestedAt = requestedAt)))
+        val claimedAt = requestedAt.plusSeconds(1)
+        val claimed = checkNotNull(
+            queue.claimNextAtomically(
+                leaseOwner = "slow-worker",
+                claimedAt = claimedAt,
+                leaseUntil = claimedAt.plusSeconds(10),
+                trigger = IndexingTrigger.MANUAL,
+            ),
+        )
+
+        expectIllegalArgument {
+            queue.fail(
+                itemId = claimed.id,
+                leaseOwner = checkNotNull(claimed.leaseOwner),
+                attemptCount = claimed.attemptCount,
+                completedAt = claimedAt.plusSeconds(11),
+                code = IndexingFailureCode.CONNECTOR_OPERATION_TIMED_OUT,
+            )
+        }
+
+        assertEquals(IndexingQueueState.RUNNING, queue.snapshot().items.single().state)
+    }
+
+    @Test
     fun automaticWindowEnqueueReturnsExistingTask() = runBlocking {
         val databaseName = newDatabaseName()
         val requestedAt = Instant.parse("2026-07-15T03:00:00Z")
+        val queue = store(databaseName)
+        val generation = enableAutomatic(queue, requestedAt.minusSeconds(1))
         val first = automaticTask(
             id = "automatic-first",
             requestedAt = requestedAt,
             windowKey = "2026-07-15:02-05",
+            generation = generation,
         )
         val duplicate = automaticTask(
             id = "automatic-duplicate",
             requestedAt = requestedAt.plusSeconds(30),
             windowKey = first.automaticWindowKey!!,
+            generation = generation,
         )
 
-        val enqueued = store(databaseName).enqueue(listOf(first, duplicate))
+        val enqueued = queue.enqueue(listOf(first, duplicate))
 
         assertEquals(2, enqueued.size)
         assertEquals(enqueued[0], enqueued[1])
         assertEquals(first.id, enqueued[1].id)
-        assertEquals(1, store(databaseName).snapshot().items.size)
+        assertEquals(1, queue.snapshot().items.size)
+    }
+
+    @Test
+    fun staleAutomaticGenerationCannotEnqueueOrOverwriteDisabledRuntime() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T03:30:00Z")
+        val queue = store(databaseName)
+        val generation = enableAutomatic(queue, requestedAt.minusSeconds(1))
+        val disabledAt = requestedAt.plusSeconds(1)
+        queue.synchronizeAutomaticIndexingControl(
+            enabled = false,
+            settingsKey = "v1:test-disabled",
+            changedAt = disabledAt,
+        )
+
+        val enqueued = queue.enqueue(
+            listOf(
+                automaticTask(
+                    id = "stale-after-disable",
+                    requestedAt = requestedAt.plusSeconds(2),
+                    windowKey = "2026-07-15:02-05",
+                    generation = generation,
+                ),
+            ),
+        )
+        val wroteRuntime = queue.saveAutomaticIndexingRuntime(
+            AutomaticIndexingRuntimeStatus(
+                lastCheckedAt = requestedAt.plusSeconds(2),
+                lastCompletedAt = requestedAt.plusSeconds(2),
+                lastOutcome = AutomaticIndexingOutcome.COMPLETED,
+            ),
+            expectedGeneration = generation,
+        )
+
+        assertEquals(emptyList<Any>(), enqueued)
+        assertFalse(wroteRuntime)
+        assertEquals(0, queue.snapshot().queueDepth)
+        assertEquals(AutomaticIndexingOutcome.SKIPPED, queue.loadAutomaticIndexingRuntime().lastOutcome)
+    }
+
+    @Test
+    fun reenableCanEnqueueSameWindowInANewGeneration() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T03:45:00Z")
+        val queue = store(databaseName)
+        val firstGeneration = enableAutomatic(queue, requestedAt.minusSeconds(1))
+        queue.enqueue(
+            listOf(
+                automaticTask(
+                    id = "automatic-before-toggle",
+                    requestedAt = requestedAt,
+                    windowKey = "2026-07-15:02-05",
+                    generation = firstGeneration,
+                ),
+            ),
+        )
+        queue.synchronizeAutomaticIndexingControl(
+            enabled = false,
+            settingsKey = "v1:test-disabled",
+            changedAt = requestedAt.plusSeconds(1),
+        )
+        val reenabled = queue.synchronizeAutomaticIndexingControl(
+            enabled = true,
+            settingsKey = ENABLED_SETTINGS_KEY,
+            changedAt = requestedAt.plusSeconds(2),
+        )
+
+        val second = queue.enqueue(
+            listOf(
+                automaticTask(
+                    id = "automatic-after-toggle",
+                    requestedAt = requestedAt.plusSeconds(3),
+                    windowKey = "2026-07-15:02-05",
+                    generation = reenabled.generation,
+                ),
+            ),
+        )
+
+        assertTrue(reenabled.generation > firstGeneration)
+        assertEquals(1, second.size)
+        val items = queue.snapshot().items
+        assertEquals(2, items.size)
+        assertEquals(
+            IndexingQueueState.SKIPPED,
+            items.single { it.id == "automatic-before-toggle" }.state,
+        )
+        assertEquals(
+            IndexingQueueState.PENDING,
+            items.single { it.id == "automatic-after-toggle" }.state,
+        )
+        assertEquals(
+            IndexingSkipReason.AUTOMATIC_INDEXING_CONFIGURATION_CHANGED,
+            queue.loadAutomaticIndexingRuntime().lastSkipReason,
+        )
+    }
+
+    @Test
+    fun enabledConfigurationChangeFencesRunningGenerationButNotManualWork() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T03:55:00Z")
+        val queue = store(databaseName)
+        val generation = enableAutomatic(queue, requestedAt.minusSeconds(1))
+        val automatic = automaticTask(
+            id = "automatic-old-settings",
+            requestedAt = requestedAt,
+            windowKey = "2026-07-15:02-05",
+            generation = generation,
+        )
+        val manual = manualTask(id = "manual-unrelated", requestedAt = requestedAt)
+        queue.enqueue(listOf(automatic, manual))
+        val claimedAt = requestedAt.plusSeconds(1)
+        val claimed = checkNotNull(
+            queue.claimNextAtomically(
+                leaseOwner = "automatic-worker",
+                claimedAt = claimedAt,
+                leaseUntil = claimedAt.plusSeconds(60),
+                trigger = IndexingTrigger.AUTOMATIC,
+                automaticGeneration = generation,
+            ),
+        )
+
+        val changed = queue.synchronizeAutomaticIndexingControl(
+            enabled = true,
+            settingsKey = "v1:test-enabled:new-window",
+            changedAt = claimedAt.plusSeconds(2),
+        )
+        val staleCommit = queue.commitClaimedConnectorScan(
+            scanResult = scanResult("stale-settings"),
+            itemId = claimed.id,
+            leaseOwner = checkNotNull(claimed.leaseOwner),
+            attemptCount = claimed.attemptCount,
+        )
+
+        assertTrue(changed.generation > generation)
+        assertEquals(ConnectorScanCommitResult.LeaseLost, staleCommit)
+        val items = queue.snapshot().items
+        assertEquals(IndexingQueueState.SKIPPED, items.single { it.id == automatic.id }.state)
+        assertEquals(IndexingQueueState.PENDING, items.single { it.id == manual.id }.state)
+        assertEquals(
+            IndexingSkipReason.AUTOMATIC_INDEXING_CONFIGURATION_CHANGED,
+            queue.loadAutomaticIndexingRuntime().lastSkipReason,
+        )
     }
 
     @Test
     fun automaticRuntimeStatusRoundTripsAcrossStoreReopen() = runBlocking {
         val databaseName = newDatabaseName()
         val checkedAt = Instant.parse("2026-07-15T04:00:00Z")
+        val generation = enableAutomatic(store(databaseName), checkedAt.minusSeconds(1))
         val status = AutomaticIndexingRuntimeStatus(
             lastCheckedAt = checkedAt,
             lastStartedAt = checkedAt.plusSeconds(1),
@@ -276,7 +518,12 @@ class SqlCipherIndexingQueueInstrumentedTest {
             lastIndexedEventCount = 7,
         )
 
-        store(databaseName).saveAutomaticIndexingRuntime(status)
+        assertTrue(
+            store(databaseName).saveAutomaticIndexingRuntime(
+                status = status,
+                expectedGeneration = generation,
+            ),
+        )
 
         assertEquals(status, store(databaseName).loadAutomaticIndexingRuntime())
     }
@@ -295,6 +542,7 @@ class SqlCipherIndexingQueueInstrumentedTest {
         id: String,
         requestedAt: Instant,
         windowKey: String,
+        generation: Long,
     ): IndexingTask {
         return IndexingTask(
             id = id,
@@ -302,7 +550,19 @@ class SqlCipherIndexingQueueInstrumentedTest {
             trigger = IndexingTrigger.AUTOMATIC,
             requestedAt = requestedAt,
             automaticWindowKey = windowKey,
+            automaticGeneration = generation,
         )
+    }
+
+    private suspend fun enableAutomatic(
+        store: SqlCipherLocalMemoryStore,
+        changedAt: Instant,
+    ): Long {
+        return store.synchronizeAutomaticIndexingControl(
+            enabled = true,
+            settingsKey = ENABLED_SETTINGS_KEY,
+            changedAt = changedAt,
+        ).generation
     }
 
     private fun scanResult(
@@ -367,5 +627,6 @@ class SqlCipherIndexingQueueInstrumentedTest {
     private companion object {
         const val TEST_CONNECTOR_ID = "connector.instrumented-test"
         const val TEST_PASSPHRASE = "grayin-instrumented-test-passphrase"
+        const val ENABLED_SETTINGS_KEY = "v1:test-enabled"
     }
 }
