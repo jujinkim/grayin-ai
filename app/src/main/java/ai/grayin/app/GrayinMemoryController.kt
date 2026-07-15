@@ -280,9 +280,10 @@ class GrayinMemoryController(
         )
     }
 
-    private fun localModelOptions(strings: GrayinStrings): List<ModelOptionUiState> {
+    private suspend fun localModelOptions(strings: GrayinStrings): List<ModelOptionUiState> {
         val selectedModelId = modelInstallStore.selectedModelId()
         return ModelCatalog.entries.map { entry ->
+            modelDownloadScheduler.reconcile(entry.id)
             val record = modelInstallStore.recordFor(entry)
             val selected = entry.id == selectedModelId
             ModelOptionUiState(
@@ -449,17 +450,16 @@ class GrayinMemoryController(
     }
 
     suspend fun importLocalGemmaModel(uri: Uri, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
-        runCatching { modelPathResolver.installModelFromUri(uri) }
-            .fold(
-                onSuccess = { strings.localGemmaModelImported },
-                onFailure = { error ->
-                    if (error is IllegalArgumentException) {
-                        strings.localGemmaModelInvalidFile
-                    } else {
-                        strings.localGemmaModelImportFailed
-                    }
-                },
-            )
+        try {
+            modelPathResolver.installModelFromUri(uri)
+            strings.localGemmaModelImported
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: IllegalArgumentException) {
+            strings.localGemmaModelInvalidFile
+        } catch (_: Exception) {
+            strings.localGemmaModelImportFailed
+        }
     }
 
     suspend fun selectLocalModel(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
@@ -472,8 +472,9 @@ class GrayinMemoryController(
         val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
         if (!entry.downloadConfigured) return@withContext strings.localModelDownloadUnavailable
         modelInstallStore.selectModel(entry.id)
-        modelInstallStore.recordQueued(entry.id)
-        modelDownloadScheduler.enqueue(entry.id)
+        if (!modelDownloadScheduler.enqueue(entry.id)) {
+            return@withContext strings.localModelDownloadUnavailable
+        }
         strings.localModelDownloadQueued(entry.displayName)
     }
 
@@ -510,14 +511,12 @@ class GrayinMemoryController(
     suspend fun cancelLocalModelDownload(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
         modelDownloadScheduler.cancel(entry.id)
-        modelInstallStore.recordNotDownloaded(entry.id)
         strings.localModelDownloadCanceled(entry.displayName)
     }
 
     suspend fun deleteDownloadedLocalModel(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
-        modelDownloadScheduler.cancel(entry.id)
-        val deleted = modelInstallStore.deleteInstalledModel(entry.id)
+        val deleted = modelDownloadScheduler.delete(entry.id)
         if (deleted) {
             strings.localModelDeleted(entry.displayName)
         } else {

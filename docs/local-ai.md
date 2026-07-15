@@ -10,7 +10,7 @@ The interface does not accept source connectors, store handles, files, URIs, not
 
 ## Implementations
 
-- `Gemma4LocalLanguageModel`: on-device LiteRT-LM adapter for a local Gemma 4 E2B `.litertlm` model file.
+- `Gemma4LocalLanguageModel`: on-device LiteRT-LM adapter intended for the official local Gemma 4 E2B `.litertlm` model.
 - `FakeLocalLanguageModel`: deterministic fake model for local tests and UI wiring.
 
 Local model implementations set:
@@ -53,6 +53,10 @@ Downloaded models are stored in app-private storage:
 - app external files: `models/gemma-4-E2B-it.litertlm`
 - adb development path: `/data/local/tmp/grayin/gemma-4-E2B-it.litertlm`
 
+No candidate path is exposed as local-model `READY` from readability alone. Every selected, imported, external-files, or adb candidate must first pass the same bounded LiteRT-LM v1 container validation described below; an invalid candidate is skipped and Ask uses the next verified candidate or the template fallback.
+
+At this path-discovery boundary, `READY` means only that a container is structurally compatible with the pinned LiteRT-LM reader. It does not prove Gemma identity or variant, validate model weights, or prove that the engine can initialize. Engine initialization happens during local generation; any initialization or inference failure remains fail-closed to the template answer path.
+
 ## User Model Guide
 
 Users must obtain model weights at runtime because Gemma model access and redistribution are controlled by upstream model terms.
@@ -61,6 +65,7 @@ Official source:
 
 - Google AI Edge LiteRT-LM Gemma docs: `https://developers.google.com/edge/litert-lm/models/gemma-4`
 - Hugging Face model repo: `https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm`
+- LiteRT-LM 0.13.1 container reader: `https://github.com/google-ai-edge/LiteRT-LM/blob/v0.13.1/schema/core/litertlm_read.cc`
 
 Runtime download after immutable release metadata is configured:
 
@@ -72,7 +77,7 @@ Runtime download after immutable release metadata is configured:
 
 In the current build, use the official page plus manual import or the development installation flow below because the Download action is disabled.
 
-Manual import fallback expected file:
+Recommended manual import target:
 
 - `gemma-4-E2B-it.litertlm`
 
@@ -83,9 +88,11 @@ adb shell mkdir -p /data/local/tmp/grayin
 adb push gemma-4-E2B-it.litertlm /data/local/tmp/grayin/
 ```
 
-Settings also supports end-user import. The user can open the official model page, select a `.litertlm` file through Android document picker, and Grayin copies it into app-private `files/models/gemma-4-E2B-it.litertlm`.
+Settings also supports end-user import. The user can open the official model page, select a compatible `.litertlm` file through Android document picker, and Grayin copies it into app-private `files/models/gemma-4-E2B-it.litertlm`. The destination name is a stable runtime path, not proof that the imported container is Gemma 4 E2B.
 
-Import rejects files without a `.litertlm` extension and files smaller than 1 MB.
+Import is fail-closed and accepts only a regular `.litertlm` file from 1 MiB through 8 GiB whose 32-byte preamble has the `LITERTLM` magic, container major version 1, and a header region no larger than 16 KiB with a structurally plausible FlatBuffer root. The size must be known before copying, the app-private filesystem must have room for the full staging file plus a 16 MiB reserve, and copied bytes must exactly match the declared size.
+
+The selected file is copied to a same-directory staging file, flushed to storage, validated again, and published with an atomic replacement only. Grayin never deletes the existing container-verified model before that commit point and has no non-atomic fallback. Validation errors, I/O errors, insufficient space, unsupported atomic moves, and coroutine cancellation delete staging while preserving the previous container-verified model.
 
 Settings can delete downloaded catalog models and app-imported model files. Development files under `/data/local/tmp/grayin/` remain developer-managed.
 

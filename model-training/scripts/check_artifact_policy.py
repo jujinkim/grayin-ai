@@ -38,7 +38,21 @@ DISALLOWED_EXTENSIONS = {
     ".litertlm",
     ".task",
     ".mlmodel",
+    ".pem",
+    ".p8",
+    ".pk8",
+    ".p12",
+    ".pfx",
+    ".jks",
+    ".keystore",
 }
+
+PRIVATE_KEY_MARKERS = (
+    "private_key",
+    "private-key",
+    "signing_key",
+    "signing-key",
+)
 
 
 def tracked_files() -> list[str]:
@@ -59,7 +73,11 @@ def violations(paths: list[str]) -> list[str]:
         if path.startswith(DISALLOWED_PREFIXES):
             bad.append(path)
             continue
+        lower = path.lower()
         if path.startswith("model-training/") and Path(path).suffix.lower() in DISALLOWED_EXTENSIONS:
+            bad.append(path)
+            continue
+        if path.startswith("model-training/") and any(marker in lower for marker in PRIVATE_KEY_MARKERS):
             bad.append(path)
     return bad
 

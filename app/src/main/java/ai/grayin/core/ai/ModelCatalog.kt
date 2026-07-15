@@ -79,7 +79,7 @@ data class ModelCatalogEntry(
 }
 
 internal object ModelDownloadReleaseGate {
-    const val GENERATION_FENCING_READY = false
+    const val GENERATION_FENCING_READY = true
 }
 
 object ModelCatalog {

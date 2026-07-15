@@ -210,6 +210,8 @@ fun GrayinApp(
                 working = true
                 try {
                     statusMessage = controller.importLocalGemmaModel(uri, strings)
+                } catch (error: CancellationException) {
+                    throw error
                 } catch (_: Throwable) {
                     statusMessage = strings.localGemmaModelImportFailed
                 } finally {

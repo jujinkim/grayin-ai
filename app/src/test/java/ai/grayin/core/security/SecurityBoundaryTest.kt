@@ -96,6 +96,7 @@ class SecurityBoundaryTest {
         assertEquals(
             setOf(
                 "ai/grayin/core/ai/ModelCatalog.kt",
+                "ai/grayin/core/ai/SignedModelManifest.kt",
                 "ai/grayin/core/artifact/FixedCatalogArtifactDownloader.kt",
                 "ai/grayin/core/ocr/OcrLanguagePackCatalog.kt",
             ),

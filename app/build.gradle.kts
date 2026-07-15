@@ -160,3 +160,59 @@ tasks.register("verifyDebugApkDocumentBoundary") {
         }
     }
 }
+
+fun verifyApkHasNoModelOrPrivateKeyArtifacts(apk: java.io.File) {
+    check(apk.isFile) { "APK was not produced: $apk" }
+    val forbiddenSuffixes = setOf(
+        ".litertlm",
+        ".safetensors",
+        ".gguf",
+        ".pt",
+        ".pth",
+        ".ckpt",
+        ".onnx",
+        ".tflite",
+        ".task",
+        ".mlmodel",
+        ".pem",
+        ".p8",
+        ".pk8",
+        ".p12",
+        ".pfx",
+        ".jks",
+        ".keystore",
+    )
+    val forbidden = ZipFile(apk).use { archive ->
+        archive.entries()
+            .asSequence()
+            .map { entry -> entry.name }
+            .filter { name ->
+                val lower = name.lowercase()
+                forbiddenSuffixes.any { suffix -> lower.endsWith(suffix) } ||
+                    (lower.endsWith(".bin") && listOf("model", "weight", "adapter").any { lower.contains(it) }) ||
+                    listOf("private_key", "private-key", "signing_key", "signing-key").any { lower.contains(it) }
+            }
+            .toList()
+    }
+    check(forbidden.isEmpty()) {
+        "APK must not bundle model weights, adapters, or private keys: ${forbidden.joinToString()}"
+    }
+}
+
+tasks.register("verifyDebugApkNoModelArtifacts") {
+    dependsOn("assembleDebug")
+    doLast {
+        verifyApkHasNoModelOrPrivateKeyArtifacts(
+            layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile,
+        )
+    }
+}
+
+tasks.register("verifyReleaseApkNoModelArtifacts") {
+    dependsOn("assembleRelease")
+    doLast {
+        verifyApkHasNoModelOrPrivateKeyArtifacts(
+            layout.buildDirectory.file("outputs/apk/release/app-release-unsigned.apk").get().asFile,
+        )
+    }
+}

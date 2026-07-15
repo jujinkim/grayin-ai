@@ -72,8 +72,8 @@ class ModelCatalogTest {
         )
 
         assertTrue(configured.transportMetadataComplete)
-        assertFalse(configured.downloadConfigured)
-        assertFalse(ModelDownloadReleaseGate.GENERATION_FENCING_READY)
+        assertTrue(configured.downloadConfigured)
+        assertTrue(ModelDownloadReleaseGate.GENERATION_FENCING_READY)
         val spec = requireNotNull(configured.artifactSpecOrNull())
         assertEquals(123L, spec.expectedSizeBytes)
         assertEquals(digest, spec.sha256)

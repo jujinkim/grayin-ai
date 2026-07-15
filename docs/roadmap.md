@@ -109,14 +109,16 @@ Location clusters accumulate user-triggered last-known observations by stable 0.
 ### 8. Local Model Release Hardening
 
 - [x] Reject model downloads before connection unless immutable HTTPS URL, exact byte count, and pinned SHA-256 metadata are complete; reject redirects and publish atomically.
-- [ ] Add durable model-download generation fencing before enabling a catalog transport entry.
-- [ ] Verify remotely updated manifests with a bundled ECDSA P-256 public key.
-- [ ] Validate imported model identity beyond extension and minimum size.
+- [x] Add durable model-download generation fencing before enabling a catalog transport entry.
+- [x] Implement canonical bounded remote-manifest parsing, ECDSA P-256 verification, compatibility/expiry checks, and durable rollback/equivocation state.
+- [ ] Configure a reviewed production P-256 public key and fixed manifest endpoint, then verify a real signed release manifest end to end.
+- [x] Validate imported LiteRT-LM container structure, version, size/space bounds, exact copy, and atomic publication beyond extension alone.
+- [ ] Verify an imported model's exact family/variant and successful engine initialization if the pinned LiteRT-LM API exposes an authenticated identity probe; until then the UI must disclose structural compatibility only.
 - [ ] Expand synthetic training/evaluation data and run grounded-answer benchmarks.
 - [ ] Merge/export the release adapter to `.litertlm` outside git.
 - [ ] Publish the Grayin model to an immutable external artifact URL and configure catalog metadata.
 
-External artifact publication requires a selected host, release credentials, license/terms URL, and final model file. Repository work must prepare and validate the release without committing weights or credentials.
+External artifact publication requires a selected host, release credentials, license/terms URL, production public/private signing-key custody, fixed manifest endpoint, and final model file. Repository work must prepare and validate the release without committing weights, private keys, or credentials.
 
 ### 9. Final Verification
 

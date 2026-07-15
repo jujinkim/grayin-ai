@@ -12,13 +12,8 @@ import androidx.work.workDataOf
 import ai.grayin.core.artifact.ArtifactDownloadFailureCode
 import ai.grayin.core.artifact.ArtifactDownloadResult
 import ai.grayin.core.artifact.FixedCatalogArtifactDownloader
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 class ModelDownloadWorker(
@@ -30,97 +25,129 @@ class ModelDownloadWorker(
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val modelId = inputData.getString(KEY_MODEL_ID) ?: return@withContext Result.failure()
+        val generation = inputData.getLong(KEY_GENERATION, -1L)
         val entry = ModelCatalog.entry(modelId) ?: return@withContext Result.failure()
+        installStore.synchronizeConfiguration(entry)
+        if (!installStore.isCurrentGeneration(modelId, generation)) return@withContext Result.success()
         if (!entry.downloadConfigured) {
-            return@withContext fail(modelId, ModelDownloadFailureCode.DOWNLOAD_NOT_CONFIGURED)
+            return@withContext fail(entry, generation, ModelDownloadFailureCode.DOWNLOAD_NOT_CONFIGURED)
         }
         val artifact = entry.artifactSpecOrNull()
-            ?: return@withContext fail(modelId, ModelDownloadFailureCode.DOWNLOAD_NOT_CONFIGURED)
-        val tempFile = installStore.tempFile(entry)
+            ?: return@withContext fail(entry, generation, ModelDownloadFailureCode.DOWNLOAD_NOT_CONFIGURED)
+        val partFile = installStore.partFile(entry, generation, id.toString())
 
         try {
             setForeground(createForegroundInfo(entry, 0))
-            installStore.recordDownloading(
-                modelId = entry.id,
-                downloadedBytes = 0L,
-                totalBytes = artifact.expectedSizeBytes,
-                progressPercent = 0,
-            )
+            var reportedProgressPercent = 0
+            if (
+                !installStore.recordDownloading(
+                    entry = entry,
+                    generation = generation,
+                    downloadedBytes = 0L,
+                    totalBytes = artifact.expectedSizeBytes,
+                    progressPercent = 0,
+                )
+            ) {
+                return@withContext Result.success()
+            }
             when (
                 val download = downloader.downloadToPart(
                     artifact = artifact,
-                    partFile = tempFile,
+                    partFile = partFile,
                     onProgress = { downloadedBytes, totalBytes ->
                         val progressPercent = progressPercent(downloadedBytes, totalBytes)
-                        installStore.recordDownloading(
-                            modelId = entry.id,
-                            downloadedBytes = downloadedBytes,
-                            totalBytes = totalBytes,
-                            progressPercent = progressPercent,
-                        )
-                        setProgress(
-                            workDataOf(
-                                KEY_MODEL_ID to entry.id,
-                                KEY_PROGRESS_PERCENT to progressPercent,
-                                KEY_DOWNLOADED_BYTES to downloadedBytes,
-                                KEY_TOTAL_BYTES to totalBytes,
-                            ),
-                        )
-                        setForeground(createForegroundInfo(entry, progressPercent))
+                        if (
+                            !installStore.recordDownloading(
+                                entry = entry,
+                                generation = generation,
+                                downloadedBytes = downloadedBytes,
+                                totalBytes = totalBytes,
+                                progressPercent = progressPercent,
+                            )
+                        ) {
+                            throw StaleModelGenerationException()
+                        }
+                        if (progressPercent != reportedProgressPercent) {
+                            reportedProgressPercent = progressPercent
+                            setProgress(
+                                workDataOf(
+                                    KEY_MODEL_ID to entry.id,
+                                    KEY_GENERATION to generation,
+                                    KEY_PROGRESS_PERCENT to progressPercent,
+                                    KEY_DOWNLOADED_BYTES to downloadedBytes,
+                                    KEY_TOTAL_BYTES to totalBytes,
+                                ),
+                            )
+                            setForeground(createForegroundInfo(entry, progressPercent))
+                        }
                     },
                 )
             ) {
-                is ArtifactDownloadResult.Verified -> publish(entry, tempFile, download)
+                is ArtifactDownloadResult.Verified -> {
+                    ModelDownloadWorkPolicy.afterPublish(
+                        installStore.publishVerified(entry, generation, partFile),
+                    ).toWorkerResult()
+                }
+
                 is ArtifactDownloadResult.Failed -> {
-                    if (download.retryable && runAttemptCount < MAX_RETRY_ATTEMPT_INDEX) {
-                        installStore.recordQueued(modelId)
-                        Result.retry()
-                    } else {
-                        installStore.recordFailed(
-                            modelId,
-                            download.code.toModelFailureCode(),
-                        )
-                        Result.failure()
+                    if (!installStore.isCurrentGeneration(entry.id, generation)) {
+                        return@withContext Result.success()
                     }
+                    val failureCode = download.code.toModelFailureCode()
+                    val decision = ModelDownloadWorkPolicy.afterDownloadFailure(
+                        retryable = download.retryable,
+                        runAttemptCount = runAttemptCount,
+                    )
+                    val stateRecorded = when (decision) {
+                        ModelDownloadWorkDecision.RETRY -> installStore.recordQueuedForRetry(
+                            entry = entry,
+                            generation = generation,
+                            failureCode = failureCode,
+                        )
+
+                        ModelDownloadWorkDecision.FAILURE -> installStore.recordFailed(
+                            entry = entry,
+                            generation = generation,
+                            failureCode = failureCode,
+                        )
+
+                        ModelDownloadWorkDecision.SUCCESS -> true
+                    }
+                    if (stateRecorded) decision.toWorkerResult() else Result.success()
                 }
             }
+        } catch (_: StaleModelGenerationException) {
+            partFile.delete()
+            Result.success()
         } catch (error: CancellationException) {
-            tempFile.delete()
-            installStore.recordNotDownloaded(modelId)
+            partFile.delete()
             throw error
         } catch (_: Throwable) {
-            tempFile.delete()
-            installStore.recordFailed(modelId, ModelDownloadFailureCode.DOWNLOAD_FAILED)
-            Result.failure()
+            partFile.delete()
+            if (
+                installStore.recordFailed(
+                    entry = entry,
+                    generation = generation,
+                    failureCode = ModelDownloadFailureCode.DOWNLOAD_FAILED,
+                )
+            ) {
+                Result.failure()
+            } else {
+                Result.success()
+            }
         }
     }
 
-    private suspend fun publish(
+    private fun fail(
         entry: ModelCatalogEntry,
-        tempFile: java.io.File,
-        verified: ArtifactDownloadResult.Verified,
+        generation: Long,
+        failureCode: ModelDownloadFailureCode,
     ): Result {
-        currentCoroutineContext().ensureActive()
-        val destination = installStore.modelFile(entry)
-        try {
-            Files.move(
-                tempFile.toPath(),
-                destination.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            tempFile.delete()
-            installStore.recordFailed(entry.id, ModelDownloadFailureCode.ATOMIC_INSTALL_FAILED)
-            return Result.failure()
+        return if (installStore.recordFailed(entry, generation, failureCode)) {
+            Result.failure()
+        } else {
+            Result.success()
         }
-        installStore.recordReady(entry, destination, verified.bytes, verified.sha256)
-        return Result.success()
-    }
-
-    private fun fail(modelId: String, failureCode: ModelDownloadFailureCode): Result {
-        installStore.recordFailed(modelId, failureCode)
-        return Result.failure()
     }
 
     private fun ArtifactDownloadFailureCode.toModelFailureCode(): ModelDownloadFailureCode {
@@ -133,6 +160,14 @@ class ModelDownloadWorker(
             ArtifactDownloadFailureCode.SIZE_MISMATCH -> ModelDownloadFailureCode.SIZE_MISMATCH
             ArtifactDownloadFailureCode.CHECKSUM_MISMATCH -> ModelDownloadFailureCode.CHECKSUM_MISMATCH
             ArtifactDownloadFailureCode.IO_FAILURE -> ModelDownloadFailureCode.NETWORK_OR_IO_FAILURE
+        }
+    }
+
+    private fun ModelDownloadWorkDecision.toWorkerResult(): Result {
+        return when (this) {
+            ModelDownloadWorkDecision.SUCCESS -> Result.success()
+            ModelDownloadWorkDecision.RETRY -> Result.retry()
+            ModelDownloadWorkDecision.FAILURE -> Result.failure()
         }
     }
 
@@ -159,17 +194,19 @@ class ModelDownloadWorker(
 
     private fun progressPercent(downloadedBytes: Long, totalBytes: Long): Int {
         if (totalBytes <= 0L) return 0
-        return ((downloadedBytes * 100L) / totalBytes).coerceIn(0L, 100L).toInt()
+        return ((downloadedBytes * 100L) / totalBytes).coerceIn(0L, 99L).toInt()
     }
+
+    private class StaleModelGenerationException : CancellationException("Model generation was invalidated.")
 
     companion object {
         const val KEY_MODEL_ID = "model_id"
+        const val KEY_GENERATION = "model_generation"
         const val KEY_PROGRESS_PERCENT = "progress_percent"
         const val KEY_DOWNLOADED_BYTES = "downloaded_bytes"
         const val KEY_TOTAL_BYTES = "total_bytes"
 
         private const val NOTIFICATION_CHANNEL_ID = "grayin_model_downloads"
         private const val NOTIFICATION_ID = 2101
-        private const val MAX_RETRY_ATTEMPT_INDEX = 2
     }
 }

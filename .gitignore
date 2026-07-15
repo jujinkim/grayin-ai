@@ -34,4 +34,6 @@ model-training/**/*.task
 model-training/**/*.mlmodel
 .venv-model-training/
 model-training/.venv/
-
+__pycache__/
+*.pyc
+.pytest_cache/

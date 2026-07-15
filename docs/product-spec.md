@@ -65,7 +65,7 @@ Grayin AI is not:
 - Local-first by default.
 - External enrichment must be explicit and limited to minimal derived lookup inputs for map, place, reverse-geocode, or weather requests.
 - App feature code, connectors, local models, and users must not call or provide arbitrary URLs or endpoints.
-- Runtime model, manifest, and OCR language-data downloads must use fixed catalog URLs with pinned SHA-256 digests; remote manifests require a pinned ECDSA P-256 signature. APK/AAB must not bundle model weights or OCR `.traineddata` files.
+- Runtime model and OCR language-data artifacts must use immutable fixed catalog URLs with exact byte counts and pinned SHA-256 digests. A remotely updated model manifest instead uses a fixed bounded endpoint plus an ECDSA P-256 signature verified by an APK-bundled public key, explicit compatibility/expiry, and durable rollback protection. APK/AAB must not bundle model weights or OCR `.traineddata` files.
 - Raw sources, stored derived-memory records, evidence packs, prompts, answers, embeddings, source references, and fields outside an approved ephemeral enrichment-request projection must never be transmitted.
 - All data sources are explicit opt-in.
 - Every connector can be enabled, disabled, revoked, and deleted independently.
