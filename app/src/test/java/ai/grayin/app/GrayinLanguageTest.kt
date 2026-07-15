@@ -5,12 +5,25 @@ import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.ocr.OcrLanguagePack
 import ai.grayin.core.ocr.OcrLanguagePackFailureCode
 import ai.grayin.core.ocr.OcrLanguagePackStatus
+import ai.grayin.core.transfer.TransferFailureCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GrayinLanguageTest {
+    @Test
+    fun `backup actions and every stable transfer failure are localized`() {
+        GrayinLanguageOption.entries.map(GrayinText::forOption).forEach { strings ->
+            assertTrue(strings.backupTitle().isNotBlank())
+            assertTrue(strings.backupDisclosure().isNotBlank())
+            assertTrue(strings.backupImportWarningBody().isNotBlank())
+            TransferFailureCode.entries.forEach { code ->
+                assertTrue(strings.backupFailure(code).isNotBlank())
+            }
+        }
+    }
+
     @Test
     fun storageKeysMatchSettingsContract() {
         assertEquals("system", GrayinLanguageOption.SYSTEM.storageKey)

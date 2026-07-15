@@ -29,6 +29,12 @@ class AutomaticIndexingScheduler(context: Context) {
         sync()
     }
 
+    suspend fun disableForImport() {
+        val current = preferenceStore.load()
+        preferenceStore.save(current.copy(enabled = false))
+        requestSync().await()
+    }
+
     private suspend fun sync(): Unit = SYNC_MUTEX.withLock {
         val state = preferenceStore.load()
         withContext(Dispatchers.IO) {

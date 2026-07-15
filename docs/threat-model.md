@@ -35,6 +35,8 @@
 - Stuck or memory-exhausting local OCR work
 - Persisted document URI or file-name identity leakage
 - In-flight connector publication after user deletion or revocation
+- Malformed, oversized, downgraded, tampered, or wrong-password export files
+- Connector access continuing after imported derived memory is restored
 
 ## Mitigations
 
@@ -60,6 +62,10 @@
 - Derived-only bounded Binder result with death handling and no partial store commit
 - HMAC-only Local Files selection/source identity with closed citation labels and schema-v6 legacy purge
 - Atomic queue-lease fencing before connector deletion or revocation
+- PBKDF2-HMAC-SHA256 plus AES-256-GCM export envelope with authenticated fixed header, random salt/nonce, strict lengths, and bounded pre-KDF parsing
+- Strict seven-section payload schema, closed-graph validation, detached local pointers, and a replace-only SQLCipher import transaction
+- Ciphertext-only no-backup staging and local-only Android document contracts without persisted backup URI grants
+- Per-connector SQLCipher re-consent barriers checked before source reads and again in scan-write transactions
 
 ## Network Metadata Risk
 

@@ -41,6 +41,7 @@ Current usable app path:
 - Ask answers from indexed, cited local evidence and lists missing sources
 - Settings supports language selection: `system`, `korean`, `english`, or `japanese`
 - Settings installs, cancels, and deletes fixed-catalog `eng`, `kor`, or `jpn` OCR language data after an explicit user action
+- Settings exports and replace-imports the validated seven-section derived snapshot through an explicit local-only, password-authenticated encrypted document flow; connector access must be re-consented after import
 - Local Files accepts explicitly selected Text, Markdown, and PDF documents; PDF pages use embedded text or installed on-device OCR data
 - Bottom navigation uses icons and localized labels
 

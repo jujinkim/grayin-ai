@@ -70,11 +70,15 @@ class NotificationConnector(
     }
 
     override suspend fun invoke(): ConnectorPermissionState {
-        val permissionState = permissionState()
-        if (permissionState.permissionGranted) {
-            prefs(context).edit().putBoolean(KEY_ENABLED, true).apply()
+        return NotificationConsentCoordinator.withExclusiveAccess {
+            val permissionState = permissionState()
+            if (permissionState.permissionGranted) {
+                check(prefs(context).edit().putBoolean(KEY_ENABLED, true).commit()) {
+                    "Could not persist notification connector consent."
+                }
+            }
+            permissionState
         }
-        return permissionState
     }
 
     override suspend fun scan(scope: ConnectorScanScope): ConnectorScanResult {
@@ -105,14 +109,18 @@ class NotificationConnector(
     }
 
     override suspend fun revoke(): ConnectorRevokeResult {
-        prefs(context).edit().clear().apply()
-        NotificationAppAllowlist(context).replace(emptySet())
-        return ConnectorRevokeResult(
-            connectorId = CONNECTOR_ID,
-            revokedAt = Instant.now(),
-            permissionState = permissionState(),
-            deleteRequest = ConnectorDeleteRequest(connectorId = CONNECTOR_ID),
-        )
+        return NotificationConsentCoordinator.withExclusiveAccess {
+            check(prefs(context).edit().clear().commit()) {
+                "Could not clear notification connector consent."
+            }
+            NotificationAppAllowlist(context).replace(emptySet())
+            ConnectorRevokeResult(
+                connectorId = CONNECTOR_ID,
+                revokedAt = Instant.now(),
+                permissionState = permissionState(),
+                deleteRequest = ConnectorDeleteRequest(connectorId = CONNECTOR_ID),
+            )
+        }
     }
 
     override suspend fun deleteDerivedData(request: ConnectorDeleteRequest): ConnectorDeleteResult {

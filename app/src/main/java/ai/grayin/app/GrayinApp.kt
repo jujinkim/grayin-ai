@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.selection.toggleable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +55,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
@@ -64,6 +68,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import ai.grayin.core.transfer.TransferFailureCode
+import ai.grayin.core.transfer.TransferResult
 
 enum class GrayinScreen {
     Ask,
@@ -71,6 +77,13 @@ enum class GrayinScreen {
     Places,
     Sources,
     Settings,
+}
+
+private enum class BackupDialogMode {
+    NONE,
+    EXPORT_PASSWORD,
+    IMPORT_CONFIRMATION,
+    IMPORT_PASSWORD,
 }
 
 fun initialScreenForSourcesIntro(hasSeenSourcesIntro: Boolean): GrayinScreen {
@@ -118,7 +131,13 @@ fun GrayinApp() {
     var automaticIndexingState by remember { mutableStateOf(automaticIndexingStore.load()) }
     var automaticIndexingSyncing by remember { mutableStateOf(false) }
     var automaticIndexingSyncRevision by remember { mutableStateOf(0L) }
+    var backupDialogModeName by rememberSaveable { mutableStateOf(BackupDialogMode.NONE.name) }
+    var pendingExportToken by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingImportToken by rememberSaveable { mutableStateOf<String?>(null) }
+    var backupPassword by remember { mutableStateOf("") }
+    var backupPasswordConfirmation by remember { mutableStateOf("") }
     val selectedScreen = GrayinScreen.valueOf(selectedScreenName)
+    val backupDialogMode = BackupDialogMode.valueOf(backupDialogModeName)
     val screens = GrayinScreen.entries
 
     suspend fun refreshSnapshotSafely() {
@@ -162,6 +181,57 @@ fun GrayinApp() {
                     statusMessage = strings.localGemmaModelImportFailed
                 } finally {
                     refreshSnapshotSafely()
+                    working = false
+                }
+            }
+        }
+    }
+    val createBackupDocumentLauncher = rememberLauncherForActivityResult(
+        contract = CreateLocalBackupDocumentContract(),
+    ) { uri ->
+        val token = pendingExportToken
+        pendingExportToken = null
+        if (token != null) {
+            scope.launch {
+                working = true
+                try {
+                    statusMessage = if (uri == null) {
+                        controller.discardEncryptedBackupStage(token)
+                        strings.backupCanceled()
+                    } else {
+                        when (val result = controller.writePreparedEncryptedExport(token, uri)) {
+                            is TransferResult.Success -> strings.backupExportSucceeded()
+                            is TransferResult.Failure -> strings.backupFailure(result.failure.code)
+                        }
+                    }
+                } finally {
+                    working = false
+                }
+            }
+        }
+    }
+    val openBackupDocumentLauncher = rememberLauncherForActivityResult(
+        contract = OpenLocalBackupDocumentContract(),
+    ) { uri ->
+        if (uri == null) {
+            statusMessage = strings.backupCanceled()
+        } else {
+            scope.launch {
+                working = true
+                try {
+                    when (val result = controller.stageEncryptedImport(uri)) {
+                        is TransferResult.Success -> {
+                            pendingImportToken = result.value.token
+                            backupPassword = ""
+                            backupDialogModeName = BackupDialogMode.IMPORT_PASSWORD.name
+                            statusMessage = ""
+                        }
+
+                        is TransferResult.Failure -> {
+                            statusMessage = strings.backupFailure(result.failure.code)
+                        }
+                    }
+                } finally {
                     working = false
                 }
             }
@@ -303,6 +373,10 @@ fun GrayinApp() {
         if (!sourceIntroStore.hasSeenSourcesIntro()) {
             sourceIntroStore.markSourcesIntroSeen()
         }
+    }
+
+    LaunchedEffect(controller) {
+        runCatching { controller.cleanupStaleEncryptedBackupStages() }
     }
 
     LaunchedEffect(automaticIndexingScheduler) {
@@ -568,6 +642,16 @@ fun GrayinApp() {
                         languageOption = languageOption,
                         strings = strings,
                         working = working,
+                        onExportBackup = {
+                            backupPassword = ""
+                            backupPasswordConfirmation = ""
+                            backupDialogModeName = BackupDialogMode.EXPORT_PASSWORD.name
+                            statusMessage = ""
+                        },
+                        onImportBackup = {
+                            backupDialogModeName = BackupDialogMode.IMPORT_CONFIRMATION.name
+                            statusMessage = ""
+                        },
                         onLanguageSelected = { option ->
                             languageStore.save(option)
                             languageOptionName = option.name
@@ -694,6 +778,230 @@ fun GrayinApp() {
             }
         }
     }
+
+    when (backupDialogMode) {
+        BackupDialogMode.NONE -> Unit
+        BackupDialogMode.EXPORT_PASSWORD -> BackupPasswordDialog(
+            title = strings.exportEncryptedBackup(),
+            body = strings.backupExportPasswordBody(),
+            password = backupPassword,
+            confirmation = backupPasswordConfirmation,
+            errorMessage = statusMessage,
+            working = working,
+            strings = strings,
+            onPasswordChanged = { backupPassword = it },
+            onConfirmationChanged = { backupPasswordConfirmation = it },
+            onDismiss = {
+                backupPassword = ""
+                backupPasswordConfirmation = ""
+                backupDialogModeName = BackupDialogMode.NONE.name
+                statusMessage = ""
+            },
+            onConfirm = {
+                if (backupPassword != backupPasswordConfirmation) {
+                    statusMessage = strings.backupPasswordsDoNotMatch()
+                } else {
+                    val transientPassword = backupPassword.toCharArray()
+                    backupPassword = ""
+                    backupPasswordConfirmation = ""
+                    scope.launch {
+                        working = true
+                        try {
+                            when (val result = controller.prepareEncryptedExport(transientPassword)) {
+                                is TransferResult.Success -> {
+                                    pendingExportToken = result.value.token
+                                    backupDialogModeName = BackupDialogMode.NONE.name
+                                    statusMessage = ""
+                                    createBackupDocumentLauncher.launch(result.value.suggestedFileName)
+                                }
+
+                                is TransferResult.Failure -> {
+                                    statusMessage = strings.backupFailure(result.failure.code)
+                                }
+                            }
+                        } finally {
+                            transientPassword.fill('\u0000')
+                            working = false
+                        }
+                    }
+                }
+            },
+        )
+
+        BackupDialogMode.IMPORT_CONFIRMATION -> BackupImportConfirmationDialog(
+            strings = strings,
+            working = working,
+            onDismiss = {
+                backupDialogModeName = BackupDialogMode.NONE.name
+                statusMessage = ""
+            },
+            onConfirm = {
+                backupDialogModeName = BackupDialogMode.NONE.name
+                openBackupDocumentLauncher.launch(Unit)
+            },
+        )
+
+        BackupDialogMode.IMPORT_PASSWORD -> BackupPasswordDialog(
+            title = strings.importEncryptedBackup(),
+            body = strings.backupImportPasswordBody(),
+            password = backupPassword,
+            confirmation = null,
+            errorMessage = statusMessage,
+            working = working,
+            strings = strings,
+            onPasswordChanged = { backupPassword = it },
+            onConfirmationChanged = {},
+            onDismiss = {
+                val token = pendingImportToken
+                pendingImportToken = null
+                backupPassword = ""
+                backupDialogModeName = BackupDialogMode.NONE.name
+                statusMessage = ""
+                if (token != null) scope.launch { controller.discardEncryptedBackupStage(token) }
+            },
+            onConfirm = {
+                val token = pendingImportToken
+                if (token == null) {
+                    backupDialogModeName = BackupDialogMode.NONE.name
+                    statusMessage = strings.backupFailure(TransferFailureCode.SOURCE_IO_FAILED)
+                } else {
+                    val transientPassword = backupPassword.toCharArray()
+                    backupPassword = ""
+                    scope.launch {
+                        working = true
+                        try {
+                            when (val result = controller.importStagedEncryptedBackup(token, transientPassword)) {
+                                is TransferResult.Success -> {
+                                    pendingImportToken = null
+                                    backupDialogModeName = BackupDialogMode.NONE.name
+                                    automaticIndexingState = automaticIndexingStore.load()
+                                    statusMessage = strings.backupImportSucceeded(
+                                        eventCount = result.value.derivedMemoryEventCount,
+                                        connectorCount = result.value.connectorCount,
+                                    )
+                                    refreshSnapshotSafely()
+                                }
+
+                                is TransferResult.Failure -> {
+                                    statusMessage = strings.backupFailure(result.failure.code)
+                                    if (
+                                        result.failure.code == TransferFailureCode.CONSENT_RESET_FAILED ||
+                                        result.failure.code == TransferFailureCode.STORE_TRANSACTION_FAILED
+                                    ) {
+                                        automaticIndexingState = automaticIndexingStore.load()
+                                        refreshSnapshotSafely()
+                                    }
+                                    if (!BackupTransferPolicy.retainImportStageAfter(result.failure.code)) {
+                                        pendingImportToken = null
+                                        backupDialogModeName = BackupDialogMode.NONE.name
+                                    }
+                                }
+                            }
+                        } finally {
+                            transientPassword.fill('\u0000')
+                            working = false
+                        }
+                    }
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun BackupPasswordDialog(
+    title: String,
+    body: String,
+    password: String,
+    confirmation: String?,
+    errorMessage: String,
+    working: Boolean,
+    strings: GrayinStrings,
+    onPasswordChanged: (String) -> Unit,
+    onConfirmationChanged: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = { if (!working) onDismiss() },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(body, style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = password,
+                    onValueChange = onPasswordChanged,
+                    label = { Text(strings.backupPassword()) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        autoCorrectEnabled = false,
+                    ),
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+                if (confirmation != null) {
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = confirmation,
+                        onValueChange = onConfirmationChanged,
+                        label = { Text(strings.backupConfirmPassword()) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            autoCorrectEnabled = false,
+                        ),
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                }
+                if (errorMessage.isNotBlank()) {
+                    Text(
+                        errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !working && password.isNotEmpty() &&
+                    (confirmation == null || confirmation.isNotEmpty()),
+                onClick = onConfirm,
+            ) {
+                Text(strings.confirm())
+            }
+        },
+        dismissButton = {
+            TextButton(enabled = !working, onClick = onDismiss) {
+                Text(strings.cancel())
+            }
+        },
+    )
+}
+
+@Composable
+private fun BackupImportConfirmationDialog(
+    strings: GrayinStrings,
+    working: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = { if (!working) onDismiss() },
+        title = { Text(strings.backupImportWarningTitle()) },
+        text = { Text(strings.backupImportWarningBody()) },
+        confirmButton = {
+            TextButton(enabled = !working, onClick = onConfirm) {
+                Text(strings.continueAction())
+            }
+        },
+        dismissButton = {
+            TextButton(enabled = !working, onClick = onDismiss) {
+                Text(strings.cancel())
+            }
+        },
+    )
 }
 
 @Composable
@@ -1293,6 +1601,8 @@ private fun SettingsScreen(
     languageOption: GrayinLanguageOption,
     strings: GrayinStrings,
     working: Boolean,
+    onExportBackup: () -> Unit,
+    onImportBackup: () -> Unit,
     onLanguageSelected: (GrayinLanguageOption) -> Unit,
     onIndex: () -> Unit,
     onOpenModelDownload: (String?) -> Unit,
@@ -1320,6 +1630,14 @@ private fun SettingsScreen(
                 languageOption = languageOption,
                 strings = strings,
                 onLanguageSelected = onLanguageSelected,
+            )
+        }
+        item {
+            EncryptedBackupSettings(
+                strings = strings,
+                working = working,
+                onExport = onExportBackup,
+                onImport = onImportBackup,
             )
         }
         item {
@@ -1390,6 +1708,42 @@ private fun SettingsScreen(
         }
         items(rows) { row ->
             StatusRow(row)
+        }
+    }
+}
+
+@Composable
+private fun EncryptedBackupSettings(
+    strings: GrayinStrings,
+    working: Boolean,
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(strings.backupTitle(), style = MaterialTheme.typography.titleMedium)
+            Text(strings.backupDisclosure(), style = MaterialTheme.typography.bodySmall)
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !working,
+                onClick = onExport,
+            ) {
+                Text(strings.exportEncryptedBackup())
+            }
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !working,
+                onClick = onImport,
+            ) {
+                Text(strings.importEncryptedBackup())
+            }
         }
     }
 }

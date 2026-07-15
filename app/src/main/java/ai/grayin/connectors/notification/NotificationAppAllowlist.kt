@@ -16,7 +16,9 @@ class NotificationAppAllowlist(context: Context) {
     }
 
     fun replace(packages: Set<String>) {
-        prefs.edit().putStringSet(KEY_ALLOWED_PACKAGES, packages.toSet()).apply()
+        check(prefs.edit().putStringSet(KEY_ALLOWED_PACKAGES, packages.toSet()).commit()) {
+            "Could not persist the notification allowlist."
+        }
     }
 
     fun isAllowed(packageName: String): Boolean {

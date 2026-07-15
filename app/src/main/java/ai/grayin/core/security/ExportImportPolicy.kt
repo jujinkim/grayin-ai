@@ -9,8 +9,7 @@ enum class ExportDataSection {
     DAILY_SUMMARIES,
     PLACE_CLUSTERS,
     APP_USAGE_SUMMARIES,
-    INDEX_METADATA,
-    CONNECTOR_METADATA,
+    CONNECTOR_SCAN_STATUSES,
 }
 
 enum class ForbiddenExportData {
@@ -22,6 +21,12 @@ enum class ForbiddenExportData {
     CALENDAR_RECORD_ORIGINALS,
     LOCAL_FILE_ORIGINALS,
     AUDIO_VIDEO_ORIGINALS,
+    LOCAL_SOURCE_POINTERS,
+    DATABASE_AND_KEY_MATERIAL,
+    CONNECTOR_CONSENT_AND_SETTINGS,
+    INDEXING_QUEUE_AND_RUNTIME,
+    MODEL_AND_OCR_ARTIFACTS,
+    PROMPTS_ANSWERS_AND_EVIDENCE_PACKS,
 }
 
 data class EncryptedExportFormat(
@@ -46,5 +51,9 @@ data class ExportImportPolicy(
     fun isAllowed(section: ExportDataSection): Boolean = section in format.allowedSections
 
     fun isForbidden(data: ForbiddenExportData): Boolean = data in format.forbiddenData
-}
 
+    companion object {
+        val ALLOWED_DERIVED_SECTIONS: Set<ExportDataSection> = ExportDataSection.entries.toSet()
+        val FORBIDDEN_DATA: Set<ForbiddenExportData> = ForbiddenExportData.entries.toSet()
+    }
+}

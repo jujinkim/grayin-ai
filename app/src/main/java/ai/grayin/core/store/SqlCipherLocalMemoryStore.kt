@@ -32,6 +32,7 @@ import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MemoryCitation
 import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.PlaceCluster
+import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.model.SourceAvailability
 import ai.grayin.core.model.SourceReference
 import java.time.Clock
@@ -49,6 +50,7 @@ class SqlCipherLocalMemoryStore(
     override suspend fun saveConnectorScan(scanResult: ConnectorScanResult): StoreWriteResult = withDatabase { db ->
         db.beginTransaction()
         try {
+            requireConnectorWriteAllowed(db, scanResult.connectorId)
             val result = writeConnectorScanRows(db, scanResult, completedAt = clock.instant())
             db.setTransactionSuccessful()
             result
@@ -66,6 +68,7 @@ class SqlCipherLocalMemoryStore(
         require(itemId.isNotBlank()) { "Indexing item ID must not be blank." }
         require(leaseOwner.isNotBlank()) { "Lease owner must not be blank." }
         require(attemptCount > 0) { "Attempt count must be positive." }
+        requireValidConnectorId(scanResult.connectorId)
         db.beginTransaction()
         try {
             val completedAt = clock.instant()
@@ -79,7 +82,8 @@ class SqlCipherLocalMemoryStore(
                 current.leaseOwner == leaseOwner &&
                 current.attemptCount == attemptCount &&
                 current.leaseUntil?.isAfter(completedAt) == true &&
-                automaticControlIsCurrent
+                automaticControlIsCurrent &&
+                !isConnectorReconsentRequired(db, scanResult.connectorId)
             if (!ownsLiveLease) {
                 db.setTransactionSuccessful()
                 return@withDatabase ConnectorScanCommitResult.LeaseLost
@@ -136,12 +140,19 @@ class SqlCipherLocalMemoryStore(
         }
     }
 
-    override suspend fun deleteConnectorData(connectorId: String): StoreDeleteResult = withDatabase { db ->
+    override suspend fun deleteConnectorData(
+        connectorId: String,
+        requireReconsent: Boolean,
+    ): StoreDeleteResult = withDatabase { db ->
+        requireValidConnectorId(connectorId)
         db.beginTransaction()
         try {
             val completedAt = clock.instant()
             fenceActiveConnectorTasks(db, connectorId, completedAt)
             val result = deleteConnectorRows(db, connectorId, completedAt = completedAt)
+            if (requireReconsent) {
+                writeConnectorReconsentRequirement(db, connectorId, completedAt)
+            }
             db.setTransactionSuccessful()
             result
         } finally {
@@ -204,6 +215,369 @@ class SqlCipherLocalMemoryStore(
         } finally {
             db.endTransaction()
         }
+    }
+
+    override suspend fun isConnectorReconsentRequired(connectorId: String): Boolean = withDatabase { db ->
+        requireValidConnectorId(connectorId)
+        isConnectorReconsentRequired(db, connectorId)
+    }
+
+    override suspend fun markConnectorReconsented(connectorId: String): Boolean = withDatabase { db ->
+        requireValidConnectorId(connectorId)
+        db.beginTransaction()
+        try {
+            val cleared = db.delete(
+                TABLE_CONNECTOR_RECONSENT,
+                "connector_id = ?",
+                arrayOf(connectorId),
+            ) == 1
+            db.setTransactionSuccessful()
+            cleared
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    override suspend fun replaceDerivedDataFromImport(
+        snapshot: LocalMemorySnapshot,
+        trustedConnectorIds: Set<String>,
+        importedAt: Instant,
+    ): StoreImportResult {
+        validateImportedSnapshotBounds(snapshot, trustedConnectorIds)
+        val trustedIds = trustedConnectorIds.toSortedSet()
+        val detachedSnapshot = snapshot.detachedCopy()
+        validateImportedSnapshot(detachedSnapshot, trustedIds, importedAt)
+        return withDatabase { db ->
+            db.beginTransaction()
+            try {
+                // Revalidate the detached value at the storage boundary before any destructive write.
+                validateImportedSnapshot(detachedSnapshot, trustedIds, importedAt)
+                val currentControl = readAutomaticIndexingControl(db)
+                check(currentControl.generation < Long.MAX_VALUE) {
+                    "Automatic indexing generation is exhausted."
+                }
+
+                // Queue/runtime records are device-local coordination state and are never imported.
+                // Deleting every queue item makes any worker holding an old lease lose its commit fence.
+                db.delete(TABLE_INDEXING_QUEUE, null, null)
+                db.delete(TABLE_AUTOMATIC_INDEXING_RUNTIME, null, null)
+                writeAutomaticIndexingControl(
+                    db,
+                    AutomaticIndexingControl(
+                        enabled = false,
+                        generation = currentControl.generation + 1L,
+                        settingsKey = IMPORT_RECONSENT_AUTOMATIC_SETTINGS_KEY,
+                    ),
+                )
+
+                clearDerivedMemoryTables(db)
+                insertImportedSnapshot(db, detachedSnapshot)
+
+                db.delete(TABLE_CONNECTOR_RECONSENT, null, null)
+                trustedIds.forEach { connectorId ->
+                    val values = ContentValues().apply {
+                        put("connector_id", connectorId)
+                        put("required_since", importedAt.toString())
+                    }
+                    check(
+                        db.insertWithOnConflict(
+                            TABLE_CONNECTOR_RECONSENT,
+                            null,
+                            values,
+                            SQLiteDatabase.CONFLICT_ABORT,
+                        ) >= 0L,
+                    ) { "Could not persist connector re-consent requirement." }
+                }
+
+                val result = StoreImportResult(
+                    sourceReferenceCount = detachedSnapshot.sourceReferences.size,
+                    derivedMemoryEventCount = detachedSnapshot.derivedMemoryEvents.size,
+                    citationCount = detachedSnapshot.citations.size,
+                    dailySummaryCount = detachedSnapshot.dailySummaries.size,
+                    placeClusterCount = detachedSnapshot.placeClusters.size,
+                    appUsageSummaryCount = detachedSnapshot.appUsageSummaries.size,
+                    connectorScanStatusCount = detachedSnapshot.connectorScanStatuses.size,
+                    connectorsRequiringReconsent = trustedIds,
+                    completedAt = importedAt,
+                )
+                db.setTransactionSuccessful()
+                result
+            } finally {
+                db.endTransaction()
+            }
+        }
+    }
+
+    private fun LocalMemorySnapshot.detachedCopy(): LocalMemorySnapshot {
+        return copy(
+            sourceReferences = sourceReferences.toList(),
+            derivedMemoryEvents = derivedMemoryEvents.map { event ->
+                event.copy(
+                    sourceReferenceIds = event.sourceReferenceIds.toList(),
+                    keywords = event.keywords.toList(),
+                    labels = event.labels.toList(),
+                    entities = event.entities.toList(),
+                    citationIds = event.citationIds.toList(),
+                )
+            },
+            citations = citations.toList(),
+            dailySummaries = dailySummaries.map { summary ->
+                summary.copy(
+                    derivedMemoryEventIds = summary.derivedMemoryEventIds.toList(),
+                    placeClusterIds = summary.placeClusterIds.toList(),
+                    appUsageSummaryIds = summary.appUsageSummaryIds.toList(),
+                    missingSources = summary.missingSources.toList(),
+                )
+            },
+            placeClusters = placeClusters.map { cluster ->
+                cluster.copy(sourceReferenceIds = cluster.sourceReferenceIds.toList())
+            },
+            appUsageSummaries = appUsageSummaries.map { summary ->
+                summary.copy(
+                    sourceReferenceIds = summary.sourceReferenceIds.toList(),
+                    activeTimeBucketLabels = summary.activeTimeBucketLabels.toList(),
+                )
+            },
+            connectorScanStatuses = connectorScanStatuses.map { status ->
+                status.copy(missingSources = status.missingSources.toList())
+            },
+        )
+    }
+
+    private fun validateImportedSnapshot(
+        snapshot: LocalMemorySnapshot,
+        trustedConnectorIds: Set<String>,
+        importedAt: Instant,
+    ) {
+        validateImportedSnapshotBounds(snapshot, trustedConnectorIds)
+        trustedConnectorIds.forEach(::requireValidConnectorId)
+        requireDistinctImportIds("source reference", snapshot.sourceReferences.map { it.id })
+        requireDistinctImportIds("derived event", snapshot.derivedMemoryEvents.map { it.id })
+        requireDistinctImportIds("citation", snapshot.citations.map { it.id })
+        requireDistinctImportIds("daily summary", snapshot.dailySummaries.map { it.id })
+        requireDistinctImportIds("place cluster", snapshot.placeClusters.map { it.id })
+        requireDistinctImportIds("app usage summary", snapshot.appUsageSummaries.map { it.id })
+        requireDistinctImportIds(
+            "connector scan status",
+            snapshot.connectorScanStatuses.map { it.connectorId },
+        )
+        require(snapshot.connectorScanStatuses.size <= trustedConnectorIds.size) {
+            "An imported snapshot contains too many connector scan statuses."
+        }
+
+        snapshot.sourceReferences.forEach { source ->
+            require(source.connectorId in trustedConnectorIds) {
+                "An imported source reference belongs to an untrusted connector."
+            }
+            require(source.localPointer == null) {
+                "An imported source reference cannot contain a device-local pointer."
+            }
+        }
+        snapshot.derivedMemoryEvents.forEach { event ->
+            requireTrustedScopedId("event", event.id, trustedConnectorIds)
+        }
+        snapshot.citations.forEach { citation ->
+            requireTrustedScopedId("citation", citation.id, trustedConnectorIds)
+        }
+        snapshot.placeClusters.forEach { cluster ->
+            requireTrustedScopedId("place-cluster", cluster.id, trustedConnectorIds)
+        }
+        snapshot.appUsageSummaries.forEach { summary ->
+            requireTrustedScopedId("app-usage", summary.id, trustedConnectorIds)
+        }
+        snapshot.connectorScanStatuses.forEach { status ->
+            require(status.connectorId in trustedConnectorIds) {
+                "An imported scan status belongs to an untrusted connector."
+            }
+        }
+
+        val statusesByConnector = snapshot.connectorScanStatuses.associateBy { it.connectorId }
+        trustedConnectorIds.forEach { connectorId ->
+            val sources = snapshot.sourceReferences.filter { it.connectorId == connectorId }
+            val events = snapshot.derivedMemoryEvents.filter {
+                it.id.startsWith("event:$connectorId:")
+            }
+            val citations = snapshot.citations.filter {
+                it.id.startsWith("citation:$connectorId:")
+            }
+            val placeClusters = snapshot.placeClusters.filter {
+                it.id.startsWith("place-cluster:$connectorId:")
+            }
+            val appUsageSummaries = snapshot.appUsageSummaries.filter {
+                it.id.startsWith("app-usage:$connectorId:")
+            }
+            val status = statusesByConnector[connectorId]
+            if (
+                sources.isEmpty() &&
+                events.isEmpty() &&
+                citations.isEmpty() &&
+                placeClusters.isEmpty() &&
+                appUsageSummaries.isEmpty() &&
+                status == null
+            ) {
+                return@forEach
+            }
+            ConnectorScanValidator.validate(
+                ConnectorScanResult(
+                    connectorId = connectorId,
+                    processingState = status?.processingState ?: ProcessingState.COMPLETED,
+                    sourceReferences = sources,
+                    derivedEvents = events,
+                    citations = citations,
+                    placeClusters = placeClusters,
+                    appUsageSummaries = appUsageSummaries,
+                    missingSources = status?.missingSources.orEmpty(),
+                    scopeFrom = status?.scopeFrom,
+                    scopeUntil = status?.scopeUntil,
+                    replaceExistingConnectorData = connectorId == LOCAL_FILES_CONNECTOR_ID,
+                    scannedAt = status?.scannedAt ?: importedAt,
+                ),
+            )
+        }
+
+        val eventIds = snapshot.derivedMemoryEvents.mapTo(hashSetOf()) { it.id }
+        val placeClusterIds = snapshot.placeClusters.mapTo(hashSetOf()) { it.id }
+        val appUsageSummaryIds = snapshot.appUsageSummaries.mapTo(hashSetOf()) { it.id }
+        snapshot.dailySummaries.forEach { summary ->
+            require(summary.derivedMemoryEventIds.distinct().size == summary.derivedMemoryEventIds.size) {
+                "An imported daily summary contains duplicate derived-event references."
+            }
+            require(summary.placeClusterIds.distinct().size == summary.placeClusterIds.size) {
+                "An imported daily summary contains duplicate place-cluster references."
+            }
+            require(summary.appUsageSummaryIds.distinct().size == summary.appUsageSummaryIds.size) {
+                "An imported daily summary contains duplicate app-usage references."
+            }
+            require(summary.derivedMemoryEventIds.all { it in eventIds }) {
+                "An imported daily summary references a missing derived event."
+            }
+            require(summary.placeClusterIds.all { it in placeClusterIds }) {
+                "An imported daily summary references a missing place cluster."
+            }
+            require(summary.appUsageSummaryIds.all { it in appUsageSummaryIds }) {
+                "An imported daily summary references a missing app-usage summary."
+            }
+            require(
+                summary.missingSources.all { missing ->
+                    missing.connectorId == null || missing.connectorId in trustedConnectorIds
+                },
+            ) {
+                "An imported daily summary contains an untrusted connector status."
+            }
+        }
+    }
+
+    private fun validateImportedSnapshotBounds(
+        snapshot: LocalMemorySnapshot,
+        trustedConnectorIds: Set<String>,
+    ) {
+        require(trustedConnectorIds.isNotEmpty()) {
+            "An imported snapshot requires at least one trusted connector ID."
+        }
+        require(trustedConnectorIds.size <= MAX_TRUSTED_CONNECTORS) {
+            "An imported snapshot contains too many trusted connector IDs."
+        }
+        require(snapshot.sourceReferences.size <= MAX_IMPORTED_SOURCE_REFERENCES) {
+            "An imported snapshot contains too many source references."
+        }
+        require(snapshot.derivedMemoryEvents.size <= MAX_IMPORTED_DERIVED_EVENTS) {
+            "An imported snapshot contains too many derived events."
+        }
+        require(snapshot.citations.size <= MAX_IMPORTED_CITATIONS) {
+            "An imported snapshot contains too many citations."
+        }
+        require(snapshot.dailySummaries.size <= MAX_IMPORTED_DAILY_SUMMARIES) {
+            "An imported snapshot contains too many daily summaries."
+        }
+        require(snapshot.placeClusters.size <= MAX_IMPORTED_PLACE_CLUSTERS) {
+            "An imported snapshot contains too many place clusters."
+        }
+        require(snapshot.appUsageSummaries.size <= MAX_IMPORTED_APP_USAGE_SUMMARIES) {
+            "An imported snapshot contains too many app-usage summaries."
+        }
+        require(snapshot.connectorScanStatuses.size <= MAX_IMPORTED_CONNECTOR_SCAN_STATUSES) {
+            "An imported snapshot contains too many connector scan statuses."
+        }
+        val totalRecordCount = snapshot.sourceReferences.size.toLong() +
+            snapshot.derivedMemoryEvents.size +
+            snapshot.citations.size +
+            snapshot.dailySummaries.size +
+            snapshot.placeClusters.size +
+            snapshot.appUsageSummaries.size +
+            snapshot.connectorScanStatuses.size
+        require(totalRecordCount <= MAX_IMPORTED_TOTAL_RECORDS) {
+            "An imported snapshot contains too many total records."
+        }
+    }
+
+    private fun requireTrustedScopedId(
+        prefix: String,
+        id: String,
+        trustedConnectorIds: Set<String>,
+    ) {
+        require(trustedConnectorIds.any { connectorId ->
+            id.startsWith("$prefix:$connectorId:") && id.length > prefix.length + connectorId.length + 2
+        }) {
+            "An imported $prefix ID is not scoped to a trusted connector."
+        }
+    }
+
+    private fun requireDistinctImportIds(label: String, ids: List<String>) {
+        require(ids.all { it.isNotBlank() }) { "Every imported $label ID must be non-blank." }
+        require(ids.distinct().size == ids.size) { "An imported snapshot contains duplicate $label IDs." }
+    }
+
+    private fun requireValidConnectorId(connectorId: String) {
+        require(
+            connectorId.isNotBlank() &&
+                connectorId.length <= MAX_CONNECTOR_ID_CHARS &&
+                ':' !in connectorId &&
+                connectorId.none(Char::isISOControl),
+        ) { "Connector ID is invalid." }
+    }
+
+    private fun clearDerivedMemoryTables(db: SQLiteDatabase) {
+        db.delete(TABLE_DAILY_SUMMARIES, null, null)
+        db.delete(TABLE_PLACE_CLUSTERS, null, null)
+        db.delete(TABLE_APP_USAGE_SUMMARIES, null, null)
+        db.delete(TABLE_CITATIONS, null, null)
+        db.delete(TABLE_DERIVED_EVENTS, null, null)
+        db.delete(TABLE_SOURCE_REFERENCES, null, null)
+        db.delete(TABLE_CONNECTOR_SCAN_STATUS, null, null)
+    }
+
+    private fun insertImportedSnapshot(db: SQLiteDatabase, snapshot: LocalMemorySnapshot) {
+        snapshot.sourceReferences.forEach { source ->
+            insertImportedRow(db, TABLE_SOURCE_REFERENCES, source.toValues())
+        }
+        snapshot.derivedMemoryEvents.forEach { event ->
+            insertImportedRow(db, TABLE_DERIVED_EVENTS, event.toValues())
+        }
+        snapshot.citations.forEach { citation ->
+            insertImportedRow(db, TABLE_CITATIONS, citation.toValues())
+        }
+        snapshot.dailySummaries.forEach { summary ->
+            insertImportedRow(db, TABLE_DAILY_SUMMARIES, summary.toValues())
+        }
+        snapshot.placeClusters.forEach { cluster ->
+            insertImportedRow(db, TABLE_PLACE_CLUSTERS, cluster.toValues())
+        }
+        snapshot.appUsageSummaries.forEach { summary ->
+            insertImportedRow(db, TABLE_APP_USAGE_SUMMARIES, summary.toValues())
+        }
+        snapshot.connectorScanStatuses.forEach { status ->
+            insertImportedRow(db, TABLE_CONNECTOR_SCAN_STATUS, status.toValues())
+        }
+    }
+
+    private fun insertImportedRow(
+        db: SQLiteDatabase,
+        table: String,
+        values: ContentValues,
+    ) {
+        check(
+            db.insertWithOnConflict(table, null, values, SQLiteDatabase.CONFLICT_ABORT) >= 0L,
+        ) { "Could not persist an imported derived-memory record." }
     }
 
     override suspend fun enqueue(tasks: List<IndexingTask>): List<IndexingQueueItem> = withDatabase { db ->
@@ -888,6 +1262,9 @@ class SqlCipherLocalMemoryStore(
         if (version < LOCAL_SOURCE_IDENTITY_SCHEMA_VERSION) {
             runMigration(db, LOCAL_SOURCE_IDENTITY_SCHEMA_VERSION, ::purgeLegacyLocalFileIdentity)
         }
+        if (version < CONNECTOR_RECONSENT_SCHEMA_VERSION) {
+            runMigration(db, CONNECTOR_RECONSENT_SCHEMA_VERSION, ::createConnectorReconsentTable)
+        }
     }
 
     private fun runMigration(
@@ -1147,6 +1524,17 @@ class SqlCipherLocalMemoryStore(
             db = db,
             connectorId = LOCAL_FILES_CONNECTOR_ID,
             completedAt = clock.instant(),
+        )
+    }
+
+    private fun createConnectorReconsentTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_CONNECTOR_RECONSENT (
+                connector_id TEXT PRIMARY KEY NOT NULL,
+                required_since TEXT NOT NULL
+            )
+            """.trimIndent(),
         )
     }
 
@@ -1611,17 +1999,14 @@ class SqlCipherLocalMemoryStore(
     }
 
     private fun writeConnectorScanStatus(db: SQLiteDatabase, scanResult: ConnectorScanResult) {
-        val values = ContentValues().apply {
-            put("connector_id", scanResult.connectorId)
-            put("processing_state", scanResult.processingState.name)
-            put(
-                "missing_sources",
-                encodeList(scanResult.missingSources.map { it.toConnectorScanStorageString() }),
-            )
-            put("scope_from", scanResult.scopeFrom?.toString())
-            put("scope_until", scanResult.scopeUntil?.toString())
-            put("scanned_at", scanResult.scannedAt.toString())
-        }
+        val values = ConnectorScanStatus(
+            connectorId = scanResult.connectorId,
+            processingState = scanResult.processingState,
+            missingSources = scanResult.missingSources,
+            scopeFrom = scanResult.scopeFrom,
+            scopeUntil = scanResult.scopeUntil,
+            scannedAt = scanResult.scannedAt,
+        ).toValues()
         check(
             db.insertWithOnConflict(
                 TABLE_CONNECTOR_SCAN_STATUS,
@@ -1630,6 +2015,54 @@ class SqlCipherLocalMemoryStore(
                 SQLiteDatabase.CONFLICT_REPLACE,
             ) >= 0L,
         ) { "Could not persist connector scan status." }
+    }
+
+    private fun ConnectorScanStatus.toValues(): ContentValues = ContentValues().apply {
+        put("connector_id", connectorId)
+        put("processing_state", processingState.name)
+        put(
+            "missing_sources",
+            encodeList(missingSources.map { it.toConnectorScanStorageString() }),
+        )
+        put("scope_from", scopeFrom?.toString())
+        put("scope_until", scopeUntil?.toString())
+        put("scanned_at", scannedAt.toString())
+    }
+
+    private fun isConnectorReconsentRequired(
+        db: SQLiteDatabase,
+        connectorId: String,
+    ): Boolean {
+        return db.rawQuery(
+            "SELECT 1 FROM $TABLE_CONNECTOR_RECONSENT WHERE connector_id = ? LIMIT 1",
+            arrayOf(connectorId),
+        ).use { cursor -> cursor.moveToFirst() }
+    }
+
+    private fun requireConnectorWriteAllowed(db: SQLiteDatabase, connectorId: String) {
+        requireValidConnectorId(connectorId)
+        check(!isConnectorReconsentRequired(db, connectorId)) {
+            "Connector requires explicit re-consent before derived data can be stored."
+        }
+    }
+
+    private fun writeConnectorReconsentRequirement(
+        db: SQLiteDatabase,
+        connectorId: String,
+        requiredSince: Instant,
+    ) {
+        val values = ContentValues().apply {
+            put("connector_id", connectorId)
+            put("required_since", requiredSince.toString())
+        }
+        check(
+            db.insertWithOnConflict(
+                TABLE_CONNECTOR_RECONSENT,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_REPLACE,
+            ) >= 0L,
+        ) { "Could not persist connector re-consent requirement." }
     }
 
     private fun deleteIn(db: SQLiteDatabase, table: String, column: String, ids: List<String>) {
@@ -1852,38 +2285,53 @@ class SqlCipherLocalMemoryStore(
         val status: AutomaticIndexingRuntimeStatus,
     )
 
-    private companion object {
-        const val DB_NAME = "grayin-memory.db"
-        const val TABLE_SOURCE_REFERENCES = "source_references"
-        const val TABLE_DERIVED_EVENTS = "derived_memory_events"
-        const val TABLE_CITATIONS = "citations"
-        const val TABLE_DAILY_SUMMARIES = "daily_summaries"
-        const val TABLE_PLACE_CLUSTERS = "place_clusters"
-        const val TABLE_APP_USAGE_SUMMARIES = "app_usage_summaries"
-        const val TABLE_INDEXING_QUEUE = "indexing_queue"
-        const val TABLE_AUTOMATIC_INDEXING_RUNTIME = "automatic_indexing_runtime"
-        const val TABLE_AUTOMATIC_INDEXING_CONTROL = "automatic_indexing_control"
-        const val TABLE_CONNECTOR_SCAN_STATUS = "connector_scan_status"
-        const val CONNECTOR_SCAN_ISSUE_STORAGE_VERSION = "connector-scan-issue-v1"
-        const val SQLITE_BIND_LIMIT = 900
-        const val CORE_SCHEMA_VERSION = 1
-        const val INDEXING_SCHEMA_VERSION = 2
-        const val AUTOMATIC_CONTROL_SCHEMA_VERSION = 3
-        const val CONNECTOR_SCAN_STATUS_SCHEMA_VERSION = 4
-        const val CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION = 5
-        const val LOCAL_SOURCE_IDENTITY_SCHEMA_VERSION = 6
-        const val SCHEMA_VERSION = LOCAL_SOURCE_IDENTITY_SCHEMA_VERSION
-        const val MAX_QUEUE_SNAPSHOT_ITEMS = 500
-        const val UNINITIALIZED_AUTOMATIC_SETTINGS_KEY = "v1:uninitialized"
-        const val LOCAL_FILES_CONNECTOR_ID = "local_files"
+    companion object {
+        const val CURRENT_SCHEMA_VERSION = 7
+
+        private const val DB_NAME = "grayin-memory.db"
+        private const val TABLE_SOURCE_REFERENCES = "source_references"
+        private const val TABLE_DERIVED_EVENTS = "derived_memory_events"
+        private const val TABLE_CITATIONS = "citations"
+        private const val TABLE_DAILY_SUMMARIES = "daily_summaries"
+        private const val TABLE_PLACE_CLUSTERS = "place_clusters"
+        private const val TABLE_APP_USAGE_SUMMARIES = "app_usage_summaries"
+        private const val TABLE_INDEXING_QUEUE = "indexing_queue"
+        private const val TABLE_AUTOMATIC_INDEXING_RUNTIME = "automatic_indexing_runtime"
+        private const val TABLE_AUTOMATIC_INDEXING_CONTROL = "automatic_indexing_control"
+        private const val TABLE_CONNECTOR_SCAN_STATUS = "connector_scan_status"
+        private const val TABLE_CONNECTOR_RECONSENT = "connector_reconsent"
+        private const val CONNECTOR_SCAN_ISSUE_STORAGE_VERSION = "connector-scan-issue-v1"
+        private const val SQLITE_BIND_LIMIT = 900
+        private const val CORE_SCHEMA_VERSION = 1
+        private const val INDEXING_SCHEMA_VERSION = 2
+        private const val AUTOMATIC_CONTROL_SCHEMA_VERSION = 3
+        private const val CONNECTOR_SCAN_STATUS_SCHEMA_VERSION = 4
+        private const val CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION = 5
+        private const val LOCAL_SOURCE_IDENTITY_SCHEMA_VERSION = 6
+        private const val CONNECTOR_RECONSENT_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION
+        private const val SCHEMA_VERSION = CURRENT_SCHEMA_VERSION
+        private const val MAX_QUEUE_SNAPSHOT_ITEMS = 500
+        private const val MAX_CONNECTOR_ID_CHARS = 128
+        private const val MAX_TRUSTED_CONNECTORS = 64
+        private const val MAX_IMPORTED_SOURCE_REFERENCES = 50_000
+        private const val MAX_IMPORTED_DERIVED_EVENTS = 50_000
+        private const val MAX_IMPORTED_CITATIONS = 50_000
+        private const val MAX_IMPORTED_DAILY_SUMMARIES = 10_000
+        private const val MAX_IMPORTED_PLACE_CLUSTERS = 10_000
+        private const val MAX_IMPORTED_APP_USAGE_SUMMARIES = 50_000
+        private const val MAX_IMPORTED_CONNECTOR_SCAN_STATUSES = 64
+        private const val MAX_IMPORTED_TOTAL_RECORDS = 200_000L
+        private const val UNINITIALIZED_AUTOMATIC_SETTINGS_KEY = "v1:uninitialized"
+        private const val IMPORT_RECONSENT_AUTOMATIC_SETTINGS_KEY = "v1:import-reconsent-required"
+        private const val LOCAL_FILES_CONNECTOR_ID = "local_files"
 
         @Volatile
-        var loaded = false
+        private var loaded = false
 
-        val SQLCIPHER_LOAD_LOCK = Any()
-        val SCHEMA_MIGRATION_LOCK = Any()
+        private val SQLCIPHER_LOAD_LOCK = Any()
+        private val SCHEMA_MIGRATION_LOCK = Any()
 
-        fun loadSqlCipher() {
+        private fun loadSqlCipher() {
             if (loaded) return
             synchronized(SQLCIPHER_LOAD_LOCK) {
                 if (!loaded) {

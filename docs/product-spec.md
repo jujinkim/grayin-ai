@@ -423,7 +423,7 @@ Allowed APIs include:
 
 ## Security and Backup
 
-MVP should document and prepare for:
+The security baseline includes:
 
 - SQLCipher
 - Android Keystore
@@ -444,17 +444,18 @@ Keep `allowBackup=false` and explicit legacy/Android 12+ cloud and device-transf
 
 ## Export and Import
 
-MVP should document the design.
+Grayin implements an explicit local-only, password-protected, authenticated export/import flow. Version 1 is replace-only and follows `docs/export-import.md`.
 
 Encrypted export may include:
 
 - source references
 - derived memory events
-- summaries
-- indexes or rebuildable index data
-- entity graph
+- citations
+- daily summaries
+- entity graph embedded in derived events
 - place clusters
-- connector metadata
+- app usage summaries
+- connector scan statuses
 
 Encrypted export must not include:
 
@@ -466,7 +467,9 @@ Encrypted export must not include:
 - raw calendar dumps
 - raw files
 
-Import should require re-consent for connectors on the new device.
+It also excludes local source pointers, connector permission/settings state, SQLCipher/Keystore material, indexing queue/runtime state, installed artifacts, prompts, evidence packs, and answers.
+
+Import validates and authenticates the complete graph before mutation, atomically replaces the seven SQLCipher sections, clears queue/runtime state, disables automatic indexing and online enrichment, revokes local connector access, and requires explicit re-consent for every connector before refresh or relink. Imported historical derived evidence remains available.
 
 ## Development Workflow
 

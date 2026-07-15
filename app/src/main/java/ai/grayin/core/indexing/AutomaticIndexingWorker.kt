@@ -84,6 +84,7 @@ class AutomaticIndexingWorker(
                     connectorRegistry = connectors.registry,
                     queue = store,
                     scanWriter = store,
+                    reconsentGate = store,
                     clock = clock,
                 )
                 val windowKey = AutomaticIndexingRunPlanning.windowKey(

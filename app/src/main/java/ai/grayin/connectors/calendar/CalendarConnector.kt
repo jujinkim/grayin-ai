@@ -81,7 +81,9 @@ class CalendarConnector(
     override suspend fun invoke(): ConnectorPermissionState {
         val permissionState = permissionState()
         if (permissionState.permissionGranted) {
-            prefs().edit().putBoolean(KEY_ENABLED, true).apply()
+            check(prefs().edit().putBoolean(KEY_ENABLED, true).commit()) {
+                "Could not persist calendar connector consent."
+            }
         }
         return permissionState
     }
@@ -122,7 +124,7 @@ class CalendarConnector(
     }
 
     override suspend fun revoke(): ConnectorRevokeResult {
-        prefs().edit().clear().apply()
+        check(prefs().edit().clear().commit()) { "Could not clear calendar connector consent." }
         return ConnectorRevokeResult(
             connectorId = CONNECTOR_ID,
             revokedAt = Instant.now(),

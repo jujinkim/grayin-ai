@@ -2,6 +2,8 @@
 
 Grayin AI is local-first, not offline-only. The app may use the network only when a feature requires a bounded external API or a fixed artifact download.
 
+Encrypted derived-memory export/import is deliberately outside the network boundary: its Android document contracts set `EXTRA_LOCAL_ONLY`, take no persistent backup URI grant, and provide no automatic transfer or sync path. A future remote/cloud DocumentsProvider or backup transport would be a new network capability and is forbidden without a separate policy change.
+
 ## Allowed Network Boundaries
 
 ### Typed External Enrichment

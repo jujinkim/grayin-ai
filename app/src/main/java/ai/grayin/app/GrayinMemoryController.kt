@@ -2,6 +2,7 @@ package ai.grayin.app
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import ai.grayin.connectors.AndroidConnectorRegistry
 import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFilesConnector
@@ -66,9 +67,21 @@ import ai.grayin.core.ocr.OcrLanguagePackInstallStore
 import ai.grayin.core.ocr.OcrLanguagePackStatus
 import ai.grayin.core.store.LocalMemoryStore
 import ai.grayin.core.store.SqlCipherLocalMemoryStore
+import ai.grayin.core.transfer.BackupFileFailureCode
+import ai.grayin.core.transfer.BackupFileResult
+import ai.grayin.core.transfer.EncryptedBackupStagingStore
+import ai.grayin.core.transfer.GrayinTransferEnvelopeCodec
+import ai.grayin.core.transfer.StagedBackupCiphertext
+import ai.grayin.core.transfer.TransferFailureCode
+import ai.grayin.core.transfer.TransferFailure
+import ai.grayin.core.transfer.TransferPayload
+import ai.grayin.core.transfer.TransferProducerMetadata
+import ai.grayin.core.transfer.TransferResult
 import java.time.Instant
 import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 data class ConnectorUiState(
@@ -117,6 +130,22 @@ data class OcrLanguagePackUiState(
     val canDelete: Boolean,
 )
 
+data class PreparedEncryptedExport(
+    val token: String,
+    val suggestedFileName: String,
+    val sizeBytes: Long,
+)
+
+data class StagedEncryptedImport(
+    val token: String,
+    val sizeBytes: Long,
+)
+
+data class ImportedBackupSummary(
+    val derivedMemoryEventCount: Int,
+    val connectorCount: Int,
+)
+
 data class GrayinSnapshot(
     val sourceRows: List<ConnectorUiState>,
     val indexingStatus: IndexingStatusUiState,
@@ -144,6 +173,7 @@ class GrayinMemoryController(
         connectorRegistry = connectorRegistry,
         queue = indexingQueue,
         scanWriter = connectorScanWriter,
+        reconsentGate = store,
     ),
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
     private val notificationAllowlist: NotificationAppAllowlist = NotificationAppAllowlist(context.applicationContext),
@@ -166,6 +196,11 @@ class GrayinMemoryController(
     ),
     private val fallbackAnswerGenerator: GroundedAnswerGenerator = TemplateGroundedAnswerGenerator(),
 ) {
+    private val appContext = context.applicationContext
+    private val transferEnvelopeCodec = GrayinTransferEnvelopeCodec()
+    private val backupStagingStore = EncryptedBackupStagingStore(appContext)
+    private val automaticIndexingScheduler = AutomaticIndexingScheduler(appContext)
+
     suspend fun snapshot(strings: GrayinStrings): GrayinSnapshot = withContext(Dispatchers.IO) {
         val stored = store.loadSnapshot()
         val sourceReferences = stored.sourceReferences
@@ -375,11 +410,13 @@ class GrayinMemoryController(
         if (connector !is InvokableMemoryConnector) return@withContext strings.connectorConnectionUnavailable
         val permissionState = connector.invoke()
         if (!permissionState.permissionGranted) return@withContext strings.sourcePermissionDenied
+        store.markConnectorReconsented(connectorId)
         strings.connectedConnector(strings.connectorName(connectorId, connector.metadata.displayName))
     }
 
     suspend fun rememberSelectedLocalFile(uri: Uri, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         if (localFilesConnector.rememberSelectedFile(uri)) {
+            store.markConnectorReconsented(LocalFileMemoryExtractor.CONNECTOR_ID)
             strings.selectedLocalFile
         } else {
             strings.unsupportedFileOrPermissionDenied
@@ -483,6 +520,193 @@ class GrayinMemoryController(
         strings.onlineEnrichmentSaved(enabled)
     }
 
+    suspend fun prepareEncryptedExport(
+        password: CharArray,
+        createdAt: Instant = Instant.now(),
+    ): TransferResult<PreparedEncryptedExport> = withContext(Dispatchers.IO) {
+        var ciphertext: ByteArray? = null
+        try {
+            when (
+                val encrypted = transferEnvelopeCodec.encrypt(
+                    payload = TransferPayload(
+                        createdAt = createdAt,
+                        producer = TransferProducerMetadata(
+                            applicationId = appContext.packageName,
+                            versionCode = installedVersionCode(),
+                            storeSchemaVersion = SqlCipherLocalMemoryStore.CURRENT_SCHEMA_VERSION,
+                        ),
+                        snapshot = store.loadSnapshot(),
+                    ),
+                    password = password,
+                )
+            ) {
+                is TransferResult.Success -> ciphertext = encrypted.value
+                is TransferResult.Failure -> return@withContext encrypted
+            }
+            when (val staged = backupStagingStore.stageCiphertext(checkNotNull(ciphertext))) {
+                is BackupFileResult.Success -> TransferResult.Success(
+                    PreparedEncryptedExport(
+                        token = staged.value.token,
+                        suggestedFileName = BackupDocumentContractPolicy.suggestedFileName(createdAt),
+                        sizeBytes = staged.value.sizeBytes,
+                    ),
+                )
+
+                is BackupFileResult.Failed -> transferFileFailure(staged.code, importing = false)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            TransferResult.Failure(TransferFailure(TransferFailureCode.SOURCE_IO_FAILED))
+        } finally {
+            ciphertext?.fill(0)
+            password.fill('\u0000')
+        }
+    }
+
+    suspend fun writePreparedEncryptedExport(
+        token: String,
+        destination: Uri,
+    ): TransferResult<Long> = withContext(Dispatchers.IO) {
+        try {
+            when (val written = backupStagingStore.writeToDocument(token, destination)) {
+                is BackupFileResult.Success -> TransferResult.Success(written.value)
+                is BackupFileResult.Failed -> transferFileFailure(written.code, importing = false)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            TransferResult.Failure(TransferFailure(TransferFailureCode.DESTINATION_IO_FAILED))
+        } finally {
+            withContext(NonCancellable) { backupStagingStore.discard(token) }
+        }
+    }
+
+    suspend fun stageEncryptedImport(source: Uri): TransferResult<StagedEncryptedImport> =
+        withContext(Dispatchers.IO) {
+            when (val staged = backupStagingStore.stageFromDocument(source)) {
+                is BackupFileResult.Success -> TransferResult.Success(
+                    StagedEncryptedImport(
+                        token = staged.value.token,
+                        sizeBytes = staged.value.sizeBytes,
+                    ),
+                )
+
+                is BackupFileResult.Failed -> transferFileFailure(staged.code, importing = true)
+            }
+        }
+
+    suspend fun importStagedEncryptedBackup(
+        token: String,
+        password: CharArray,
+    ): TransferResult<ImportedBackupSummary> = withContext(Dispatchers.IO) {
+        val ciphertext = when (val staged = backupStagingStore.readCiphertext(token)) {
+            is BackupFileResult.Success -> staged.value
+            is BackupFileResult.Failed -> {
+                password.fill('\u0000')
+                withContext(NonCancellable) { backupStagingStore.discard(token) }
+                return@withContext transferFileFailure(staged.code, importing = true)
+            }
+        }
+        val payload = try {
+            when (val decrypted = transferEnvelopeCodec.decrypt(ciphertext, password)) {
+                is TransferResult.Success -> decrypted.value
+                is TransferResult.Failure -> {
+                    if (!BackupTransferPolicy.retainImportStageAfter(decrypted.failure.code)) {
+                        backupStagingStore.discard(token)
+                    }
+                    return@withContext decrypted
+                }
+            }
+        } finally {
+            ciphertext.fill(0)
+            password.fill('\u0000')
+        }
+
+        try {
+            automaticIndexingScheduler.disableForImport()
+            onlineEnrichmentPreferences.setEnabled(false)
+            resetConnectorConsentForImport()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return@withContext TransferResult.Failure(
+                TransferFailure(TransferFailureCode.CONSENT_RESET_FAILED),
+            )
+        }
+
+        val trustedConnectorIds = connectorRegistry.all
+            .mapTo(linkedSetOf()) { connector -> connector.metadata.connectorId }
+        val imported = try {
+            store.replaceDerivedDataFromImport(
+                snapshot = payload.snapshot,
+                trustedConnectorIds = trustedConnectorIds,
+                importedAt = Instant.now(),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return@withContext TransferResult.Failure(
+                TransferFailure(TransferFailureCode.STORE_TRANSACTION_FAILED),
+            )
+        }
+        withContext(NonCancellable) { backupStagingStore.discard(token) }
+        TransferResult.Success(
+            ImportedBackupSummary(
+                derivedMemoryEventCount = imported.derivedMemoryEventCount,
+                connectorCount = imported.connectorsRequiringReconsent.size,
+            ),
+        )
+    }
+
+    suspend fun discardEncryptedBackupStage(token: String) {
+        backupStagingStore.discard(token)
+    }
+
+    suspend fun cleanupStaleEncryptedBackupStages() {
+        backupStagingStore.cleanupStale()
+    }
+
+    private suspend fun resetConnectorConsentForImport() {
+        connectorRegistry.all
+            .sortedBy { connector ->
+                if (connector.metadata.connectorId == NotificationConnector.CONNECTOR_ID) 0 else 1
+            }
+            .forEach { connector -> connector.revoke() }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun installedVersionCode(): Long {
+        val packageInfo = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            packageInfo.versionCode.toLong()
+        }
+    }
+
+    private fun <T> transferFileFailure(
+        code: BackupFileFailureCode,
+        importing: Boolean,
+    ): TransferResult<T> {
+        val transferCode = when (code) {
+            BackupFileFailureCode.CIPHERTEXT_TOO_LARGE -> TransferFailureCode.TOO_LARGE
+            BackupFileFailureCode.EMPTY_CIPHERTEXT,
+            BackupFileFailureCode.CIPHERTEXT_SIZE_MISMATCH,
+            BackupFileFailureCode.INVALID_CIPHERTEXT_FORMAT,
+            -> TransferFailureCode.INVALID_FORMAT
+
+            BackupFileFailureCode.UNSUPPORTED_CIPHERTEXT_VERSION -> TransferFailureCode.UNSUPPORTED_VERSION
+
+            else -> if (importing) {
+                TransferFailureCode.SOURCE_IO_FAILED
+            } else {
+                TransferFailureCode.DESTINATION_IO_FAILED
+            }
+        }
+        return TransferResult.Failure(TransferFailure(transferCode))
+    }
+
     suspend fun deleteLocalFileData(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val deleteResult = store.deleteConnectorData(LocalFileMemoryExtractor.CONNECTOR_ID)
         localFilesConnector.deleteDerivedData(
@@ -506,14 +730,14 @@ class GrayinMemoryController(
 
     suspend fun revokeLocalFiles(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val revokeResult = localFilesConnector.revoke()
-        store.deleteConnectorData(revokeResult.connectorId)
+        store.deleteConnectorData(revokeResult.connectorId, requireReconsent = true)
         strings.revokedLocalFiles
     }
 
     suspend fun revokeConnector(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val connector = connectorFor(connectorId)
         val revokeResult = connector.revoke()
-        store.deleteConnectorData(revokeResult.connectorId)
+        store.deleteConnectorData(revokeResult.connectorId, requireReconsent = true)
         if (connectorId == LocalFileMemoryExtractor.CONNECTOR_ID) {
             strings.revokedLocalFiles
         } else {
@@ -700,6 +924,7 @@ class GrayinMemoryController(
         val connectorId = connector.metadata.connectorId
         val isLocalFiles = connectorId == LocalFileMemoryExtractor.CONNECTOR_ID
         val connectorName = strings.connectorName(connectorId, connector.metadata.displayName)
+        val reconsentRequired = store.isConnectorReconsentRequired(connectorId)
         return ConnectorUiState(
             id = connectorId,
             name = connectorName,
@@ -708,13 +933,15 @@ class GrayinMemoryController(
                 permissionState = permissionState,
                 hasStoredSources = sourceReferences.any { source -> source.connectorId == connectorId },
                 scanStatus = scanStatus,
+                reconsentRequired = reconsentRequired,
                 strings = strings,
             ),
             sensitivity = sensitivityLabel(connector.metadata.sensitivity, strings),
-            canInvoke = !isLocalFiles && permissionState.canRequestPermission && !state.enabled,
+            canInvoke = !isLocalFiles && permissionState.canRequestPermission && (!state.enabled || reconsentRequired),
             requiredPermissions = permissionState.requiredPlatformPermissions,
             canAdd = isLocalFiles,
-            canIndex = state.enabled && connector.metadata.indexingMode != ConnectorIndexingMode.EVENT_DRIVEN,
+            canIndex = state.enabled && !reconsentRequired &&
+                connector.metadata.indexingMode != ConnectorIndexingMode.EVENT_DRIVEN,
             canRevoke = state.enabled,
             canDelete = sourceReferences.any { it.connectorId == connectorId },
             notificationAllowedPackages = if (connectorId == NotificationConnector.CONNECTOR_ID) {
@@ -735,9 +962,11 @@ class GrayinMemoryController(
         permissionState: ConnectorPermissionState,
         hasStoredSources: Boolean,
         scanStatus: ConnectorScanStatus?,
+        reconsentRequired: Boolean,
         strings: GrayinStrings,
     ): String {
         return when {
+            reconsentRequired -> strings.reconnectionRequired
             hasStoredSources &&
                 (scanStatus?.processingState == ProcessingState.COMPLETED ||
                     state.processingState == ProcessingState.COMPLETED) -> strings.indexed

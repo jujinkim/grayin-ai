@@ -8,7 +8,9 @@ class OnlineEnrichmentPreferences(context: Context) {
     fun isEnabled(): Boolean = prefs.getBoolean(KEY_ENABLED, false)
 
     fun setEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_ENABLED, enabled).apply()
+        check(prefs.edit().putBoolean(KEY_ENABLED, enabled).commit()) {
+            "Could not persist online enrichment consent."
+        }
     }
 
     private companion object {

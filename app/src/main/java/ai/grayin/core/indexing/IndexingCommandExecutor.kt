@@ -5,6 +5,7 @@ import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.MemoryConnector
 import ai.grayin.core.connector.MemoryConnectorRegistry
+import ai.grayin.core.store.ConnectorReconsentGate
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -35,6 +36,7 @@ class IndexingCommandExecutor(
     private val connectorRegistry: MemoryConnectorRegistry,
     private val queue: IndexingQueue,
     private val scanWriter: ConnectorScanWriter,
+    private val reconsentGate: ConnectorReconsentGate,
     private val clock: Clock = Clock.systemUTC(),
     private val taskIdFactory: (connectorId: String) -> String = { connectorId ->
         "indexing:$connectorId:${UUID.randomUUID()}"
@@ -113,6 +115,17 @@ class IndexingCommandExecutor(
             ?: return fail(item, IndexingFailureCode.CONNECTOR_NOT_FOUND)
         if (!supportsTrigger(connector, trigger)) {
             return skip(item, IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE)
+        }
+        val reconsentRequired = try {
+            reconsentGate.isConnectorReconsentRequired(item.connectorId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return fail(item, IndexingFailureCode.STORE_WRITE_FAILED)
+        }
+        currentCoroutineContext().ensureActive()
+        if (reconsentRequired) {
+            return skip(item, IndexingSkipReason.RECONSENT_REQUIRED)
         }
 
         val ready = try {

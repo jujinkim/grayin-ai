@@ -60,6 +60,8 @@ Grayin AI may store:
 
 All derived data is still sensitive and remains encrypted in the SQLCipher store.
 
+Explicit encrypted export may copy only the validated derived-memory snapshot described in `docs/export-import.md`. It clears every local source pointer before encoding and excludes originals, connector grants/settings, key material, and runtime state. Password-derived AES-GCM ciphertext may be staged under `noBackupFilesDir`; plaintext staging is forbidden. This derived-data exception does not change the rule that raw originals are never exported.
+
 ## Engineering Rule
 
 There must be no store API that accepts raw content.

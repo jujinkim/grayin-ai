@@ -4,7 +4,9 @@ import android.content.ContentValues
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import ai.grayin.connectors.notification.NotificationConsentCoordinator
 import ai.grayin.core.connector.ConnectorScanResult
+import ai.grayin.core.connector.ConnectorScanStatus
 import ai.grayin.core.indexing.AutomaticIndexingOutcome
 import ai.grayin.core.indexing.AutomaticIndexingRuntimeStatus
 import ai.grayin.core.indexing.ConnectorScanCommitResult
@@ -13,17 +15,24 @@ import ai.grayin.core.indexing.IndexingQueueState
 import ai.grayin.core.indexing.IndexingSkipReason
 import ai.grayin.core.indexing.IndexingTask
 import ai.grayin.core.indexing.IndexingTrigger
+import ai.grayin.core.model.AppUsageCategory
+import ai.grayin.core.model.AppUsageSummary
+import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.ConnectorScanIssueCode
+import ai.grayin.core.model.DailyMemorySummary
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.DerivedMemoryEventKind
 import ai.grayin.core.model.MemoryCapability
+import ai.grayin.core.model.MemoryCitation
 import ai.grayin.core.model.MissingSource
+import ai.grayin.core.model.PlaceCluster
 import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.model.SourceAvailability
 import ai.grayin.core.model.SourceKind
 import ai.grayin.core.model.SourceReference
 import java.time.Clock
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
@@ -766,6 +775,280 @@ class SqlCipherIndexingQueueInstrumentedTest {
     }
 
     @Test
+    fun importReplacesEveryDerivedSectionAndFencesDeviceRuntimeState() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T06:20:00Z")
+        val importedAt = requestedAt.plusSeconds(10)
+        val memoryStore = store(databaseName, Clock.fixed(importedAt, ZoneOffset.UTC))
+        memoryStore.saveConnectorScan(scanResult("destination-old"))
+        val generation = enableAutomatic(memoryStore, requestedAt.minusSeconds(1))
+        memoryStore.saveAutomaticIndexingRuntime(
+            status = AutomaticIndexingRuntimeStatus(
+                lastCheckedAt = requestedAt,
+                lastCompletedAt = requestedAt,
+                lastOutcome = AutomaticIndexingOutcome.COMPLETED,
+                lastIndexedEventCount = 1,
+            ),
+            expectedGeneration = generation,
+        )
+        memoryStore.enqueue(
+            listOf(
+                manualTask("import-running", requestedAt),
+                manualTask("import-pending", requestedAt.plusSeconds(1)),
+            ),
+        )
+        val claimed = checkNotNull(
+            memoryStore.claimNextAtomically(
+                leaseOwner = "pre-import-worker",
+                claimedAt = requestedAt.plusSeconds(2),
+                leaseUntil = requestedAt.plusSeconds(60),
+                trigger = IndexingTrigger.MANUAL,
+            ),
+        )
+        val imported = completeImportedSnapshot("imported", connectorId = TEST_CONNECTOR_ID)
+        val trustedConnectorIds = setOf(TEST_CONNECTOR_ID, "other.connector")
+
+        val result = memoryStore.replaceDerivedDataFromImport(
+            snapshot = imported,
+            trustedConnectorIds = trustedConnectorIds,
+            importedAt = importedAt,
+        )
+
+        assertEquals(1, result.sourceReferenceCount)
+        assertEquals(1, result.derivedMemoryEventCount)
+        assertEquals(1, result.citationCount)
+        assertEquals(1, result.dailySummaryCount)
+        assertEquals(1, result.placeClusterCount)
+        assertEquals(1, result.appUsageSummaryCount)
+        assertEquals(1, result.connectorScanStatusCount)
+        assertEquals(trustedConnectorIds, result.connectorsRequiringReconsent)
+        assertEquals(importedAt, result.completedAt)
+        val stored = memoryStore.loadSnapshot()
+        assertEquals(imported.sourceReferences, stored.sourceReferences)
+        assertEquals(imported.derivedMemoryEvents, stored.derivedMemoryEvents)
+        assertEquals(imported.citations, stored.citations)
+        assertEquals(imported.dailySummaries, stored.dailySummaries)
+        assertEquals(imported.placeClusters, stored.placeClusters)
+        assertEquals(imported.appUsageSummaries, stored.appUsageSummaries)
+        assertEquals(imported.connectorScanStatuses, stored.connectorScanStatuses)
+        assertFalse(stored.derivedMemoryEvents.any { it.id.contains("destination-old") })
+
+        assertTrue(memoryStore.snapshot().items.isEmpty())
+        assertEquals(AutomaticIndexingRuntimeStatus(), memoryStore.loadAutomaticIndexingRuntime())
+        val control = memoryStore.loadAutomaticIndexingControl()
+        assertFalse(control.enabled)
+        assertEquals(generation + 1L, control.generation)
+        assertTrue(memoryStore.isConnectorReconsentRequired(TEST_CONNECTOR_ID))
+        assertTrue(memoryStore.isConnectorReconsentRequired("other.connector"))
+        assertTrue(store(databaseName).isConnectorReconsentRequired(TEST_CONNECTOR_ID))
+
+        val staleCommit = memoryStore.commitClaimedConnectorScan(
+            scanResult = scanResult("stale-after-import"),
+            itemId = claimed.id,
+            leaseOwner = checkNotNull(claimed.leaseOwner),
+            attemptCount = claimed.attemptCount,
+        )
+        assertEquals(ConnectorScanCommitResult.LeaseLost, staleCommit)
+        expectIllegalState { memoryStore.saveConnectorScan(scanResult("blocked")) }
+
+        assertTrue(memoryStore.markConnectorReconsented(TEST_CONNECTOR_ID))
+        assertFalse(memoryStore.markConnectorReconsented(TEST_CONNECTOR_ID))
+        assertFalse(memoryStore.isConnectorReconsentRequired(TEST_CONNECTOR_ID))
+        assertTrue(memoryStore.isConnectorReconsentRequired("other.connector"))
+        memoryStore.saveConnectorScan(scanResult("after-reconsent"))
+        assertTrue(memoryStore.loadDerivedMemoryEvents().any { it.id.endsWith(":after-reconsent") })
+    }
+
+    @Test
+    fun invalidImportRollsBackBeforeReplacingDataOrRuntimeState() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T06:25:00Z")
+        val memoryStore = store(databaseName)
+        memoryStore.saveConnectorScan(scanResult("preserved"))
+        memoryStore.enqueue(listOf(manualTask("preserved-task", requestedAt)))
+        val invalid = completeImportedSnapshot("invalid").let { snapshot ->
+            snapshot.copy(
+                dailySummaries = snapshot.dailySummaries.map { summary ->
+                    summary.copy(derivedMemoryEventIds = listOf("event:$TEST_CONNECTOR_ID:missing"))
+                },
+            )
+        }
+
+        expectIllegalArgument {
+            memoryStore.replaceDerivedDataFromImport(
+                snapshot = invalid,
+                trustedConnectorIds = setOf(TEST_CONNECTOR_ID),
+                importedAt = requestedAt.plusSeconds(1),
+            )
+        }
+
+        assertEquals(listOf("event:$TEST_CONNECTOR_ID:preserved"), memoryStore.loadDerivedMemoryEvents().map { it.id })
+        assertEquals(listOf("preserved-task"), memoryStore.snapshot().items.map { it.id })
+        assertFalse(memoryStore.isConnectorReconsentRequired(TEST_CONNECTOR_ID))
+    }
+
+    @Test
+    fun importRejectsDeviceLocalPointersWithoutMutatingDestination() = runBlocking {
+        val databaseName = newDatabaseName()
+        val memoryStore = store(databaseName)
+        memoryStore.saveConnectorScan(scanResult("pointer-preserved"))
+        val invalid = completeImportedSnapshot("pointer-invalid").let { snapshot ->
+            snapshot.copy(
+                sourceReferences = snapshot.sourceReferences.map { source ->
+                    source.copy(localPointer = "content://provider/device-only/42")
+                },
+            )
+        }
+
+        expectIllegalArgument {
+            memoryStore.replaceDerivedDataFromImport(
+                snapshot = invalid,
+                trustedConnectorIds = setOf(TEST_CONNECTOR_ID),
+                importedAt = Instant.parse("2026-07-15T06:27:00Z"),
+            )
+        }
+
+        assertEquals(
+            listOf("event:$TEST_CONNECTOR_ID:pointer-preserved"),
+            memoryStore.loadDerivedMemoryEvents().map { it.id },
+        )
+        assertFalse(memoryStore.isConnectorReconsentRequired(TEST_CONNECTOR_ID))
+    }
+
+    @Test
+    fun importRejectsOversizedSectionsBeforeMutatingDestination() = runBlocking {
+        val databaseName = newDatabaseName()
+        val memoryStore = store(databaseName)
+        memoryStore.saveConnectorScan(scanResult("bounds-preserved"))
+        val oversized = completeImportedSnapshot("bounds-invalid").copy(
+            sourceReferences = List(50_001) { index ->
+                SourceReference(
+                    id = "source:$TEST_CONNECTOR_ID:oversized-$index",
+                    connectorId = TEST_CONNECTOR_ID,
+                    sourceKind = SourceKind.LOCATION,
+                )
+            },
+        )
+
+        expectIllegalArgument {
+            memoryStore.replaceDerivedDataFromImport(
+                snapshot = oversized,
+                trustedConnectorIds = setOf(TEST_CONNECTOR_ID),
+                importedAt = Instant.parse("2026-07-15T06:28:00Z"),
+            )
+        }
+
+        assertEquals(
+            listOf("event:$TEST_CONNECTOR_ID:bounds-preserved"),
+            memoryStore.loadDerivedMemoryEvents().map { it.id },
+        )
+        assertFalse(memoryStore.isConnectorReconsentRequired(TEST_CONNECTOR_ID))
+    }
+
+    @Test
+    fun revokeDeleteSetsBarrierInTheSameTransaction() = runBlocking {
+        val databaseName = newDatabaseName()
+        val memoryStore = store(databaseName)
+        memoryStore.saveConnectorScan(scanResult("before-revoke"))
+
+        memoryStore.deleteConnectorData(TEST_CONNECTOR_ID, requireReconsent = true)
+
+        assertTrue(memoryStore.loadDerivedMemoryEvents().isEmpty())
+        assertTrue(memoryStore.isConnectorReconsentRequired(TEST_CONNECTOR_ID))
+        expectIllegalState { memoryStore.saveConnectorScan(scanResult("blocked-after-revoke")) }
+        assertTrue(memoryStore.markConnectorReconsented(TEST_CONNECTOR_ID))
+        memoryStore.saveConnectorScan(scanResult("after-revoke-reconsent"))
+        assertEquals(
+            listOf("event:$TEST_CONNECTOR_ID:after-revoke-reconsent"),
+            memoryStore.loadDerivedMemoryEvents().map { it.id },
+        )
+    }
+
+    @Test
+    fun notificationConsentLockSerializesInFlightWriteBeforeRevokeBarrier() = runBlocking {
+        val databaseName = newDatabaseName()
+        val memoryStore = store(databaseName)
+        val connectorId = "notification"
+        val writerEntered = CompletableDeferred<Unit>()
+        val releaseWriter = CompletableDeferred<Unit>()
+        val revokeAttempted = CompletableDeferred<Unit>()
+
+        val writer = async(Dispatchers.IO) {
+            NotificationConsentCoordinator.withExclusiveAccess {
+                writerEntered.complete(Unit)
+                releaseWriter.await()
+                memoryStore.saveConnectorScan(scanResult("notification-before-revoke", connectorId))
+            }
+        }
+        writerEntered.await()
+        val revoke = async(Dispatchers.IO) {
+            revokeAttempted.complete(Unit)
+            NotificationConsentCoordinator.withExclusiveAccess {
+                memoryStore.deleteConnectorData(connectorId, requireReconsent = true)
+            }
+        }
+        revokeAttempted.await()
+        assertFalse(revoke.isCompleted)
+
+        releaseWriter.complete(Unit)
+        writer.await()
+        revoke.await()
+
+        assertTrue(memoryStore.loadDerivedMemoryEvents().isEmpty())
+        assertTrue(memoryStore.isConnectorReconsentRequired(connectorId))
+        var readOriginal = false
+        NotificationConsentCoordinator.withExclusiveAccess {
+            if (!memoryStore.isConnectorReconsentRequired(connectorId)) {
+                readOriginal = true
+                memoryStore.saveConnectorScan(scanResult("notification-stale", connectorId))
+            }
+        }
+        assertFalse(readOriginal)
+        assertTrue(memoryStore.loadDerivedMemoryEvents().isEmpty())
+    }
+
+    @Test
+    fun reconsentBarrierRejectsAnOtherwiseLiveClaimedCommit() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T06:30:00Z")
+        val memoryStore = store(
+            databaseName,
+            Clock.fixed(requestedAt.plusSeconds(5), ZoneOffset.UTC),
+        )
+        memoryStore.replaceDerivedDataFromImport(
+            snapshot = completeImportedSnapshot("barrier-baseline"),
+            trustedConnectorIds = setOf(TEST_CONNECTOR_ID),
+            importedAt = requestedAt,
+        )
+        memoryStore.enqueue(listOf(manualTask("barrier-live-claim", requestedAt.plusSeconds(1))))
+        val claimed = checkNotNull(
+            memoryStore.claimNextAtomically(
+                leaseOwner = "barrier-worker",
+                claimedAt = requestedAt.plusSeconds(2),
+                leaseUntil = requestedAt.plusSeconds(60),
+                trigger = IndexingTrigger.MANUAL,
+            ),
+        )
+
+        val result = memoryStore.commitClaimedConnectorScan(
+            scanResult = scanResult("must-not-commit"),
+            itemId = claimed.id,
+            leaseOwner = checkNotNull(claimed.leaseOwner),
+            attemptCount = claimed.attemptCount,
+        )
+
+        assertEquals(ConnectorScanCommitResult.LeaseLost, result)
+        assertTrue(memoryStore.isConnectorReconsentRequired(TEST_CONNECTOR_ID))
+        assertEquals(
+            listOf("event:$TEST_CONNECTOR_ID:barrier-baseline"),
+            memoryStore.loadDerivedMemoryEvents().map { it.id },
+        )
+        val unchangedClaim = checkNotNull(memoryStore.snapshot().items.single())
+        assertEquals(IndexingQueueState.RUNNING, unchangedClaim.state)
+        assertEquals("barrier-worker", unchangedClaim.leaseOwner)
+    }
+
+    @Test
     fun v5MigrationPurgesLegacyLocalFileRawIdentityOnly() = runBlocking {
         val databaseName = newDatabaseName()
         val memoryStore = store(databaseName)
@@ -859,7 +1142,40 @@ class SqlCipherIndexingQueueInstrumentedTest {
                 assertTrue(cursor.moveToFirst())
                 cursor.getInt(0)
             }
-            assertEquals(6, version)
+            assertEquals(SqlCipherLocalMemoryStore.CURRENT_SCHEMA_VERSION, version)
+        }
+        assertFalse(store(databaseName).isConnectorReconsentRequired("other.connector"))
+    }
+
+    @Test
+    fun v6MigrationCreatesEmptyReconsentTableWithoutChangingDerivedData() = runBlocking {
+        val databaseName = newDatabaseName()
+        val memoryStore = store(databaseName)
+        memoryStore.saveConnectorScan(scanResult("v6-preserved"))
+        val databasePath = context.getDatabasePath(databaseName).absolutePath
+        SQLiteDatabase.openOrCreateDatabase(databasePath, TEST_PASSPHRASE, null, null).use { database ->
+            database.execSQL("DROP TABLE connector_reconsent")
+            database.execSQL("PRAGMA user_version = 6")
+        }
+
+        val migrated = store(databaseName)
+
+        assertEquals(
+            listOf("event:$TEST_CONNECTOR_ID:v6-preserved"),
+            migrated.loadDerivedMemoryEvents().map { it.id },
+        )
+        assertFalse(migrated.isConnectorReconsentRequired(TEST_CONNECTOR_ID))
+        SQLiteDatabase.openOrCreateDatabase(databasePath, TEST_PASSPHRASE, null, null).use { database ->
+            val version = database.rawQuery("PRAGMA user_version", null).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                cursor.getInt(0)
+            }
+            assertEquals(SqlCipherLocalMemoryStore.CURRENT_SCHEMA_VERSION, version)
+            val tableExists = database.rawQuery(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'connector_reconsent'",
+                null,
+            ).use { cursor -> cursor.moveToFirst() }
+            assertTrue(tableExists)
         }
     }
 
@@ -925,6 +1241,97 @@ class SqlCipherIndexingQueueInstrumentedTest {
             assertFalse(encodedStatuses.any { it.contains("RAW_SENTINEL") })
             assertTrue(encodedStatuses.all { it.contains("connector-scan-issue-v1") })
         }
+    }
+
+    private fun completeImportedSnapshot(
+        suffix: String,
+        connectorId: String = TEST_CONNECTOR_ID,
+    ): LocalMemorySnapshot {
+        val observedAt = Instant.parse("2026-07-14T12:00:00Z")
+        val sourceId = "source:$connectorId:$suffix"
+        val eventId = "event:$connectorId:$suffix"
+        val citationId = "citation:$connectorId:$suffix"
+        val placeClusterId = "place-cluster:$connectorId:$suffix"
+        val appUsageId = "app-usage:$connectorId:$suffix"
+        return LocalMemorySnapshot(
+            sourceReferences = listOf(
+                SourceReference(
+                    id = sourceId,
+                    connectorId = connectorId,
+                    sourceKind = SourceKind.LOCATION,
+                    externalIdHash = "hash-$suffix",
+                    observedAt = observedAt,
+                    modifiedAt = observedAt,
+                ),
+            ),
+            derivedMemoryEvents = listOf(
+                DerivedMemoryEvent(
+                    id = eventId,
+                    kind = DerivedMemoryEventKind.PLACE_VISIT,
+                    sourceReferenceIds = listOf(sourceId),
+                    summary = "Imported derived event",
+                    startedAt = observedAt,
+                    keywords = listOf("imported"),
+                    labels = listOf("location"),
+                    confidence = ConfidenceLevel.MEDIUM,
+                    citationIds = listOf(citationId),
+                    createdAt = observedAt,
+                ),
+            ),
+            citations = listOf(
+                MemoryCitation(
+                    id = citationId,
+                    sourceReferenceId = sourceId,
+                    derivedMemoryEventId = eventId,
+                    label = "Imported location",
+                    observedAt = observedAt,
+                    confidence = ConfidenceLevel.MEDIUM,
+                ),
+            ),
+            dailySummaries = listOf(
+                DailyMemorySummary(
+                    id = "daily:$suffix",
+                    date = LocalDate.parse("2026-07-14"),
+                    summary = "Imported daily summary",
+                    derivedMemoryEventIds = listOf(eventId),
+                    placeClusterIds = listOf(placeClusterId),
+                    appUsageSummaryIds = listOf(appUsageId),
+                    confidence = ConfidenceLevel.MEDIUM,
+                ),
+            ),
+            placeClusters = listOf(
+                PlaceCluster(
+                    id = placeClusterId,
+                    regionLabel = "Imported region",
+                    centroidLatitude = 37.5,
+                    centroidLongitude = 127.0,
+                    firstSeenAt = observedAt,
+                    lastSeenAt = observedAt,
+                    visitCount = 1,
+                    sourceReferenceIds = listOf(sourceId),
+                    confidence = ConfidenceLevel.MEDIUM,
+                ),
+            ),
+            appUsageSummaries = listOf(
+                AppUsageSummary(
+                    id = appUsageId,
+                    sourceReferenceIds = listOf(sourceId),
+                    date = LocalDate.parse("2026-07-14"),
+                    packageName = "ai.grayin.imported",
+                    category = AppUsageCategory.OTHER,
+                    totalDurationMinutes = 15,
+                    confidence = ConfidenceLevel.MEDIUM,
+                ),
+            ),
+            connectorScanStatuses = listOf(
+                ConnectorScanStatus(
+                    connectorId = connectorId,
+                    processingState = ProcessingState.COMPLETED,
+                    missingSources = emptyList(),
+                    scannedAt = observedAt,
+                ),
+            ),
+        )
     }
 
     private fun manualTask(
@@ -1020,6 +1427,14 @@ class SqlCipherIndexingQueueInstrumentedTest {
             block()
             fail("Expected an IllegalArgumentException.")
         } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    private suspend fun expectIllegalState(block: suspend () -> Unit) {
+        try {
+            block()
+            fail("Expected an IllegalStateException.")
+        } catch (_: IllegalStateException) {
         }
     }
 

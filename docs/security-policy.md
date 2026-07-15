@@ -1,6 +1,6 @@
 # Security and Backup Policy
 
-Grayin AI uses SQLCipher persistence with an Android Keystore-protected passphrase. Encrypted export/import remains under implementation.
+Grayin AI uses SQLCipher persistence with an Android Keystore-protected passphrase and an explicit password-protected local export/import path.
 
 ## SQLCipher
 
@@ -18,13 +18,16 @@ Grayin AI uses SQLCipher persistence with an Android Keystore-protected passphra
 - Serialize first-time passphrase creation and persist the encrypted passphrase synchronously before returning it to a database opener.
 - Keep the Local Files source-identity HMAC-SHA256 key non-exportable in Android Keystore. Domain-separate and length-prefix document and PDF-page inputs and persist the full 64-character lowercase result only.
 
-## Export and Import Plan
+## Export and Import
 
-- Export must be encrypted.
-- Export must include only allowed derived data and source references.
-- Export must exclude source originals.
-- Import on a new device must require connector re-consent before any connector can refresh or re-link sources.
-- MVP export/import design must not add cloud sync, network transfer, account storage, or server backup.
+- Export uses PBKDF2-HMAC-SHA256 and AES-256-GCM with a versioned, authenticated header.
+- Export includes exactly the seven validated derived-memory snapshot sections and detaches every local source pointer.
+- Export excludes originals, database/key material, consent/settings, queue/runtime state, artifacts, prompts, answers, and evidence packs.
+- Import authenticates and validates the complete payload before mutation, then performs a replace-only SQLCipher transaction.
+- Import durably disables automatic indexing and online enrichment, revokes connector app-level consent, releases Local Files grants, and installs an authoritative per-connector re-consent barrier.
+- Local-only Android document contracts and ciphertext-only `noBackupFilesDir` staging do not add cloud sync, network transfer, account storage, or server backup.
+
+The exact envelope, limits, validation graph, failure codes, and UI sequence are defined in `docs/export-import.md`.
 
 ## Network Permission
 
@@ -49,7 +52,7 @@ Provider endpoints and artifact URLs must be fixed by trusted provider or catalo
 
 The manifest sets `android:allowBackup="false"` and references explicit legacy full-backup and Android 12+ data-extraction rules. Both rule sets exclude every credential-encrypted and device-encrypted app domain from cloud backup and device-to-device transfer.
 
-This keeps SQLCipher, preferences, HMAC selection markers, installed artifacts, and any migration residue out of Android backup until a fully documented encrypted export/import path exists. Export/import remains a separate user-initiated encrypted envelope and does not enable platform backup.
+This keeps SQLCipher, preferences, HMAC selection markers, installed artifacts, and migration residue out of Android backup. Export/import remains a separate user-initiated encrypted envelope and does not enable platform backup.
 
 ## SDK Exclusions
 

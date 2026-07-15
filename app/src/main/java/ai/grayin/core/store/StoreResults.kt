@@ -37,6 +37,18 @@ data class LocalMemorySnapshot(
     val connectorScanStatuses: List<ConnectorScanStatus>,
 )
 
+data class StoreImportResult(
+    val sourceReferenceCount: Int,
+    val derivedMemoryEventCount: Int,
+    val citationCount: Int,
+    val dailySummaryCount: Int,
+    val placeClusterCount: Int,
+    val appUsageSummaryCount: Int,
+    val connectorScanStatusCount: Int,
+    val connectorsRequiringReconsent: Set<String>,
+    val completedAt: Instant,
+)
+
 data class IndexInvalidationRequest(
     val connectorId: String,
     val sourceReferenceIds: List<String> = emptyList(),

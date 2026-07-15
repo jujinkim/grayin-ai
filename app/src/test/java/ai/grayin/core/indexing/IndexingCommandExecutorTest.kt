@@ -19,6 +19,7 @@ import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceAvailability
 import ai.grayin.core.model.SourceKind
 import ai.grayin.core.model.SourceReference
+import ai.grayin.core.store.ConnectorReconsentGate
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -237,6 +238,29 @@ class IndexingCommandExecutorTest {
     }
 
     @Test
+    fun `connector reconsent is checked before connector state or source reads`() = runBlocking {
+        val operations = mutableListOf<String>()
+        val connector = FakeConnector(
+            id = "photos",
+            mode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
+            operations = operations,
+        )
+        val queue = RecordingQueue(operations)
+        val executor = executor(
+            connectors = listOf(connector),
+            queue = queue,
+            reconsentRequired = setOf(connector.id),
+        )
+        executor.enqueue(IndexConnector(connector.id), IndexingTrigger.MANUAL)
+
+        val result = executor.executeNext(IndexingTrigger.MANUAL, "manual-ui")
+
+        assertEquals(IndexingSkipReason.RECONSENT_REQUIRED, result?.skipReason)
+        assertEquals(listOf("recover", "claim:MANUAL", "reconsent", "skip"), operations)
+        assertNull(connector.lastScope)
+    }
+
+    @Test
     fun `scan and store exceptions use stable failure codes`() = runBlocking {
         val scanFailure = FakeConnector(
             id = "scan-failure",
@@ -417,6 +441,7 @@ class IndexingCommandExecutorTest {
         writer: ConnectorScanWriter? = null,
         taskIdFactory: (String) -> String = { connectorId -> "task:$connectorId" },
         connectorOperationTimeout: Duration = Duration.ofMinutes(4),
+        reconsentRequired: Set<String> = emptySet(),
     ): IndexingCommandExecutor {
         return IndexingCommandExecutor(
             connectorRegistry = MemoryConnectorRegistry(connectors),
@@ -441,6 +466,14 @@ class IndexingCommandExecutorTest {
                         )
                     },
                 )
+            },
+            reconsentGate = object : ConnectorReconsentGate {
+                override suspend fun isConnectorReconsentRequired(connectorId: String): Boolean {
+                    if (reconsentRequired.isNotEmpty()) queue.operations += "reconsent"
+                    return connectorId in reconsentRequired
+                }
+
+                override suspend fun markConnectorReconsented(connectorId: String): Boolean = false
             },
             clock = Clock.fixed(NOW, ZoneOffset.UTC),
             taskIdFactory = taskIdFactory,
@@ -527,7 +560,7 @@ class IndexingCommandExecutorTest {
     }
 
     private class RecordingQueue(
-        private val operations: MutableList<String> = mutableListOf(),
+        val operations: MutableList<String> = mutableListOf(),
     ) : IndexingQueue {
         val items = mutableListOf<IndexingQueueItem>()
         var lastTerminalLeaseOwner: String? = null

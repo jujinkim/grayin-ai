@@ -25,6 +25,7 @@ Current phase status: local-first MVP foundation and basic Android source connec
 - Settings installs, cancels, and deletes fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action; document indexing never initiates a download.
 - Local Files passes explicitly selected PDF descriptors to a private `:document` Pdfium/Tesseract runtime, which enforces descriptor, signature, page, bitmap, text, OCR, and time limits and returns only bounded derived AIDL results.
 - Local document selection stores only Keystore HMAC markers. SQLCipher schema v6 removes legacy URI/name-based Local Files graphs before HMAC-only reindexing.
+- Settings provides explicit local-only encrypted export/import of the validated seven-section derived snapshot. Version 1 uses password-derived AES-256-GCM, replace-only SQLCipher import, and mandatory connector re-consent.
 - INTERNET permission bounded by `docs/network-policy.md`: typed map/place/reverse-geocode/weather enrichment plus fixed-catalog model, authenticated manifest, or OCR language-data downloads.
 
 ## Completion Plan
@@ -81,10 +82,10 @@ The installer boundary and planned document-runtime limits are specified in `doc
 
 ### 5. Encrypted Export and Import
 
-- [ ] Implement password-protected authenticated export containing allowed derived sections only.
-- [ ] Implement schema/version/integrity validation and transactional import.
-- [ ] Require connector re-consent after import.
-- [ ] Add Android document create/open flows without cloud sync or automatic backup.
+- [x] Implement password-protected authenticated export containing allowed derived sections only.
+- [x] Implement schema/version/integrity validation and transactional import.
+- [x] Require connector re-consent after import.
+- [x] Add Android document create/open flows without cloud sync or automatic backup.
 
 ### 6. Optional App Security
 

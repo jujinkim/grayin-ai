@@ -50,7 +50,9 @@ The indexing-status card refreshes only while Sources and its Activity lifecycle
 
 ## Settings
 
-Settings includes language selection, manual indexing, OCR language-data controls, runtime local-model selection and official-page controls, local Gemma `.litertlm` import/delete fallback controls, operation status, indexed counts, and local-first/network-boundary policy status rows. Model download/cancel/delete actions are conditional and currently hidden because no catalog entry has complete transport metadata.
+Settings includes language selection, manual indexing, encrypted derived-memory export/import, OCR language-data controls, runtime local-model selection and official-page controls, local Gemma `.litertlm` import/delete fallback controls, operation status, indexed counts, and local-first/network-boundary policy status rows. Model download/cancel/delete actions are conditional and currently hidden because no catalog entry has complete transport metadata.
+
+The backup card starts explicit local-only Android document flows. Export requires a password plus confirmation. Import first shows a destructive replace warning, then requests a password after the encrypted document is staged. Passwords are transient, errors use stable localized categories, and successful import tells the user that automatic indexing and online enrichment are off and every source must be reconnected.
 
 The OCR section exposes only the fixed English, Korean, and Japanese packs. It shows exact download size, Apache-2.0 license, pinned `tessdata_fast` commit, localized status/progress/failure, and install/cancel/delete actions. Its disclosure states that documents stay on-device, the artifact host can see the selected pack path and ordinary network metadata, and no document data is sent. Installing a pack is separate from selecting or indexing a PDF; indexing never initiates a download.
 

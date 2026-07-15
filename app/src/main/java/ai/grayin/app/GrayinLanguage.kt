@@ -10,6 +10,7 @@ import ai.grayin.core.indexing.AutomaticIndexingOutcome
 import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.IndexingSkipReason
 import ai.grayin.core.indexing.IndexingTrigger
+import ai.grayin.core.transfer.TransferFailureCode
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -121,6 +122,7 @@ data class GrayinStrings(
     val off: String,
     val selected: String,
     val indexed: String,
+    val reconnectionRequired: String,
     val notImplemented: String,
     val connectorConnectionUnavailable: String,
     val highSensitivity: String,
@@ -189,6 +191,161 @@ data class GrayinStrings(
     val indexedSourceReferencesPrefix: String,
     val derivedMemoryEventsPrefix: String,
 ) {
+    fun backupTitle(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "암호화 백업"
+        GrayinLanguage.JAPANESE -> "暗号化バックアップ"
+        GrayinLanguage.ENGLISH -> "Encrypted backup"
+    }
+
+    fun backupDisclosure(): String = when (languageCode) {
+        GrayinLanguage.KOREAN ->
+            "파생 메모리만 비밀번호로 암호화합니다. 원본·권한·설정은 포함하지 않으며 로컬 문서 공급자만 사용합니다."
+        GrayinLanguage.JAPANESE ->
+            "派生メモリのみをパスワードで暗号化します。原本・権限・設定は含めず、ローカル文書プロバイダーのみを使用します。"
+        GrayinLanguage.ENGLISH ->
+            "Password-encrypts derived memory only. Originals, permissions, and settings are excluded; only local document providers are used."
+    }
+
+    fun exportEncryptedBackup(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "암호화 백업 내보내기"
+        GrayinLanguage.JAPANESE -> "暗号化バックアップを書き出す"
+        GrayinLanguage.ENGLISH -> "Export encrypted backup"
+    }
+
+    fun importEncryptedBackup(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "암호화 백업 가져오기"
+        GrayinLanguage.JAPANESE -> "暗号化バックアップを読み込む"
+        GrayinLanguage.ENGLISH -> "Import encrypted backup"
+    }
+
+    fun backupExportPasswordBody(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "12~128자의 비밀번호를 입력하고 확인하세요. 분실한 비밀번호는 복구할 수 없습니다."
+        GrayinLanguage.JAPANESE -> "12〜128文字のパスワードを入力して確認してください。紛失したパスワードは復元できません。"
+        GrayinLanguage.ENGLISH -> "Enter and confirm a 12–128 character password. A lost password cannot be recovered."
+    }
+
+    fun backupImportPasswordBody(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "이 백업을 만들 때 사용한 비밀번호를 입력하세요."
+        GrayinLanguage.JAPANESE -> "このバックアップの作成時に使用したパスワードを入力してください。"
+        GrayinLanguage.ENGLISH -> "Enter the password used to create this backup."
+    }
+
+    fun backupPassword(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "비밀번호"
+        GrayinLanguage.JAPANESE -> "パスワード"
+        GrayinLanguage.ENGLISH -> "Password"
+    }
+
+    fun backupConfirmPassword(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "비밀번호 확인"
+        GrayinLanguage.JAPANESE -> "パスワードの確認"
+        GrayinLanguage.ENGLISH -> "Confirm password"
+    }
+
+    fun backupPasswordsDoNotMatch(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "비밀번호가 일치하지 않습니다."
+        GrayinLanguage.JAPANESE -> "パスワードが一致しません。"
+        GrayinLanguage.ENGLISH -> "Passwords do not match."
+    }
+
+    fun backupImportWarningTitle(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "현재 파생 메모리를 교체할까요?"
+        GrayinLanguage.JAPANESE -> "現在の派生メモリを置き換えますか？"
+        GrayinLanguage.ENGLISH -> "Replace current derived memory?"
+    }
+
+    fun backupImportWarningBody(): String = when (languageCode) {
+        GrayinLanguage.KOREAN ->
+            "가져오기는 현재 파생 메모리를 전부 교체합니다. 원본·권한·설정·로컬 문서 연결은 복원하지 않습니다. 자동 인덱싱과 외부 enrichment가 꺼지며 모든 소스를 다시 연결해야 합니다."
+        GrayinLanguage.JAPANESE ->
+            "読み込みは現在の派生メモリをすべて置き換えます。原本・権限・設定・ローカル文書リンクは復元されません。自動インデックスと外部enrichmentはオフになり、すべてのソースを再接続する必要があります。"
+        GrayinLanguage.ENGLISH ->
+            "Import replaces all current derived memory. Originals, permissions, settings, and local document links are not restored. Automatic indexing and external enrichment are turned off, and every source must be reconnected."
+    }
+
+    fun backupCanceled(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "백업 작업을 취소했습니다."
+        GrayinLanguage.JAPANESE -> "バックアップ操作をキャンセルしました。"
+        GrayinLanguage.ENGLISH -> "Backup action canceled."
+    }
+
+    fun backupExportSucceeded(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "암호화 백업을 내보냈습니다."
+        GrayinLanguage.JAPANESE -> "暗号化バックアップを書き出しました。"
+        GrayinLanguage.ENGLISH -> "Encrypted backup exported."
+    }
+
+    fun backupImportSucceeded(eventCount: Int, connectorCount: Int): String = when (languageCode) {
+        GrayinLanguage.KOREAN ->
+            "파생 이벤트 ${eventCount}개를 가져왔습니다. 소스 ${connectorCount}개를 다시 연결하세요."
+        GrayinLanguage.JAPANESE ->
+            "派生イベント${eventCount}件を読み込みました。${connectorCount}件のソースを再接続してください。"
+        GrayinLanguage.ENGLISH ->
+            "Imported $eventCount derived event(s). Reconnect $connectorCount source(s)."
+    }
+
+    fun backupFailure(code: TransferFailureCode): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> when (code) {
+            TransferFailureCode.CANCELLED -> "백업 작업을 취소했습니다."
+            TransferFailureCode.PASSWORD_POLICY_FAILED -> "비밀번호는 12~128자여야 합니다."
+            TransferFailureCode.AUTHENTICATION_FAILED -> "비밀번호가 맞지 않거나 백업이 손상되었습니다."
+            TransferFailureCode.INVALID_FORMAT,
+            TransferFailureCode.INVALID_PAYLOAD,
+            -> "올바른 Grayin 백업 파일이 아닙니다."
+            TransferFailureCode.UNSUPPORTED_VERSION -> "지원하지 않는 백업 버전입니다."
+            TransferFailureCode.TOO_LARGE -> "백업 파일이 허용 크기를 초과했습니다."
+            TransferFailureCode.CONSENT_RESET_FAILED -> "소스 동의 초기화를 완료하지 못했습니다."
+            TransferFailureCode.STORE_TRANSACTION_FAILED -> "암호화 저장소 가져오기를 완료하지 못했습니다."
+            else -> "백업 파일을 처리하지 못했습니다."
+        }
+
+        GrayinLanguage.JAPANESE -> when (code) {
+            TransferFailureCode.CANCELLED -> "バックアップ操作をキャンセルしました。"
+            TransferFailureCode.PASSWORD_POLICY_FAILED -> "パスワードは12〜128文字にしてください。"
+            TransferFailureCode.AUTHENTICATION_FAILED -> "パスワードが違うか、バックアップが破損しています。"
+            TransferFailureCode.INVALID_FORMAT,
+            TransferFailureCode.INVALID_PAYLOAD,
+            -> "有効なGrayinバックアップではありません。"
+            TransferFailureCode.UNSUPPORTED_VERSION -> "未対応のバックアップバージョンです。"
+            TransferFailureCode.TOO_LARGE -> "バックアップが許容サイズを超えています。"
+            TransferFailureCode.CONSENT_RESET_FAILED -> "ソース同意のリセットを完了できませんでした。"
+            TransferFailureCode.STORE_TRANSACTION_FAILED -> "暗号化ストアへの読み込みを完了できませんでした。"
+            else -> "バックアップファイルを処理できませんでした。"
+        }
+
+        GrayinLanguage.ENGLISH -> when (code) {
+            TransferFailureCode.CANCELLED -> "Backup action canceled."
+            TransferFailureCode.PASSWORD_POLICY_FAILED -> "Password must be 12–128 characters."
+            TransferFailureCode.AUTHENTICATION_FAILED -> "The password is incorrect or the backup is damaged."
+            TransferFailureCode.INVALID_FORMAT,
+            TransferFailureCode.INVALID_PAYLOAD,
+            -> "This is not a valid Grayin backup."
+            TransferFailureCode.UNSUPPORTED_VERSION -> "This backup version is not supported."
+            TransferFailureCode.TOO_LARGE -> "The backup exceeds the allowed size."
+            TransferFailureCode.CONSENT_RESET_FAILED -> "Could not reset source consent."
+            TransferFailureCode.STORE_TRANSACTION_FAILED -> "Could not complete the encrypted-store import."
+            else -> "Could not process the backup file."
+        }
+    }
+
+    fun confirm(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "확인"
+        GrayinLanguage.JAPANESE -> "確認"
+        GrayinLanguage.ENGLISH -> "Confirm"
+    }
+
+    fun continueAction(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "계속"
+        GrayinLanguage.JAPANESE -> "続ける"
+        GrayinLanguage.ENGLISH -> "Continue"
+    }
+
+    fun cancel(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "취소"
+        GrayinLanguage.JAPANESE -> "キャンセル"
+        GrayinLanguage.ENGLISH -> "Cancel"
+    }
+
     fun screenLabel(screen: GrayinScreen): String {
         return when (screen) {
             GrayinScreen.Ask -> ask
@@ -727,6 +884,7 @@ data class GrayinStrings(
                 IndexingSkipReason.THERMAL_STATE_CRITICAL -> "기기 온도 위험"
                 IndexingSkipReason.SOURCE_DISABLED -> "소스 꺼짐"
                 IndexingSkipReason.SOURCE_DATA_DELETED -> "사용자가 소스 데이터 삭제"
+                IndexingSkipReason.RECONSENT_REQUIRED -> "소스 재연결 필요"
                 IndexingSkipReason.MISSING_PERMISSION -> "권한 없음"
                 IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE -> "백그라운드 대상 아님"
                 IndexingSkipReason.NO_INDEXABLE_DATA -> "인덱싱할 데이터 없음"
@@ -745,6 +903,7 @@ data class GrayinStrings(
                 IndexingSkipReason.THERMAL_STATE_CRITICAL -> "端末温度が危険"
                 IndexingSkipReason.SOURCE_DISABLED -> "ソースがオフ"
                 IndexingSkipReason.SOURCE_DATA_DELETED -> "ユーザーがソースデータを削除"
+                IndexingSkipReason.RECONSENT_REQUIRED -> "ソースの再接続が必要"
                 IndexingSkipReason.MISSING_PERMISSION -> "権限なし"
                 IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE -> "バックグラウンド対象外"
                 IndexingSkipReason.NO_INDEXABLE_DATA -> "対象データなし"
@@ -763,6 +922,7 @@ data class GrayinStrings(
                 IndexingSkipReason.THERMAL_STATE_CRITICAL -> "Device temperature is critical"
                 IndexingSkipReason.SOURCE_DISABLED -> "Source is off"
                 IndexingSkipReason.SOURCE_DATA_DELETED -> "Source data deleted by user"
+                IndexingSkipReason.RECONSENT_REQUIRED -> "Source reconnection required"
                 IndexingSkipReason.MISSING_PERMISSION -> "Permission missing"
                 IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE -> "Not background eligible"
                 IndexingSkipReason.NO_INDEXABLE_DATA -> "No indexable data"
@@ -1113,6 +1273,7 @@ private val EnglishStrings = GrayinStrings(
     off = "Off",
     selected = "Connected",
     indexed = "Indexed",
+    reconnectionRequired = "Reconnection required",
     notImplemented = "Not implemented",
     connectorConnectionUnavailable = "Source connection is unavailable until this connector is implemented.",
     highSensitivity = "High sensitivity",
@@ -1233,6 +1394,7 @@ private val KoreanStrings = EnglishStrings.copy(
     off = "꺼짐",
     selected = "연결됨",
     indexed = "인덱싱됨",
+    reconnectionRequired = "재연결 필요",
     notImplemented = "미구현",
     connectorConnectionUnavailable = "이 커넥터가 구현될 때까지 소스 연결을 사용할 수 없습니다.",
     highSensitivity = "높은 민감도",
@@ -1353,6 +1515,7 @@ private val JapaneseStrings = EnglishStrings.copy(
     off = "オフ",
     selected = "接続済み",
     indexed = "インデックス済み",
+    reconnectionRequired = "再接続が必要",
     notImplemented = "未実装",
     connectorConnectionUnavailable = "このコネクタが実装されるまで、ソース接続は利用できません。",
     highSensitivity = "高い機密性",

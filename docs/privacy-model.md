@@ -39,6 +39,8 @@ Allowed network requests must:
 
 Every connector requires explicit opt-in.
 
+Encrypted import never restores connector consent. It releases Local Files grants, turns off online enrichment and automatic indexing, and installs an encrypted re-consent barrier for every connector. Imported historical derived evidence remains readable, but no connector may access originals again until that source is explicitly reconnected.
+
 Location source consent and online-enrichment consent are separate. Disabling or revoking Location disables online enrichment. Without enrichment consent, Location continues to index the rounded local coordinate and does not call the gateway.
 
 Every connector must support:
@@ -72,3 +74,4 @@ Local derived-memory storage is encrypted with SQLCipher and an Android Keystore
 - Android Keystore protects the generated SQLCipher passphrase.
 - Store APIs must accept only source references, derived memory, citations, summaries, clusters, and index metadata.
 - Android backup remains disabled through the manifest plus explicit legacy and Android 12+ cloud/device-transfer exclusion rules. Encrypted export/import remains an explicit user action and does not enable platform backup.
+- Version 1 export contains only the validated seven-section derived snapshot, nulls local pointers, uses password-derived AES-GCM authentication, and stages ciphertext only under `noBackupFilesDir`.

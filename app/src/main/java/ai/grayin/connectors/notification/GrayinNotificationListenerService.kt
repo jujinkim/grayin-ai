@@ -16,6 +16,7 @@ import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.store.SqlCipherLocalMemoryStore
 import java.security.MessageDigest
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,22 +29,33 @@ class GrayinNotificationListenerService : NotificationListenerService() {
     private val allowlist by lazy { NotificationAppAllowlist(applicationContext) }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (!NotificationConnector.isSourceEnabled(applicationContext)) return
-        if (!allowlist.isAllowed(sbn.packageName)) return
-        val result = extractor.extract(sbn) ?: return
         scope.launch {
-            val store = SqlCipherLocalMemoryStore(applicationContext)
-            store.saveConnectorScan(
-                ConnectorScanResult(
-                    connectorId = NotificationConnector.CONNECTOR_ID,
-                    processingState = ProcessingState.COMPLETED,
-                    sourceReferences = listOf(result.sourceReference),
-                    derivedEvents = listOf(result.derivedEvent),
-                    citations = listOf(result.citation),
-                    scannedAt = result.indexedAt,
-                ),
-            )
-            NotificationConnector.markIndexed(applicationContext, result.indexedAt)
+            NotificationConsentCoordinator.withExclusiveAccess {
+                val store = SqlCipherLocalMemoryStore(applicationContext)
+                if (store.isConnectorReconsentRequired(NotificationConnector.CONNECTOR_ID)) {
+                    return@withExclusiveAccess
+                }
+                if (!NotificationConnector.isSourceEnabled(applicationContext)) return@withExclusiveAccess
+                if (!allowlist.isAllowed(sbn.packageName)) return@withExclusiveAccess
+                val result = extractor.extract(sbn) ?: return@withExclusiveAccess
+                try {
+                    store.saveConnectorScan(
+                        ConnectorScanResult(
+                            connectorId = NotificationConnector.CONNECTOR_ID,
+                            processingState = ProcessingState.COMPLETED,
+                            sourceReferences = listOf(result.sourceReference),
+                            derivedEvents = listOf(result.derivedEvent),
+                            citations = listOf(result.citation),
+                            scannedAt = result.indexedAt,
+                        ),
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    return@withExclusiveAccess
+                }
+                NotificationConnector.markIndexed(applicationContext, result.indexedAt)
+            }
         }
     }
 

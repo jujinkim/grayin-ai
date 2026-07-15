@@ -46,4 +46,6 @@ Index invalidation must run after connector-level delete so retrieval cannot cit
 - Android Keystore protects the SQLCipher passphrase.
 - The database uses explicit, process-serialized `PRAGMA user_version` migrations: v1 creates derived-memory tables, v2 adds the encrypted indexing queue/runtime tables, v3 adds automatic-control generations, v4 adds connector scan status, v5 converts that status to code-only issue storage, and v6 purges legacy Local Files raw identity. It rejects schemas newer than this app understands.
 - Android backup remains disabled in the manifest, legacy full-backup rules, and Android 12+ cloud/device-transfer extraction rules.
-- Export/import must use a separately documented encrypted envelope before backup or transfer is added.
+- Explicit export/import uses the separately documented authenticated envelope and a schema-v7 replace transaction; platform backup and transfer remain disabled.
+
+Schema v7 adds an encrypted connector re-consent barrier. Import clears every derived table plus indexing queue/runtime, fences the automatic generation, inserts the validated seven-section snapshot with conflict-aborting writes, and marks every trusted connector as requiring re-consent in one transaction. Direct and queue-fenced scan writes reject a connector while its barrier exists.
