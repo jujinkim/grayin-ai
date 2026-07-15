@@ -588,6 +588,7 @@ class IndexingCommandExecutorTest {
                 runningConnectorIds = items.filter { it.state == IndexingQueueState.RUNNING }
                     .mapTo(mutableSetOf()) { it.connectorId },
                 lastCompletedAt = items.mapNotNull { it.completedAt }.maxOrNull(),
+                observedAt = NOW,
             )
         }
 

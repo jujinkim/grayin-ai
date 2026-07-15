@@ -162,6 +162,7 @@ data class IndexingQueueSnapshot(
     val queueDepth: Int,
     val runningConnectorIds: Set<String>,
     val lastCompletedAt: Instant?,
+    val observedAt: Instant,
 ) {
     init {
         require(queueDepth >= 0) { "Queue depth must not be negative." }

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -52,7 +53,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -89,6 +97,7 @@ class SourceIntroPreferenceStore(context: Context) {
 @Composable
 fun GrayinApp() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val controller = remember(context) { GrayinMemoryController(context) }
     val languageStore = remember(context) { LanguagePreferenceStore(context) }
     val sourceIntroStore = remember(context) { SourceIntroPreferenceStore(context) }
@@ -107,8 +116,23 @@ fun GrayinApp() {
     var hasAsked by rememberSaveable { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
     var automaticIndexingState by remember { mutableStateOf(automaticIndexingStore.load()) }
+    var automaticIndexingSyncing by remember { mutableStateOf(false) }
+    var automaticIndexingSyncRevision by remember { mutableStateOf(0L) }
     val selectedScreen = GrayinScreen.valueOf(selectedScreenName)
     val screens = GrayinScreen.entries
+
+    suspend fun refreshSnapshotSafely() {
+        try {
+            snapshot = controller.snapshot(strings)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            if (statusMessage.isBlank()) {
+                statusMessage = strings.indexingFailed
+            }
+        }
+    }
+
     val openDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -120,7 +144,7 @@ fun GrayinApp() {
                 } catch (error: Throwable) {
                     statusMessage = error.message ?: strings.localFileSelectionFailed
                 } finally {
-                    snapshot = controller.snapshot(strings)
+                    refreshSnapshotSafely()
                     working = false
                 }
             }
@@ -137,7 +161,7 @@ fun GrayinApp() {
                 } catch (error: Throwable) {
                     statusMessage = error.message ?: strings.localGemmaModelImportFailed
                 } finally {
-                    snapshot = controller.snapshot(strings)
+                    refreshSnapshotSafely()
                     working = false
                 }
             }
@@ -154,7 +178,7 @@ fun GrayinApp() {
                 } catch (error: Throwable) {
                     statusMessage = error.message ?: strings.sourcePermissionDenied
                 } finally {
-                    snapshot = controller.snapshot(strings)
+                    refreshSnapshotSafely()
                     working = false
                 }
             }
@@ -173,7 +197,7 @@ fun GrayinApp() {
                 } catch (error: Throwable) {
                     statusMessage = error.message ?: strings.sourcePermissionDenied
                 } finally {
-                    snapshot = controller.snapshot(strings)
+                    refreshSnapshotSafely()
                     working = false
                 }
             }
@@ -192,7 +216,7 @@ fun GrayinApp() {
                 } catch (error: Throwable) {
                     statusMessage = error.message ?: strings.sourcePermissionDenied
                 } finally {
-                    snapshot = controller.snapshot(strings)
+                    refreshSnapshotSafely()
                     working = false
                 }
             }
@@ -203,7 +227,7 @@ fun GrayinApp() {
 
     fun refreshSnapshot() {
         scope.launch {
-            snapshot = controller.snapshot(strings)
+            refreshSnapshotSafely()
         }
     }
 
@@ -215,7 +239,7 @@ fun GrayinApp() {
             } catch (error: Throwable) {
                 statusMessage = error.message ?: strings.indexingFailed
             } finally {
-                snapshot = controller.snapshot(strings)
+                refreshSnapshotSafely()
                 working = false
             }
         }
@@ -229,27 +253,48 @@ fun GrayinApp() {
             } catch (error: Throwable) {
                 statusMessage = error.message ?: strings.indexingFailed
             } finally {
-                snapshot = controller.snapshot(strings)
+                refreshSnapshotSafely()
                 working = false
             }
         }
     }
 
     fun updateAutomaticIndexing(state: AutomaticIndexingUiState) {
+        if (!state.hasValidWindow) {
+            statusMessage = strings.invalidAutomaticIndexingWindow
+            return
+        }
+        automaticIndexingSyncRevision += 1L
+        val revision = automaticIndexingSyncRevision
         automaticIndexingStore.save(state)
         automaticIndexingState = state
+        automaticIndexingSyncing = true
         statusMessage = ""
         val syncRequest = automaticIndexingScheduler.requestSync()
         scope.launch {
             try {
                 syncRequest.await()
-                statusMessage = strings.automaticIndexingSaved(state.enabled)
+                if (revision == automaticIndexingSyncRevision) {
+                    statusMessage = strings.automaticIndexingSaved(state.enabled)
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                statusMessage = strings.indexingFailed
+                if (revision == automaticIndexingSyncRevision) {
+                    statusMessage = strings.indexingFailed
+                }
             } finally {
-                snapshot = controller.snapshot(strings)
+                if (revision == automaticIndexingSyncRevision) {
+                    automaticIndexingSyncing = false
+                    try {
+                        val indexingStatus = controller.indexingStatus(strings)
+                        snapshot = snapshot.copy(indexingStatus = indexingStatus)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        statusMessage = strings.indexingFailed
+                    }
+                }
             }
         }
     }
@@ -261,28 +306,58 @@ fun GrayinApp() {
     }
 
     LaunchedEffect(automaticIndexingScheduler) {
+        val revision = automaticIndexingSyncRevision
+        automaticIndexingSyncing = true
         val syncRequest = automaticIndexingScheduler.requestSync()
         try {
             syncRequest.await()
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            statusMessage = strings.indexingFailed
+            if (revision == automaticIndexingSyncRevision) {
+                statusMessage = strings.indexingFailed
+            }
+        } finally {
+            if (revision == automaticIndexingSyncRevision) {
+                automaticIndexingSyncing = false
+            }
         }
     }
 
     LaunchedEffect(controller, strings) {
-        snapshot = controller.snapshot(strings)
+        refreshSnapshotSafely()
         if (!hasAsked) {
             answerState = emptyAnswerState(strings)
         }
     }
 
-    LaunchedEffect(selectedScreen, controller, strings) {
-        if (selectedScreen == GrayinScreen.Settings) {
-            while (true) {
-                snapshot = controller.snapshot(strings)
-                delay(SettingsRefreshIntervalMs)
+    LaunchedEffect(selectedScreen, controller, strings, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            when (selectedScreen) {
+                GrayinScreen.Sources -> while (true) {
+                    try {
+                        val indexingStatus = controller.indexingStatus(strings)
+                        snapshot = snapshot.copy(indexingStatus = indexingStatus)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        statusMessage = strings.indexingFailed
+                    }
+                    delay(StatusRefreshIntervalMs)
+                }
+
+                GrayinScreen.Settings -> while (true) {
+                    try {
+                        snapshot = controller.snapshot(strings)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        statusMessage = strings.indexingFailed
+                    }
+                    delay(StatusRefreshIntervalMs)
+                }
+
+                else -> Unit
             }
         }
     }
@@ -354,7 +429,9 @@ fun GrayinApp() {
                     GrayinScreen.Places -> PlacesScreen(snapshot.placesRows, strings)
                     GrayinScreen.Sources -> SourcesScreen(
                         sourceRows = snapshot.sourceRows,
+                        indexingStatus = snapshot.indexingStatus,
                         automaticIndexingState = automaticIndexingState,
+                        automaticIndexingSyncing = automaticIndexingSyncing,
                         statusMessage = statusMessage,
                         strings = strings,
                         working = working,
@@ -389,7 +466,7 @@ fun GrayinApp() {
                                         } catch (error: Throwable) {
                                             statusMessage = error.message ?: strings.sourcePermissionDenied
                                         } finally {
-                                            snapshot = controller.snapshot(strings)
+                                            refreshSnapshotSafely()
                                             working = false
                                         }
                                     }
@@ -406,7 +483,7 @@ fun GrayinApp() {
                                         } catch (error: Throwable) {
                                             statusMessage = error.message ?: strings.sourcePermissionDenied
                                         } finally {
-                                            snapshot = controller.snapshot(strings)
+                                            refreshSnapshotSafely()
                                             working = false
                                         }
                                     }
@@ -425,7 +502,7 @@ fun GrayinApp() {
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.indexingFailed
                                 } finally {
-                                    snapshot = controller.snapshot(strings)
+                                    refreshSnapshotSafely()
                                     working = false
                                 }
                             }
@@ -438,7 +515,7 @@ fun GrayinApp() {
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.revokeFailed
                                 } finally {
-                                    snapshot = controller.snapshot(strings)
+                                    refreshSnapshotSafely()
                                     working = false
                                 }
                             }
@@ -451,7 +528,7 @@ fun GrayinApp() {
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.deleteFailed
                                 } finally {
-                                    snapshot = controller.snapshot(strings)
+                                    refreshSnapshotSafely()
                                     working = false
                                 }
                             }
@@ -464,7 +541,7 @@ fun GrayinApp() {
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.notificationAllowlistInvalid
                                 } finally {
-                                    snapshot = controller.snapshot(strings)
+                                    refreshSnapshotSafely()
                                     working = false
                                 }
                             }
@@ -477,7 +554,7 @@ fun GrayinApp() {
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.searchFailed
                                 } finally {
-                                    snapshot = controller.snapshot(strings)
+                                    refreshSnapshotSafely()
                                     working = false
                                 }
                             }
@@ -512,7 +589,7 @@ fun GrayinApp() {
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.localModelUnknown
                                 } finally {
-                                    snapshot = controller.snapshot(strings)
+                                    refreshSnapshotSafely()
                                     working = false
                                 }
                             }
@@ -525,7 +602,7 @@ fun GrayinApp() {
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.localGemmaModelImportFailed
                                 } finally {
-                                    snapshot = controller.snapshot(strings)
+                                    refreshSnapshotSafely()
                                     working = false
                                 }
                             }
@@ -538,7 +615,7 @@ fun GrayinApp() {
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.deleteFailed
                                 } finally {
-                                    snapshot = controller.snapshot(strings)
+                                    refreshSnapshotSafely()
                                     working = false
                                 }
                             }
@@ -551,7 +628,7 @@ fun GrayinApp() {
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.deleteFailed
                                 } finally {
-                                    snapshot = controller.snapshot(strings)
+                                    refreshSnapshotSafely()
                                     working = false
                                 }
                             }
@@ -567,7 +644,7 @@ fun GrayinApp() {
                                 } catch (error: Throwable) {
                                     statusMessage = error.message ?: strings.deleteFailed
                                 } finally {
-                                    snapshot = controller.snapshot(strings)
+                                    refreshSnapshotSafely()
                                     working = false
                                 }
                             }
@@ -717,7 +794,9 @@ private fun PlacesScreen(rows: List<String>, strings: GrayinStrings) {
 @Composable
 private fun SourcesScreen(
     sourceRows: List<ConnectorUiState>,
+    indexingStatus: IndexingStatusUiState,
     automaticIndexingState: AutomaticIndexingUiState,
+    automaticIndexingSyncing: Boolean,
     statusMessage: String,
     strings: GrayinStrings,
     working: Boolean,
@@ -744,9 +823,15 @@ private fun SourcesScreen(
             SourceIndexingControls(
                 automaticIndexingState = automaticIndexingState,
                 strings = strings,
-                working = working,
+                working = working || automaticIndexingSyncing,
                 onIndexAllSources = onIndexAllSources,
                 onAutomaticIndexingChanged = onAutomaticIndexingChanged,
+            )
+        }
+        item {
+            IndexingStatusBlock(
+                status = indexingStatus,
+                strings = strings,
             )
         }
         item {
@@ -770,6 +855,42 @@ private fun SourcesScreen(
                 onSaveNotificationAllowlist = onSaveNotificationAllowlist,
                 onOnlineEnrichmentChanged = onOnlineEnrichmentChanged,
             )
+        }
+    }
+}
+
+@Composable
+internal fun IndexingStatusBlock(
+    status: IndexingStatusUiState,
+    strings: GrayinStrings,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(strings.indexingStatusTitle, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = strings.indexingLiveStatus(status),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            strings.indexingStatusRows(status).forEach { row ->
+                Text(row, style = MaterialTheme.typography.bodySmall)
+            }
+            HorizontalDivider()
+            Text(strings.recentIndexingTasks, style = MaterialTheme.typography.titleSmall)
+            if (status.recentTasks.isEmpty()) {
+                Text(strings.noRecentIndexingTasks, style = MaterialTheme.typography.bodySmall)
+            } else {
+                status.recentTasks.forEach { task ->
+                    Text("- ${strings.recentIndexingTaskRow(task)}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
     }
 }
@@ -803,11 +924,14 @@ private fun SourceIndexingControls(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = !working) {
-                        onAutomaticIndexingChanged(
-                            automaticIndexingState.copy(enabled = !automaticIndexingState.enabled),
-                        )
-                    },
+                    .toggleable(
+                        value = automaticIndexingState.enabled,
+                        enabled = !working && automaticIndexingState.hasValidWindow,
+                        role = Role.Switch,
+                        onValueChange = { enabled ->
+                            onAutomaticIndexingChanged(automaticIndexingState.copy(enabled = enabled))
+                        },
+                    ),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -823,10 +947,8 @@ private fun SourceIndexingControls(
                 }
                 Switch(
                     checked = automaticIndexingState.enabled,
-                    enabled = !working,
-                    onCheckedChange = { checked ->
-                        onAutomaticIndexingChanged(automaticIndexingState.copy(enabled = checked))
-                    },
+                    enabled = !working && automaticIndexingState.hasValidWindow,
+                    onCheckedChange = null,
                 )
             }
             TextButton(
@@ -858,11 +980,16 @@ private fun AutomaticIndexingDetails(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(enabled = !working) {
-                    onAutomaticIndexingChanged(
-                        automaticIndexingState.copy(requireCharging = !automaticIndexingState.requireCharging),
-                    )
-                },
+                .toggleable(
+                    value = automaticIndexingState.requireCharging,
+                    enabled = !working,
+                    role = Role.Switch,
+                    onValueChange = { requireCharging ->
+                        onAutomaticIndexingChanged(
+                            automaticIndexingState.copy(requireCharging = requireCharging),
+                        )
+                    },
+                ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -870,15 +997,17 @@ private fun AutomaticIndexingDetails(
             Switch(
                 checked = automaticIndexingState.requireCharging,
                 enabled = !working,
-                onCheckedChange = { checked ->
-                    onAutomaticIndexingChanged(automaticIndexingState.copy(requireCharging = checked))
-                },
+                onCheckedChange = null,
             )
         }
         HourStepper(
             label = strings.startHour,
             hour = automaticIndexingState.startHour,
             working = working,
+            canDecrease = automaticIndexingState.shiftedStartHour(-1).hasValidWindow,
+            canIncrease = automaticIndexingState.shiftedStartHour(1).hasValidWindow,
+            decreaseDescription = strings.decreaseHourDescription(strings.startHour),
+            increaseDescription = strings.increaseHourDescription(strings.startHour),
             onDecrease = {
                 onAutomaticIndexingChanged(automaticIndexingState.shiftedStartHour(-1))
             },
@@ -890,6 +1019,10 @@ private fun AutomaticIndexingDetails(
             label = strings.endHour,
             hour = automaticIndexingState.endHour,
             working = working,
+            canDecrease = automaticIndexingState.shiftedEndHour(-1).hasValidWindow,
+            canIncrease = automaticIndexingState.shiftedEndHour(1).hasValidWindow,
+            decreaseDescription = strings.decreaseHourDescription(strings.endHour),
+            increaseDescription = strings.increaseHourDescription(strings.endHour),
             onDecrease = {
                 onAutomaticIndexingChanged(automaticIndexingState.shiftedEndHour(-1))
             },
@@ -901,6 +1034,13 @@ private fun AutomaticIndexingDetails(
             strings.automaticIndexingWindow(automaticIndexingState.windowLabel()),
             style = MaterialTheme.typography.bodySmall,
         )
+        if (!automaticIndexingState.hasValidWindow) {
+            Text(
+                strings.invalidAutomaticIndexingWindow,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
 }
 
@@ -909,6 +1049,10 @@ private fun HourStepper(
     label: String,
     hour: Int,
     working: Boolean,
+    canDecrease: Boolean,
+    canIncrease: Boolean,
+    decreaseDescription: String,
+    increaseDescription: String,
     onDecrease: () -> Unit,
     onIncrease: () -> Unit,
 ) {
@@ -926,21 +1070,21 @@ private fun HourStepper(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
-                enabled = !working,
+                enabled = !working && canDecrease,
                 onClick = onDecrease,
             ) {
                 Icon(
                     imageVector = Icons.Filled.Remove,
-                    contentDescription = "$label -",
+                    contentDescription = decreaseDescription,
                 )
             }
             Button(
-                enabled = !working,
+                enabled = !working && canIncrease,
                 onClick = onIncrease,
             ) {
                 Icon(
                     imageVector = Icons.Filled.Add,
-                    contentDescription = "$label +",
+                    contentDescription = increaseDescription,
                 )
             }
         }
@@ -1385,11 +1529,12 @@ private const val PhotosConnectorId = "photos"
 private const val AppUsageConnectorId = "app_usage"
 private const val NotificationConnectorId = "notification"
 private const val LocalGemmaModelDownloadPage = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm"
-private const val SettingsRefreshIntervalMs = 2_000L
+private const val StatusRefreshIntervalMs = 2_000L
 
 private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
     return GrayinSnapshot(
         sourceRows = emptyList(),
+        indexingStatus = IndexingStatusUiState.empty(),
         timelineRows = listOf(strings.noDerivedEvents),
         placesRows = listOf(strings.noPlaceClusters),
         settingsRows = listOf(strings.loadingLocalState),
@@ -1409,7 +1554,9 @@ private fun emptyAnswerState(strings: GrayinStrings): AnswerUiState {
 @Composable
 private fun StatusRow(row: String) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite },
         tonalElevation = 1.dp,
         shape = MaterialTheme.shapes.small,
     ) {

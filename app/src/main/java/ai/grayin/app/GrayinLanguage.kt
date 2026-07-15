@@ -2,6 +2,13 @@ package ai.grayin.app
 
 import android.content.Context
 import ai.grayin.core.ai.ModelDownloadStatus
+import ai.grayin.core.indexing.AutomaticIndexingOutcome
+import ai.grayin.core.indexing.IndexingFailureCode
+import ai.grayin.core.indexing.IndexingSkipReason
+import ai.grayin.core.indexing.IndexingTrigger
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 enum class GrayinLanguageOption(val storageKey: String) {
@@ -89,6 +96,10 @@ data class GrayinStrings(
     val automaticIndexingSettings: String,
     val automaticIndexingOn: String,
     val automaticIndexingOff: String,
+    val indexingStatusTitle: String,
+    val recentIndexingTasks: String,
+    val noRecentIndexingTasks: String,
+    val invalidAutomaticIndexingWindow: String,
     val chargingOnly: String,
     val startHour: String,
     val endHour: String,
@@ -290,6 +301,307 @@ data class GrayinStrings(
         }
     }
 
+    fun decreaseHourDescription(label: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$label 1시간 줄이기"
+            GrayinLanguage.JAPANESE -> "${label}を1時間戻す"
+            GrayinLanguage.ENGLISH -> "Move $label back by one hour"
+        }
+    }
+
+    fun increaseHourDescription(label: String): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "$label 1시간 늘리기"
+            GrayinLanguage.JAPANESE -> "${label}を1時間進める"
+            GrayinLanguage.ENGLISH -> "Move $label forward by one hour"
+        }
+    }
+
+    fun indexingStatusRows(
+        status: IndexingStatusUiState,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): List<String> {
+        val running = status.runningSourceNames.joinToString().ifBlank { localizedNone() }
+        val lastQueueCompletion = status.lastQueueCompletionAt
+            ?.let { formatIndexingInstant(it, zoneId) }
+            ?: localizedNever()
+        val lastAutomaticCheck = status.lastAutomaticCheckedAt
+            ?.let { formatIndexingInstant(it, zoneId) }
+            ?: localizedNever()
+        val lastAutomaticCompletion = status.lastAutomaticCompletedAt
+            ?.let { formatIndexingInstant(it, zoneId) }
+            ?: localizedNever()
+        val outcome = status.lastAutomaticOutcome?.let(::automaticOutcomeLabel) ?: localizedNotRun()
+        val reason = status.lastAutomaticSkipReason?.let(::indexingSkipReasonLabel)
+            ?: status.lastAutomaticFailureCode?.let(::indexingFailureLabel)
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> listOf(
+                "대기 중: ${status.queueDepth}개",
+                "실행 중 소스: $running",
+                "최근 큐 완료: $lastQueueCompletion",
+                "최근 자동 활동: $lastAutomaticCheck",
+                "최근 자동 활동 종료: $lastAutomaticCompletion",
+                "자동 결과: $outcome${reason?.let { " · $it" }.orEmpty()}",
+                "최근 자동 파생 이벤트: ${status.lastAutomaticIndexedEventCount}개",
+            )
+
+            GrayinLanguage.JAPANESE -> listOf(
+                "待機中: ${status.queueDepth}件",
+                "実行中のソース: $running",
+                "直近のキュー完了: $lastQueueCompletion",
+                "直近の自動動作: $lastAutomaticCheck",
+                "直近の自動動作終了: $lastAutomaticCompletion",
+                "自動処理の結果: $outcome${reason?.let { " · $it" }.orEmpty()}",
+                "直近の自動派生イベント: ${status.lastAutomaticIndexedEventCount}件",
+            )
+
+            GrayinLanguage.ENGLISH -> listOf(
+                "Queued: ${status.queueDepth}",
+                "Running sources: $running",
+                "Last queue completion: $lastQueueCompletion",
+                "Latest automatic activity: $lastAutomaticCheck",
+                "Latest automatic activity completion: $lastAutomaticCompletion",
+                "Automatic result: $outcome${reason?.let { " · $it" }.orEmpty()}",
+                "Last automatic derived events: ${status.lastAutomaticIndexedEventCount}",
+            )
+        }
+    }
+
+    fun indexingLiveStatus(status: IndexingStatusUiState): String {
+        val outcome = status.lastAutomaticOutcome?.let(::automaticOutcomeLabel) ?: localizedNotRun()
+        val reason = status.lastAutomaticSkipReason?.let(::indexingSkipReasonLabel)
+            ?: status.lastAutomaticFailureCode?.let(::indexingFailureLabel)
+        val automatic = "$outcome${reason?.let { " · $it" }.orEmpty()}"
+        return when (languageCode) {
+            GrayinLanguage.KOREAN ->
+                "인덱싱: 대기 ${status.queueDepth}개, 실행 ${status.runningSourceNames.size}개. 자동: $automatic"
+            GrayinLanguage.JAPANESE ->
+                "インデックス: 待機${status.queueDepth}件、実行${status.runningSourceNames.size}件。自動: $automatic"
+            GrayinLanguage.ENGLISH ->
+                "Indexing: ${status.queueDepth} queued, ${status.runningSourceNames.size} running. Automatic: $automatic"
+        }
+    }
+
+    fun recentIndexingTaskRow(
+        task: RecentIndexingTaskUiState,
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): String {
+        val reason = task.skipReason?.let(::indexingSkipReasonLabel)
+            ?: task.failureCode?.let(::indexingFailureLabel)
+        val completed = task.completedAt?.let { formatIndexingInstant(it, zoneId) }
+        return buildString {
+            append(task.sourceName)
+            append(" · ")
+            append(indexingTriggerLabel(task.trigger))
+            append(" · ")
+            append(indexingStateLabel(task.state))
+            if (task.indexedEventCount > 0) {
+                append(" · ")
+                append(
+                    when (languageCode) {
+                        GrayinLanguage.KOREAN -> "파생 이벤트 ${task.indexedEventCount}개"
+                        GrayinLanguage.JAPANESE -> "派生イベント${task.indexedEventCount}件"
+                        GrayinLanguage.ENGLISH -> "${task.indexedEventCount} derived event(s)"
+                    },
+                )
+            }
+            reason?.let {
+                append(" · ")
+                append(it)
+            }
+            completed?.let {
+                append(" · ")
+                append(it)
+            }
+        }
+    }
+
+    private fun automaticOutcomeLabel(outcome: AutomaticIndexingOutcome): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> when (outcome) {
+                AutomaticIndexingOutcome.RUNNING -> "실행 중"
+                AutomaticIndexingOutcome.COMPLETED -> "완료"
+                AutomaticIndexingOutcome.SKIPPED -> "건너뜀"
+                AutomaticIndexingOutcome.FAILED -> "실패"
+            }
+
+            GrayinLanguage.JAPANESE -> when (outcome) {
+                AutomaticIndexingOutcome.RUNNING -> "実行中"
+                AutomaticIndexingOutcome.COMPLETED -> "完了"
+                AutomaticIndexingOutcome.SKIPPED -> "スキップ"
+                AutomaticIndexingOutcome.FAILED -> "失敗"
+            }
+
+            GrayinLanguage.ENGLISH -> when (outcome) {
+                AutomaticIndexingOutcome.RUNNING -> "Running"
+                AutomaticIndexingOutcome.COMPLETED -> "Completed"
+                AutomaticIndexingOutcome.SKIPPED -> "Skipped"
+                AutomaticIndexingOutcome.FAILED -> "Failed"
+            }
+        }
+    }
+
+    private fun indexingSkipReasonLabel(reason: IndexingSkipReason): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> when (reason) {
+                IndexingSkipReason.AUTOMATIC_INDEXING_DISABLED -> "자동 인덱싱 꺼짐"
+                IndexingSkipReason.AUTOMATIC_INDEXING_CONFIGURATION_CHANGED -> "자동 설정 변경됨"
+                IndexingSkipReason.WORK_MANAGER_STOPPED -> "시스템이 작업을 중지함"
+                IndexingSkipReason.INVALID_LOW_USAGE_WINDOW -> "시간창이 올바르지 않음"
+                IndexingSkipReason.OUTSIDE_LOW_USAGE_WINDOW -> "설정 시간창 밖"
+                IndexingSkipReason.NOT_CHARGING -> "충전 중이 아님"
+                IndexingSkipReason.BATTERY_BELOW_MINIMUM -> "배터리 부족"
+                IndexingSkipReason.BATTERY_LEVEL_UNKNOWN -> "배터리 상태 확인 불가"
+                IndexingSkipReason.THERMAL_STATE_HOT -> "기기 온도 높음"
+                IndexingSkipReason.THERMAL_STATE_CRITICAL -> "기기 온도 위험"
+                IndexingSkipReason.SOURCE_DISABLED -> "소스 꺼짐"
+                IndexingSkipReason.MISSING_PERMISSION -> "권한 없음"
+                IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE -> "백그라운드 대상 아님"
+                IndexingSkipReason.NO_INDEXABLE_DATA -> "인덱싱할 데이터 없음"
+            }
+
+            GrayinLanguage.JAPANESE -> when (reason) {
+                IndexingSkipReason.AUTOMATIC_INDEXING_DISABLED -> "自動インデックスがオフ"
+                IndexingSkipReason.AUTOMATIC_INDEXING_CONFIGURATION_CHANGED -> "自動設定が変更済み"
+                IndexingSkipReason.WORK_MANAGER_STOPPED -> "システムが処理を停止"
+                IndexingSkipReason.INVALID_LOW_USAGE_WINDOW -> "時間帯が無効"
+                IndexingSkipReason.OUTSIDE_LOW_USAGE_WINDOW -> "設定時間帯の外"
+                IndexingSkipReason.NOT_CHARGING -> "充電中ではない"
+                IndexingSkipReason.BATTERY_BELOW_MINIMUM -> "バッテリー不足"
+                IndexingSkipReason.BATTERY_LEVEL_UNKNOWN -> "バッテリー状態不明"
+                IndexingSkipReason.THERMAL_STATE_HOT -> "端末温度が高い"
+                IndexingSkipReason.THERMAL_STATE_CRITICAL -> "端末温度が危険"
+                IndexingSkipReason.SOURCE_DISABLED -> "ソースがオフ"
+                IndexingSkipReason.MISSING_PERMISSION -> "権限なし"
+                IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE -> "バックグラウンド対象外"
+                IndexingSkipReason.NO_INDEXABLE_DATA -> "対象データなし"
+            }
+
+            GrayinLanguage.ENGLISH -> when (reason) {
+                IndexingSkipReason.AUTOMATIC_INDEXING_DISABLED -> "Automatic indexing is off"
+                IndexingSkipReason.AUTOMATIC_INDEXING_CONFIGURATION_CHANGED -> "Automatic settings changed"
+                IndexingSkipReason.WORK_MANAGER_STOPPED -> "System stopped the work"
+                IndexingSkipReason.INVALID_LOW_USAGE_WINDOW -> "Invalid indexing window"
+                IndexingSkipReason.OUTSIDE_LOW_USAGE_WINDOW -> "Outside the indexing window"
+                IndexingSkipReason.NOT_CHARGING -> "Not charging"
+                IndexingSkipReason.BATTERY_BELOW_MINIMUM -> "Battery below minimum"
+                IndexingSkipReason.BATTERY_LEVEL_UNKNOWN -> "Battery level unavailable"
+                IndexingSkipReason.THERMAL_STATE_HOT -> "Device is hot"
+                IndexingSkipReason.THERMAL_STATE_CRITICAL -> "Device temperature is critical"
+                IndexingSkipReason.SOURCE_DISABLED -> "Source is off"
+                IndexingSkipReason.MISSING_PERMISSION -> "Permission missing"
+                IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE -> "Not background eligible"
+                IndexingSkipReason.NO_INDEXABLE_DATA -> "No indexable data"
+            }
+        }
+    }
+
+    private fun indexingFailureLabel(code: IndexingFailureCode): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> when (code) {
+                IndexingFailureCode.CONNECTOR_NOT_FOUND -> "커넥터 없음"
+                IndexingFailureCode.CONNECTOR_SCAN_FAILED -> "소스 스캔 실패"
+                IndexingFailureCode.CONNECTOR_OPERATION_TIMED_OUT -> "소스 처리 시간 초과"
+                IndexingFailureCode.STORE_WRITE_FAILED -> "암호화 저장 실패"
+                IndexingFailureCode.LEASE_EXPIRED -> "작업 lease 만료"
+                IndexingFailureCode.ATTEMPT_LIMIT_REACHED -> "재시도 한도 도달"
+                IndexingFailureCode.INTERNAL_ERROR -> "내부 오류"
+            }
+
+            GrayinLanguage.JAPANESE -> when (code) {
+                IndexingFailureCode.CONNECTOR_NOT_FOUND -> "コネクタなし"
+                IndexingFailureCode.CONNECTOR_SCAN_FAILED -> "ソースのスキャン失敗"
+                IndexingFailureCode.CONNECTOR_OPERATION_TIMED_OUT -> "ソース処理がタイムアウト"
+                IndexingFailureCode.STORE_WRITE_FAILED -> "暗号化保存に失敗"
+                IndexingFailureCode.LEASE_EXPIRED -> "処理リース期限切れ"
+                IndexingFailureCode.ATTEMPT_LIMIT_REACHED -> "再試行上限"
+                IndexingFailureCode.INTERNAL_ERROR -> "内部エラー"
+            }
+
+            GrayinLanguage.ENGLISH -> when (code) {
+                IndexingFailureCode.CONNECTOR_NOT_FOUND -> "Connector not found"
+                IndexingFailureCode.CONNECTOR_SCAN_FAILED -> "Source scan failed"
+                IndexingFailureCode.CONNECTOR_OPERATION_TIMED_OUT -> "Source operation timed out"
+                IndexingFailureCode.STORE_WRITE_FAILED -> "Encrypted store write failed"
+                IndexingFailureCode.LEASE_EXPIRED -> "Work lease expired"
+                IndexingFailureCode.ATTEMPT_LIMIT_REACHED -> "Retry limit reached"
+                IndexingFailureCode.INTERNAL_ERROR -> "Internal error"
+            }
+        }
+    }
+
+    private fun indexingTriggerLabel(trigger: IndexingTrigger): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> when (trigger) {
+                IndexingTrigger.MANUAL -> "수동"
+                IndexingTrigger.AUTOMATIC -> "자동"
+            }
+
+            GrayinLanguage.JAPANESE -> when (trigger) {
+                IndexingTrigger.MANUAL -> "手動"
+                IndexingTrigger.AUTOMATIC -> "自動"
+            }
+
+            GrayinLanguage.ENGLISH -> when (trigger) {
+                IndexingTrigger.MANUAL -> "Manual"
+                IndexingTrigger.AUTOMATIC -> "Automatic"
+            }
+        }
+    }
+
+    private fun indexingStateLabel(state: RecentIndexingTaskState): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> when (state) {
+                RecentIndexingTaskState.PENDING -> "대기 중"
+                RecentIndexingTaskState.RUNNING -> "실행 중"
+                RecentIndexingTaskState.RECOVERY_PENDING -> "복구 대기"
+                RecentIndexingTaskState.COMPLETED -> "완료"
+                RecentIndexingTaskState.SKIPPED -> "건너뜀"
+                RecentIndexingTaskState.FAILED -> "실패"
+            }
+
+            GrayinLanguage.JAPANESE -> when (state) {
+                RecentIndexingTaskState.PENDING -> "待機中"
+                RecentIndexingTaskState.RUNNING -> "実行中"
+                RecentIndexingTaskState.RECOVERY_PENDING -> "復旧待ち"
+                RecentIndexingTaskState.COMPLETED -> "完了"
+                RecentIndexingTaskState.SKIPPED -> "スキップ"
+                RecentIndexingTaskState.FAILED -> "失敗"
+            }
+
+            GrayinLanguage.ENGLISH -> when (state) {
+                RecentIndexingTaskState.PENDING -> "Pending"
+                RecentIndexingTaskState.RUNNING -> "Running"
+                RecentIndexingTaskState.RECOVERY_PENDING -> "Recovery pending"
+                RecentIndexingTaskState.COMPLETED -> "Completed"
+                RecentIndexingTaskState.SKIPPED -> "Skipped"
+                RecentIndexingTaskState.FAILED -> "Failed"
+            }
+        }
+    }
+
+    private fun formatIndexingInstant(instant: Instant, zoneId: ZoneId): String {
+        return INDEXING_TIME_FORMATTER.withZone(zoneId).format(instant)
+    }
+
+    private fun localizedNone(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "없음"
+        GrayinLanguage.JAPANESE -> "なし"
+        GrayinLanguage.ENGLISH -> "None"
+    }
+
+    private fun localizedNever(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "기록 없음"
+        GrayinLanguage.JAPANESE -> "記録なし"
+        GrayinLanguage.ENGLISH -> "No record"
+    }
+
+    private fun localizedNotRun(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "실행 기록 없음"
+        GrayinLanguage.JAPANESE -> "実行履歴なし"
+        GrayinLanguage.ENGLISH -> "Not run"
+    }
+
     fun localModelStatus(status: ModelDownloadStatus): String {
         return when (languageCode) {
             GrayinLanguage.KOREAN -> when (status) {
@@ -464,6 +776,8 @@ data class GrayinStrings(
     }
 }
 
+private val INDEXING_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
 object GrayinText {
     fun forOption(option: GrayinLanguageOption): GrayinStrings {
         return when (GrayinLanguageResolver.resolve(option)) {
@@ -504,6 +818,10 @@ private val EnglishStrings = GrayinStrings(
     automaticIndexingSettings = "Automatic indexing settings",
     automaticIndexingOn = "On",
     automaticIndexingOff = "Off",
+    indexingStatusTitle = "Indexing status",
+    recentIndexingTasks = "Recent indexing activity",
+    noRecentIndexingTasks = "No indexing activity recorded.",
+    invalidAutomaticIndexingWindow = "Start and end must be different before automatic indexing can be enabled.",
     chargingOnly = "Only while charging",
     startHour = "Start hour",
     endHour = "End hour",
@@ -620,6 +938,10 @@ private val KoreanStrings = EnglishStrings.copy(
     automaticIndexingSettings = "자동 인덱싱 세부 설정",
     automaticIndexingOn = "켜짐",
     automaticIndexingOff = "꺼짐",
+    indexingStatusTitle = "인덱싱 상태",
+    recentIndexingTasks = "최근 인덱싱 활동",
+    noRecentIndexingTasks = "기록된 인덱싱 활동이 없습니다.",
+    invalidAutomaticIndexingWindow = "자동 인덱싱을 켜려면 시작 시간과 종료 시간이 달라야 합니다.",
     chargingOnly = "충전 중일 때만",
     startHour = "시작 시간",
     endHour = "종료 시간",
@@ -736,6 +1058,10 @@ private val JapaneseStrings = EnglishStrings.copy(
     automaticIndexingSettings = "自動インデックス詳細設定",
     automaticIndexingOn = "オン",
     automaticIndexingOff = "オフ",
+    indexingStatusTitle = "インデックス状態",
+    recentIndexingTasks = "最近のインデックス動作",
+    noRecentIndexingTasks = "インデックス動作の記録はありません。",
+    invalidAutomaticIndexingWindow = "自動インデックスを有効にするには開始時刻と終了時刻を変えてください。",
     chargingOnly = "充電中のみ",
     startHour = "開始時間",
     endHour = "終了時間",

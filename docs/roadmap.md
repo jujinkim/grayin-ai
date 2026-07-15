@@ -18,7 +18,7 @@ Current phase status: local-first MVP foundation and basic Android source connec
 - App-specific model training scaffold under `model-training/`, with Gemma/reference/output model artifacts excluded from git.
 - First-launch Sources intro explaining that user-connected sources must be indexed before Ask can use them.
 - Sources UI is backed by connector metadata and permission/index state.
-- Sources UI exposes top-level Index all now and persisted automatic indexing settings.
+- Sources UI exposes top-level Index all now, persisted automatic indexing settings, and live queue/runtime status with localized outcomes.
 - Localized UI copy for system, Korean, English, and Japanese language settings.
 - Bottom navigation with icons and localized labels.
 - Settings shows local model selection, download/cancel/delete controls, official model pages, local Gemma status, current adb install path, and `.litertlm` import/delete fallback controls.
@@ -59,7 +59,7 @@ The current Open-Meteo public endpoint is suitable only for non-commercial proto
 - [x] Add unique periodic WorkManager scheduling for enabled automatic indexing.
 - [x] Enforce charging, low-usage window, battery, and thermal conditions at runtime.
 - [x] Fence canceled and reconfigured workers with a durable SQLCipher control generation.
-- [ ] Surface last run, queued work, skipped reason, and failure state in Sources.
+- [x] Surface queued/running work, latest automatic activity, recent task outcomes, skipped reasons, and failure states in Sources.
 
 ### 4. PDF and OCR Indexing
 
@@ -86,7 +86,7 @@ The current Open-Meteo public endpoint is suitable only for non-commercial proto
 - [ ] Build place history/cluster output from indexed location evidence and populate Places.
 - [ ] Refresh usage/notification permission state after returning from Android settings.
 - [ ] Localize connector status, error, and derived-summary presentation.
-- [ ] Complete date-range indexing and visible indexing status.
+- [ ] Add date-range indexing controls and per-connector date-range status.
 
 ### 8. Local Model Release Hardening
 

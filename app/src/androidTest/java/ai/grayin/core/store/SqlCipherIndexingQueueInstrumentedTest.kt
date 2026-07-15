@@ -337,6 +337,32 @@ class SqlCipherIndexingQueueInstrumentedTest {
     }
 
     @Test
+    fun runningConnectorSummaryExcludesExpiredLease() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T02:45:00Z")
+        val claimedAt = requestedAt.plusSeconds(1)
+        val liveStore = store(
+            databaseName = databaseName,
+            clock = Clock.fixed(claimedAt.plusSeconds(5), ZoneOffset.UTC),
+        )
+        liveStore.enqueue(listOf(manualTask(id = "running-summary", requestedAt = requestedAt)))
+        liveStore.claimNextAtomically(
+            leaseOwner = "summary-worker",
+            claimedAt = claimedAt,
+            leaseUntil = claimedAt.plusSeconds(10),
+            trigger = IndexingTrigger.MANUAL,
+        )
+
+        assertEquals(setOf(TEST_CONNECTOR_ID), liveStore.snapshot().runningConnectorIds)
+        val expiredStore = store(
+            databaseName = databaseName,
+            clock = Clock.fixed(claimedAt.plusSeconds(11), ZoneOffset.UTC),
+        )
+        assertEquals(emptySet<String>(), expiredStore.snapshot().runningConnectorIds)
+        assertEquals(IndexingQueueState.RUNNING, expiredStore.snapshot().items.single().state)
+    }
+
+    @Test
     fun automaticWindowEnqueueReturnsExistingTask() = runBlocking {
         val databaseName = newDatabaseName()
         val requestedAt = Instant.parse("2026-07-15T03:00:00Z")

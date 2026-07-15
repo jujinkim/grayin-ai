@@ -12,6 +12,9 @@ data class AutomaticIndexingUiState(
     val startHour: Int = DEFAULT_START_HOUR,
     val endHour: Int = DEFAULT_END_HOUR,
 ) {
+    val hasValidWindow: Boolean
+        get() = startHour.coerceIn(HOUR_MIN, HOUR_MAX) != endHour.coerceIn(HOUR_MIN, HOUR_MAX)
+
     fun toPolicy(): AutomaticIndexingPolicy {
         return AutomaticIndexingPolicy(
             requireCharging = requireCharging,
@@ -48,6 +51,17 @@ data class AutomaticIndexingUiState(
         }
     }
 
+    fun repairedAfterLoad(): AutomaticIndexingUiState {
+        return if (hasValidWindow) {
+            this
+        } else {
+            copy(
+                enabled = false,
+                endHour = (startHour.coerceIn(HOUR_MIN, HOUR_MAX) + 1) % 24,
+            )
+        }
+    }
+
     companion object {
         const val DEFAULT_START_HOUR = 2
         const val DEFAULT_END_HOUR = 5
@@ -71,7 +85,7 @@ class AutomaticIndexingPreferenceStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun load(): AutomaticIndexingUiState {
-        return AutomaticIndexingUiState(
+        val loaded = AutomaticIndexingUiState(
             enabled = prefs.getBoolean(KEY_ENABLED, false),
             requireCharging = prefs.getBoolean(KEY_REQUIRE_CHARGING, true),
             startHour = prefs.getInt(KEY_START_HOUR, AutomaticIndexingUiState.DEFAULT_START_HOUR)
@@ -79,9 +93,15 @@ class AutomaticIndexingPreferenceStore(context: Context) {
             endHour = prefs.getInt(KEY_END_HOUR, AutomaticIndexingUiState.DEFAULT_END_HOUR)
                 .coerceIn(AutomaticIndexingUiState.HOUR_MIN, AutomaticIndexingUiState.HOUR_MAX),
         )
+        val repaired = loaded.repairedAfterLoad()
+        if (repaired != loaded) {
+            save(repaired)
+        }
+        return repaired
     }
 
     fun save(state: AutomaticIndexingUiState) {
+        require(state.hasValidWindow) { "Automatic indexing start and end hours must differ." }
         check(
             prefs.edit()
                 .putBoolean(KEY_ENABLED, state.enabled)

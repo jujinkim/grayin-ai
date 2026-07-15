@@ -48,4 +48,34 @@ class AutomaticIndexingUiStateTest {
             ),
         )
     }
+
+    @Test
+    fun equalWindowEndpointsAreInvalidWhileCrossMidnightIsValid() {
+        assertFalse(AutomaticIndexingUiState(startHour = 2, endHour = 2).hasValidWindow)
+        assertTrue(AutomaticIndexingUiState(startHour = 23, endHour = 2).hasValidWindow)
+    }
+
+    @Test
+    fun hourCandidatesExposeTheInvalidEndpointBeforePersistence() {
+        val state = AutomaticIndexingUiState(startHour = 2, endHour = 3)
+
+        assertFalse(state.shiftedStartHour(1).hasValidWindow)
+        assertFalse(state.shiftedEndHour(-1).hasValidWindow)
+        assertTrue(state.shiftedStartHour(-1).hasValidWindow)
+        assertTrue(state.shiftedEndHour(1).hasValidWindow)
+    }
+
+    @Test
+    fun legacyInvalidWindowRepairsFailClosed() {
+        val repaired = AutomaticIndexingUiState(
+            enabled = true,
+            startHour = 23,
+            endHour = 23,
+        ).repairedAfterLoad()
+
+        assertFalse(repaired.enabled)
+        assertEquals(23, repaired.startHour)
+        assertEquals(0, repaired.endHour)
+        assertTrue(repaired.hasValidWindow)
+    }
 }

@@ -88,3 +88,5 @@ The shared command executor catches connector/store failures only to select thos
 WorkManager input and progress data contain no source data. The automatic worker receives no raw payload and reconstructs work only from encrypted task metadata, current connector consent, and live device conditions. Automatic runtime status stores enums, timestamps, and counts only.
 
 The encrypted automatic-control metadata contains only an enabled flag, monotonic generation, and a deterministic key for indexing preferences. Queue/runtime generations are coordination numbers; they contain no source content, URI, provider response, location, or user query.
+
+The Sources status card reads only bounded queue/runtime metadata: connector display name, trigger/state, timestamps, counts, and stable reason codes. It never renders task IDs, lease owners, exception text, source pointers, or derived/source content.

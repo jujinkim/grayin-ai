@@ -496,6 +496,7 @@ class SqlCipherLocalMemoryStore(
         require(limit in 1..MAX_QUEUE_SNAPSHOT_ITEMS) { "Queue snapshot limit is out of range." }
         db.beginTransaction()
         try {
+            val observedAt = clock.instant()
             val items = readQueueItems(
                 db = db,
                 orderBy = "requested_at_ms DESC, id DESC",
@@ -504,8 +505,11 @@ class SqlCipherLocalMemoryStore(
             val queueDepth = countQueueRows(db, "state = ?", arrayOf(IndexingQueueState.PENDING.name))
             val runningConnectorIds = readQueueItems(
                 db = db,
-                selection = "state = ?",
-                selectionArgs = arrayOf(IndexingQueueState.RUNNING.name),
+                selection = "state = ? AND lease_until_ms > ?",
+                selectionArgs = arrayOf(
+                    IndexingQueueState.RUNNING.name,
+                    observedAt.toEpochMilli().toString(),
+                ),
                 orderBy = "requested_at_ms ASC, id ASC",
             ).mapTo(mutableSetOf()) { it.connectorId }
             val lastCompletedAt = db.rawQuery(
@@ -519,6 +523,7 @@ class SqlCipherLocalMemoryStore(
                 queueDepth = queueDepth,
                 runningConnectorIds = runningConnectorIds,
                 lastCompletedAt = lastCompletedAt,
+                observedAt = observedAt,
             )
             db.setTransactionSuccessful()
             snapshot

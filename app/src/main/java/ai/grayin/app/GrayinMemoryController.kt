@@ -40,6 +40,7 @@ import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceReference
 import ai.grayin.core.enrichment.OnlineEnrichmentPreferences
 import ai.grayin.core.indexing.ConnectorScanWriter
+import ai.grayin.core.indexing.AutomaticIndexingRuntimeStore
 import ai.grayin.core.indexing.IndexConnector
 import ai.grayin.core.indexing.IndexNow
 import ai.grayin.core.indexing.IndexingCommand
@@ -101,6 +102,7 @@ data class ModelOptionUiState(
 
 data class GrayinSnapshot(
     val sourceRows: List<ConnectorUiState>,
+    val indexingStatus: IndexingStatusUiState,
     val timelineRows: List<String>,
     val placesRows: List<String>,
     val settingsRows: List<String>,
@@ -112,6 +114,9 @@ class GrayinMemoryController(
     private val store: LocalMemoryStore = SqlCipherLocalMemoryStore(context.applicationContext),
     private val indexingQueue: IndexingQueue = store as? IndexingQueue
         ?: error("The local memory store must also provide the encrypted indexing queue."),
+    private val automaticIndexingRuntimeStore: AutomaticIndexingRuntimeStore =
+        store as? AutomaticIndexingRuntimeStore
+            ?: error("The local memory store must provide automatic indexing runtime status."),
     private val connectorScanWriter: ConnectorScanWriter = store as? ConnectorScanWriter
         ?: error("The local memory store must provide fenced connector scan commits."),
     private val androidConnectors: AndroidConnectorRegistry = AndroidConnectorRegistry(context.applicationContext),
@@ -147,6 +152,7 @@ class GrayinMemoryController(
             .getOrDefault(LocalModelStatus.UNAVAILABLE)
         GrayinSnapshot(
             sourceRows = connectorRegistry.all.map { connector -> sourceRow(connector, sourceReferences, strings) },
+            indexingStatus = loadIndexingStatus(strings),
             timelineRows = timelineRows(events, strings),
             placesRows = listOf(strings.noPlaceClusters),
             settingsRows = listOf(
@@ -161,6 +167,25 @@ class GrayinMemoryController(
                 "${strings.derivedMemoryEventsPrefix} ${events.size}",
             ),
             modelOptions = localModelOptions(strings),
+        )
+    }
+
+    suspend fun indexingStatus(strings: GrayinStrings): IndexingStatusUiState = withContext(Dispatchers.IO) {
+        loadIndexingStatus(strings)
+    }
+
+    private suspend fun loadIndexingStatus(strings: GrayinStrings): IndexingStatusUiState {
+        val queueSnapshot = indexingQueue.snapshot(limit = INDEXING_STATUS_QUEUE_LIMIT)
+        val automaticRuntime = automaticIndexingRuntimeStore.loadAutomaticIndexingRuntime()
+        return IndexingStatusUiMapper.map(
+            queue = queueSnapshot,
+            runtime = automaticRuntime,
+            sourceName = { connectorId ->
+                strings.connectorName(
+                    connectorId = connectorId,
+                    fallback = connectorRegistry.find(connectorId)?.metadata?.displayName ?: connectorId,
+                )
+            },
         )
     }
 
@@ -636,6 +661,7 @@ class GrayinMemoryController(
     }
 
     private companion object {
+        const val INDEXING_STATUS_QUEUE_LIMIT = 20
         const val MAX_EVIDENCE_ITEMS = 8
         const val MAX_TIMELINE_ROWS = 30
         const val MAX_MANUAL_DRAIN_TASKS = 64
