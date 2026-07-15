@@ -3,12 +3,13 @@ Build Grayin AI by following the repository documentation.
 Always read and follow:
 - docs/product-spec.md
 - docs/roadmap.md
+- docs/network-policy.md
 - docs/zero-raw-retention.md
 - docs/non-agentic-boundary.md
 - docs/privacy-model.md
 - docs/security-policy.md
 
-The current usable local Text/Markdown MVP is complete.
+The repository-local MVP includes the real Android connectors, Text/Markdown/PDF plus on-device OCR indexing, typed external enrichment, persistent automatic indexing, encrypted export/import, optional app security, and the local Gemma runtime adapter. External release artifacts, production credentials/keys, commercial provider selection, and physical-device acceptance remain explicit roadmap gates rather than hidden code placeholders.
 
 For new work, choose the next coherent roadmap item from docs/roadmap.md and keep the implementation scoped.
 
@@ -18,7 +19,7 @@ After each coherent step:
 3. commit the changes with a clear git commit message.
 
 Never violate the core rules:
-- INTERNET permission only through typed online enrichment methods,
+- INTERNET permission only through typed online enrichment gateways or verified fixed-catalog model, authenticated-manifest, and OCR language-data download infrastructure,
 - no arbitrary URL or endpoint caller,
 - no raw/original data storage, logging, caching, export, sync, or transmission,
 - no agentic action APIs,

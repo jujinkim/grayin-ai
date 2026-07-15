@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.CalendarContract
+import ai.grayin.connectors.ConnectorValuePolicy
 import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorDeleteResult
 import ai.grayin.core.connector.ConnectorMetadata
@@ -200,18 +201,19 @@ class CalendarConnector(
         val eventId = getLong(0)
         val beginMillis = getLong(1)
         val endMillis = if (isNull(2)) null else getLong(2)
-        val title = if (isNull(3)) null else getString(3)
-        val location = if (isNull(4)) null else getString(4)
-        val calendarName = if (isNull(5)) null else getString(5)
-        val allDay = !isNull(6) && getInt(6) == 1
+        val fields = CalendarValuePolicy.close(
+            title = if (isNull(3)) null else getString(3),
+            location = if (isNull(4)) null else getString(4),
+        )
+        val allDay = !isNull(5) && getInt(5) == 1
         val sourceHash = sha256("$eventId:$beginMillis")
         val sourceId = "source:$CONNECTOR_ID:$sourceHash"
         val eventMemoryId = "event:$CONNECTOR_ID:$sourceHash"
         val citationId = "citation:$CONNECTOR_ID:$sourceHash"
         val startedAt = Instant.ofEpochMilli(beginMillis)
         val endedAt = endMillis?.let(Instant::ofEpochMilli)
-        val label = title?.takeIf { it.isNotBlank() } ?: "Untitled calendar event"
-        val keywords = keywords(listOf(label, location, calendarName).filterNotNull().joinToString(" "))
+        val label = fields.title ?: "Untitled calendar event"
+        val keywords = keywords(listOfNotNull(label, fields.location).joinToString(" "))
         return CalendarExtractionResult(
             sourceReference = SourceReference(
                 id = sourceId,
@@ -219,7 +221,7 @@ class CalendarConnector(
                 sourceKind = SourceKind.CALENDAR,
                 localPointer = Uri.withAppendedPath(CalendarContract.Events.CONTENT_URI, eventId.toString()).toString(),
                 externalIdHash = sourceHash,
-                sourceAppIdentifier = calendarName,
+                sourceAppIdentifier = CalendarValuePolicy.SOURCE_APP_IDENTIFIER,
                 observedAt = observedAt,
                 modifiedAt = startedAt,
                 sensitivity = SensitivityLevel.HIGH,
@@ -228,16 +230,16 @@ class CalendarConnector(
                 id = eventMemoryId,
                 kind = DerivedMemoryEventKind.CALENDAR_EVENT,
                 sourceReferenceIds = listOf(sourceId),
-                summary = calendarSummary(label, startedAt, endedAt, location, allDay),
+                summary = calendarSummary(label, startedAt, endedAt, fields.location, allDay),
                 startedAt = startedAt,
                 endedAt = endedAt,
                 keywords = keywords,
                 labels = buildList {
                     add("calendar")
                     if (allDay) add("all-day")
-                    if (!location.isNullOrBlank()) add("location")
+                    if (fields.location != null) add("location")
                 },
-                confidence = if (title.isNullOrBlank()) ConfidenceLevel.MEDIUM else ConfidenceLevel.HIGH,
+                confidence = if (fields.title == null) ConfidenceLevel.MEDIUM else ConfidenceLevel.HIGH,
                 sensitivity = SensitivityLevel.HIGH,
                 citationIds = listOf(citationId),
                 createdAt = observedAt,
@@ -248,7 +250,7 @@ class CalendarConnector(
                 derivedMemoryEventId = eventMemoryId,
                 label = "Calendar: $label",
                 observedAt = observedAt,
-                confidence = if (title.isNullOrBlank()) ConfidenceLevel.MEDIUM else ConfidenceLevel.HIGH,
+                confidence = if (fields.title == null) ConfidenceLevel.MEDIUM else ConfidenceLevel.HIGH,
             ),
         )
     }
@@ -364,10 +366,28 @@ class CalendarConnector(
             CalendarContract.Instances.END,
             CalendarContract.Instances.TITLE,
             CalendarContract.Instances.EVENT_LOCATION,
-            CalendarContract.Instances.CALENDAR_DISPLAY_NAME,
             CalendarContract.Instances.ALL_DAY,
         )
     }
+}
+
+internal data class ClosedCalendarFields(
+    val title: String?,
+    val location: String?,
+)
+
+internal object CalendarValuePolicy {
+    const val SOURCE_APP_IDENTIFIER = "android-calendar"
+
+    fun close(title: String?, location: String?): ClosedCalendarFields {
+        return ClosedCalendarFields(
+            title = ConnectorValuePolicy.closedText(title, MAX_TITLE_BYTES),
+            location = ConnectorValuePolicy.closedText(location, MAX_LOCATION_BYTES),
+        )
+    }
+
+    private const val MAX_TITLE_BYTES = 384
+    private const val MAX_LOCATION_BYTES = 384
 }
 
 internal object CalendarRangePolicy {

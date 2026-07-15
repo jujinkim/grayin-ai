@@ -294,9 +294,9 @@ fun GrayinApp(
         }
     }
     val photosPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        if (grants.values.any { granted -> granted }) {
             scope.launch {
                 working = true
                 try {
@@ -511,7 +511,10 @@ fun GrayinApp(
 
                 GrayinScreen.Settings -> while (true) {
                     try {
-                        snapshot = controller.snapshot(strings)
+                        snapshot = controller.snapshot(
+                            strings = strings,
+                            refreshRemoteModelCatalog = true,
+                        )
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: Exception) {
@@ -619,7 +622,7 @@ fun GrayinApp(
                                 }
 
                                 connectorId == PhotosConnectorId && requiredPermissions.isNotEmpty() -> {
-                                    photosPermissionLauncher.launch(requiredPermissions.first())
+                                    photosPermissionLauncher.launch(requiredPermissions.toTypedArray())
                                 }
 
                                 connectorId == LocationConnectorId && requiredPermissions.isNotEmpty() -> {
@@ -1742,7 +1745,7 @@ private fun SourceRow(
                             enabled = !working,
                             onClick = { onInvokeSource(source.id, source.requiredPermissions) },
                         ) {
-                            Text(strings.invokeSource)
+                            Text(source.invokeLabel)
                         }
                     }
                     if (source.canAdd) {

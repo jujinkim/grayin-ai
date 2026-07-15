@@ -68,6 +68,8 @@ There must be no store API that accepts raw content.
 
 Connectors may read raw source data only inside connector-owned transient processing scopes. They may emit only derived events and source references.
 
+Provider-authored metadata must cross a source-specific canonicalization boundary before derived storage. Calendar title/location and app labels are single-line, control/format-free, and UTF-8 bounded; calendar display/account names are not projected and the source-app marker is fixed. Android location provider names are reduced to a closed provider enum. Photos does not persist MediaStore file names and admits only closed MIME/dimension signals. Notification title/text is capped at 4 KiB before classification, and an oversized arrival is discarded rather than classified from a truncated prefix; notification categories are mapped to a closed set. Weather persistence uses only validated numeric signals and never provider prose, URLs, bodies, or errors.
+
 ## Core Model Rule
 
 Core model types may represent only:

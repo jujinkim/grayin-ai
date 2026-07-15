@@ -14,13 +14,16 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class ModelDownloadScheduler(context: Context) {
+class ModelDownloadScheduler(
+    context: Context,
+    private val catalogRepository: ModelCatalogRepository = ModelCatalogRepository(context.applicationContext),
+    private val installStore: ModelInstallStore = ModelInstallStore(context.applicationContext, catalogRepository),
+) {
     private val appContext = context.applicationContext
-    private val installStore = ModelInstallStore(appContext)
     private val workManager = WorkManager.getInstance(appContext)
 
     fun enqueue(modelId: String): Boolean = synchronized(WORK_LOCK) {
-        val entry = ModelCatalog.entry(modelId)?.takeIf { it.downloadConfigured } ?: return false
+        val entry = catalogRepository.entry(modelId)?.takeIf { it.downloadConfigured } ?: return false
         val generation = runCatching { installStore.beginInstall(entry) }.getOrElse { return false }
         val request = requestFor(modelId, generation)
         runCatching {
@@ -47,7 +50,7 @@ class ModelDownloadScheduler(context: Context) {
 
     suspend fun cancel(modelId: String): Boolean = withContext(Dispatchers.IO) {
         synchronized(WORK_LOCK) {
-            val entry = ModelCatalog.entry(modelId) ?: return@synchronized false
+            val entry = catalogRepository.entry(modelId) ?: return@synchronized false
             installStore.invalidateForCancel(entry)
             val canceled = runCatching {
                 workManager.cancelUniqueWork(uniqueNameFor(modelId))
@@ -62,7 +65,7 @@ class ModelDownloadScheduler(context: Context) {
 
     suspend fun delete(modelId: String): Boolean = withContext(Dispatchers.IO) {
         synchronized(WORK_LOCK) {
-            val entry = ModelCatalog.entry(modelId) ?: return@synchronized false
+            val entry = catalogRepository.entry(modelId) ?: return@synchronized false
             val generation = installStore.invalidateForCancel(entry)
             val canceled = runCatching {
                 workManager.cancelUniqueWork(uniqueNameFor(modelId))
@@ -77,7 +80,7 @@ class ModelDownloadScheduler(context: Context) {
 
     suspend fun reconcile(modelId: String): Boolean = withContext(Dispatchers.IO) {
         synchronized(WORK_LOCK) {
-            val entry = ModelCatalog.entry(modelId) ?: return@synchronized false
+            val entry = catalogRepository.entry(modelId) ?: return@synchronized false
             installStore.synchronizeConfiguration(entry)
             val record = installStore.recordFor(entry)
             if (

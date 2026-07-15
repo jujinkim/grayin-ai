@@ -10,6 +10,7 @@ import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorDeleteResult
 import ai.grayin.core.connector.ConnectorMetadata
 import ai.grayin.core.connector.ConnectorIndexingMode
+import ai.grayin.core.connector.ConnectorPermissionAccess
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorRevokeResult
 import ai.grayin.core.connector.ConnectorScanResult
@@ -32,6 +33,7 @@ import ai.grayin.core.model.SourceReference
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.util.Locale
 
 class PhotosConnector(
     private val context: Context,
@@ -39,7 +41,8 @@ class PhotosConnector(
     override val metadata: ConnectorMetadata = METADATA
 
     override suspend fun currentState(): ConnectorState {
-        val permissionGranted = hasPhotosPermission()
+        val permissionAccess = photoPermissionAccess()
+        val permissionGranted = permissionAccess != ConnectorPermissionAccess.NONE
         val consentEnabled = isEnabled()
         val enabled = permissionGranted && consentEnabled
         val lastIndexedAt = prefs().getString(KEY_LAST_INDEXED_AT, null)?.let(Instant::parse)
@@ -66,18 +69,25 @@ class PhotosConnector(
     }
 
     override suspend fun permissionState(): ConnectorPermissionState {
-        val permissionGranted = hasPhotosPermission()
+        val permissionAccess = photoPermissionAccess()
+        val permissionGranted = permissionAccess != ConnectorPermissionAccess.NONE
         return ConnectorPermissionState(
             connectorId = CONNECTOR_ID,
             availability = if (permissionGranted) SourceAvailability.AVAILABLE else SourceAvailability.MISSING_PERMISSION,
             permissionGranted = permissionGranted,
             canRequestPermission = true,
-            requiredPlatformPermissions = listOf(requiredPermission()),
-            explanation = if (permissionGranted) {
-                "Photo permission is available. Invoke this source before indexing."
-            } else {
-                "Grant photo read permission to invoke photo metadata for indexing."
+            requiredPlatformPermissions = PhotoPermissionPolicy.requiredPermissions(Build.VERSION.SDK_INT),
+            explanation = when (permissionAccess) {
+                ConnectorPermissionAccess.FULL ->
+                    "Full photo-library permission is available. Invoke this source before indexing."
+
+                ConnectorPermissionAccess.PARTIAL ->
+                    "Selected-photos access is available. Reopen the permission dialog to change the selection."
+
+                ConnectorPermissionAccess.NONE ->
+                    "Grant full or selected-photos read access to invoke photo metadata for indexing."
             },
+            access = permissionAccess,
         )
     }
 
@@ -93,7 +103,7 @@ class PhotosConnector(
 
     override suspend fun scan(scope: ConnectorScanScope): ConnectorScanResult {
         val now = Instant.now()
-        if (!hasPhotosPermission()) {
+        if (photoPermissionAccess() == ConnectorPermissionAccess.NONE) {
             return skipped(now, SourceAvailability.MISSING_PERMISSION, ConnectorScanIssueCode.SOURCE_PERMISSION_NOT_GRANTED)
         }
         if (!isEnabled()) {
@@ -110,6 +120,7 @@ class PhotosConnector(
             sourceReferences = rows.map { it.sourceReference },
             derivedEvents = rows.map { it.derivedEvent },
             citations = rows.map { it.citation },
+            replaceExistingConnectorData = PhotoSnapshotPolicy.shouldReplace(readResult.queryCompleted),
             missingSources = buildList {
                 if (rows.isEmpty()) {
                     addAll(
@@ -162,14 +173,13 @@ class PhotosConnector(
         until: Instant,
         observedAt: Instant,
     ): PhotoReadResult {
-        val selection = "${MediaStore.Images.Media.DATE_TAKEN} >= ? AND ${MediaStore.Images.Media.DATE_TAKEN} < ?"
-        val selectionArgs = arrayOf(from.toEpochMilli().toString(), until.toEpochMilli().toString())
+        val rangeQuery = PhotoRangeSelectionPolicy.query(from, until)
         return context.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             PROJECTION,
-            selection,
-            selectionArgs,
-            "${MediaStore.Images.Media.DATE_TAKEN} DESC",
+            rangeQuery.selection,
+            rangeQuery.selectionArgs,
+            rangeQuery.sortOrder,
         )?.use { cursor ->
             val rows = mutableListOf<PhotoExtractionResult>()
             var outputLimited = false
@@ -180,18 +190,19 @@ class PhotosConnector(
                 }
                 rows += cursor.toExtractionResult(observedAt)
             }
-            PhotoReadResult(rows, outputLimited)
-        } ?: PhotoReadResult(emptyList(), outputLimited = false)
+            PhotoReadResult(rows, outputLimited, queryCompleted = true)
+        } ?: PhotoReadResult(emptyList(), outputLimited = false, queryCompleted = false)
     }
 
     private fun android.database.Cursor.toExtractionResult(observedAt: Instant): PhotoExtractionResult {
         val photoId = getLong(0)
         val takenAtMillis = if (isNull(1) || getLong(1) <= 0L) null else getLong(1)
         val modifiedSeconds = if (isNull(2) || getLong(2) <= 0L) null else getLong(2)
-        val displayName = if (isNull(3)) null else getString(3)
-        val mimeType = if (isNull(4)) null else getString(4)
-        val width = if (isNull(5)) null else getInt(5)
-        val height = if (isNull(6)) null else getInt(6)
+        val metadata = PhotoMetadataPolicy.close(
+            mimeType = if (isNull(3)) null else getString(3),
+            width = if (isNull(4)) null else getInt(4),
+            height = if (isNull(5)) null else getInt(5),
+        )
         val contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, photoId)
         val sourceHash = sha256(contentUri.toString())
         val sourceId = "source:$CONNECTOR_ID:$sourceHash"
@@ -200,8 +211,7 @@ class PhotosConnector(
         val occurredAt = takenAtMillis?.let(Instant::ofEpochMilli)
             ?: modifiedSeconds?.let { Instant.ofEpochSecond(it) }
             ?: observedAt
-        val labels = photoLabels(mimeType, width, height)
-        val keywords = keywords(listOfNotNull(displayName, mimeType, width?.toString(), height?.toString()).joinToString(" "))
+        val derivedValues = PhotoDerivedValuePolicy.create(occurredAt, metadata)
         return PhotoExtractionResult(
             sourceReference = SourceReference(
                 id = sourceId,
@@ -217,10 +227,10 @@ class PhotosConnector(
                 id = eventId,
                 kind = DerivedMemoryEventKind.PHOTO_INDEX,
                 sourceReferenceIds = listOf(sourceId),
-                summary = photoSummary(displayName, occurredAt, mimeType, width, height),
+                summary = derivedValues.summary,
                 startedAt = occurredAt,
-                keywords = keywords,
-                labels = labels,
+                keywords = derivedValues.keywords,
+                labels = derivedValues.labels,
                 confidence = ConfidenceLevel.MEDIUM,
                 sensitivity = SensitivityLevel.HIGH,
                 citationIds = listOf(citationId),
@@ -230,7 +240,7 @@ class PhotosConnector(
                 id = citationId,
                 sourceReferenceId = sourceId,
                 derivedMemoryEventId = eventId,
-                label = "Photo metadata: ${displayName?.takeIf { it.isNotBlank() } ?: photoId}",
+                label = derivedValues.citationLabel,
                 observedAt = observedAt,
                 confidence = ConfidenceLevel.MEDIUM,
             ),
@@ -265,16 +275,20 @@ class PhotosConnector(
         }
     }
 
-    private fun hasPhotosPermission(): Boolean {
-        return context.checkSelfPermission(requiredPermission()) == PackageManager.PERMISSION_GRANTED
-    }
-
-    private fun requiredPermission(): String {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_IMAGES
-        } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        }
+    private fun photoPermissionAccess(): ConnectorPermissionAccess {
+        return PhotoPermissionPolicy.access(
+            sdkInt = Build.VERSION.SDK_INT,
+            fullAccessGranted = context.checkSelfPermission(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Manifest.permission.READ_MEDIA_IMAGES
+                } else {
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                },
+            ) == PackageManager.PERMISSION_GRANTED,
+            selectedPhotosGranted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                context.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
     }
 
     private fun isEnabled(): Boolean {
@@ -282,38 +296,6 @@ class PhotosConnector(
     }
 
     private fun prefs() = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private fun photoSummary(
-        displayName: String?,
-        occurredAt: Instant,
-        mimeType: String?,
-        width: Int?,
-        height: Int?,
-    ): String {
-        val name = displayName?.takeIf { it.isNotBlank() } ?: "photo"
-        val dimensions = if (width != null && height != null) " Dimensions: ${width}x$height." else ""
-        val mime = mimeType?.let { " Type: $it." }.orEmpty()
-        return "Photo metadata indexed: $name at $occurredAt.$mime$dimensions"
-    }
-
-    private fun photoLabels(mimeType: String?, width: Int?, height: Int?): List<String> {
-        return buildList {
-            add("photo")
-            mimeType?.let(::add)
-            if (width != null && height != null) {
-                add(if (width >= height) "landscape" else "portrait")
-            }
-        }
-    }
-
-    private fun keywords(text: String): List<String> {
-        return WORD_PATTERN.findAll(text.lowercase())
-            .map { it.value }
-            .filter { it.length in MIN_TOKEN_LENGTH..MAX_TOKEN_LENGTH && it !in STOP_WORDS }
-            .distinct()
-            .take(MAX_KEYWORDS)
-            .toList()
-    }
 
     private fun sha256(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
@@ -329,6 +311,7 @@ class PhotosConnector(
     private data class PhotoReadResult(
         val rows: List<PhotoExtractionResult>,
         val outputLimited: Boolean,
+        val queryCompleted: Boolean,
     )
 
     companion object {
@@ -352,21 +335,131 @@ class PhotosConnector(
         private const val KEY_ENABLED = "enabled"
         private const val KEY_LAST_INDEXED_AT = "last_indexed_at"
         private const val MAX_PHOTOS_PER_SCAN = 200
-        private const val MIN_TOKEN_LENGTH = 3
-        private const val MAX_TOKEN_LENGTH = 32
-        private const val MAX_KEYWORDS = 16
         private const val HASH_ID_CHARS = 32
         private val DEFAULT_PAST_WINDOW = Duration.ofDays(90)
-        private val WORD_PATTERN = Regex("[\\p{L}\\p{Nd}]+")
-        private val STOP_WORDS = setOf("jpg", "jpeg", "png", "webp", "image")
         private val PROJECTION = arrayOf(
             MediaStore.Images.Media._ID,
             MediaStore.Images.Media.DATE_TAKEN,
             MediaStore.Images.Media.DATE_MODIFIED,
-            MediaStore.Images.Media.DISPLAY_NAME,
             MediaStore.Images.Media.MIME_TYPE,
             MediaStore.Images.Media.WIDTH,
             MediaStore.Images.Media.HEIGHT,
+        )
+    }
+}
+
+internal object PhotoSnapshotPolicy {
+    /** A completed MediaStore query is the complete persisted snapshot for that requested range. */
+    fun shouldReplace(queryCompleted: Boolean): Boolean = queryCompleted
+}
+
+internal object PhotoPermissionPolicy {
+    fun access(
+        sdkInt: Int,
+        fullAccessGranted: Boolean,
+        selectedPhotosGranted: Boolean,
+    ): ConnectorPermissionAccess {
+        return when {
+            fullAccessGranted -> ConnectorPermissionAccess.FULL
+            sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && selectedPhotosGranted ->
+                ConnectorPermissionAccess.PARTIAL
+
+            else -> ConnectorPermissionAccess.NONE
+        }
+    }
+
+    fun requiredPermissions(sdkInt: Int): List<String> {
+        return when {
+            sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> listOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+            )
+
+            sdkInt >= Build.VERSION_CODES.TIRAMISU -> listOf(Manifest.permission.READ_MEDIA_IMAGES)
+            else -> listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    fun canReselect(access: ConnectorPermissionAccess): Boolean {
+        return access == ConnectorPermissionAccess.PARTIAL
+    }
+}
+
+internal data class PhotoRangeQuery(
+    val selection: String,
+    val selectionArgs: Array<String>,
+    val sortOrder: String,
+)
+
+internal object PhotoRangeSelectionPolicy {
+    fun query(from: Instant, until: Instant): PhotoRangeQuery {
+        require(from.isBefore(until)) { "Photo range must be half-open and non-empty." }
+        val dateTaken = MediaStore.Images.Media.DATE_TAKEN
+        val dateModified = MediaStore.Images.Media.DATE_MODIFIED
+        val effectiveTimestamp = "CASE WHEN $dateTaken IS NOT NULL AND $dateTaken > 0 " +
+            "THEN $dateTaken ELSE $dateModified * 1000 END"
+        return PhotoRangeQuery(
+            selection = "($dateTaken > 0 OR $dateModified > 0) AND " +
+                "$effectiveTimestamp >= ? AND $effectiveTimestamp < ?",
+            selectionArgs = arrayOf(from.toEpochMilli().toString(), until.toEpochMilli().toString()),
+            sortOrder = "$effectiveTimestamp DESC",
+        )
+    }
+}
+
+internal data class ClosedPhotoMetadata(
+    val mimeType: String?,
+    val width: Int?,
+    val height: Int?,
+)
+
+internal object PhotoMetadataPolicy {
+    fun close(mimeType: String?, width: Int?, height: Int?): ClosedPhotoMetadata {
+        return ClosedPhotoMetadata(
+            mimeType = mimeType?.trim()?.lowercase(Locale.ROOT)?.takeIf(ALLOWED_MIME_TYPES::contains),
+            width = width?.takeIf { value -> value in 1..MAX_DIMENSION_PIXELS },
+            height = height?.takeIf { value -> value in 1..MAX_DIMENSION_PIXELS },
+        )
+    }
+
+    private const val MAX_DIMENSION_PIXELS = 100_000
+    private val ALLOWED_MIME_TYPES = setOf(
+        "image/avif",
+        "image/gif",
+        "image/heic",
+        "image/heif",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    )
+}
+
+internal data class ClosedPhotoDerivedValues(
+    val summary: String,
+    val keywords: List<String>,
+    val labels: List<String>,
+    val citationLabel: String,
+)
+
+internal object PhotoDerivedValuePolicy {
+    fun create(occurredAt: Instant, metadata: ClosedPhotoMetadata): ClosedPhotoDerivedValues {
+        val subtype = metadata.mimeType?.substringAfter('/')
+        val orientation = if (metadata.width != null && metadata.height != null) {
+            if (metadata.width >= metadata.height) "landscape" else "portrait"
+        } else {
+            null
+        }
+        val dimensions = if (metadata.width != null && metadata.height != null) {
+            " Dimensions: ${metadata.width}x${metadata.height}."
+        } else {
+            ""
+        }
+        val mime = metadata.mimeType?.let { " Type: $it." }.orEmpty()
+        return ClosedPhotoDerivedValues(
+            summary = "Photo metadata indexed at $occurredAt.$mime$dimensions",
+            keywords = listOfNotNull("photo", subtype, orientation),
+            labels = listOfNotNull("photo", subtype, orientation),
+            citationLabel = "Photo metadata",
         )
     }
 }

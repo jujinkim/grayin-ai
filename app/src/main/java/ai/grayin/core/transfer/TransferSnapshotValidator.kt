@@ -1,6 +1,7 @@
 package ai.grayin.core.transfer
 
 import ai.grayin.core.connector.ConnectorScanStatus
+import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.model.AppUsageSummary
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.DailyMemorySummary
@@ -12,6 +13,7 @@ import ai.grayin.core.model.PlaceCluster
 import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceKind
 import ai.grayin.core.model.SourceReference
+import ai.grayin.core.store.ClosedConnectorRecordValidator
 import ai.grayin.core.store.LocalMemorySnapshot
 import java.time.Instant
 import java.time.LocalDate
@@ -70,8 +72,8 @@ internal object TransferSnapshotValidator {
         require(payload.producer.versionCode in 1..Int.MAX_VALUE.toLong()) {
             "Transfer producer version is invalid."
         }
-        require(payload.producer.storeSchemaVersion in 1..MAX_STORE_SCHEMA_VERSION) {
-            "Transfer store schema version is invalid."
+        require(payload.producer.storeSchemaVersion == CURRENT_STORE_SCHEMA_VERSION) {
+            "Transfer store schema version is unsupported."
         }
         validate(payload.snapshot)
     }
@@ -94,7 +96,47 @@ internal object TransferSnapshotValidator {
         snapshot.appUsageSummaries.forEach(::validateAppUsageSummary)
         snapshot.connectorScanStatuses.forEach(::validateConnectorScanStatus)
         validateGraph(snapshot)
+        ClosedConnectorRecordValidator.validate(snapshot)
         validateLocalFilesGraph(snapshot)
+    }
+
+    internal fun validateConnectorScanBounds(scanResult: ConnectorScanResult) {
+        requireConnectorId(scanResult.connectorId)
+        require(scanResult.sourceReferences.size <= TransferBounds.MAX_SOURCE_REFERENCES)
+        require(scanResult.derivedEvents.size <= TransferBounds.MAX_DERIVED_EVENTS)
+        require(scanResult.citations.size <= TransferBounds.MAX_CITATIONS)
+        require(scanResult.placeClusters.size <= TransferBounds.MAX_PLACE_CLUSTERS)
+        require(scanResult.appUsageSummaries.size <= TransferBounds.MAX_APP_USAGE_SUMMARIES)
+        val total = scanResult.sourceReferences.size.toLong() +
+            scanResult.derivedEvents.size +
+            scanResult.citations.size +
+            scanResult.placeClusters.size +
+            scanResult.appUsageSummaries.size
+        require(total <= TransferBounds.MAX_TOTAL_RECORDS)
+
+        scanResult.sourceReferences.forEach { source ->
+            validateSourceReferenceBounds(source, requireDetached = false)
+        }
+        scanResult.derivedEvents.forEach(::validateDerivedEventBounds)
+        scanResult.citations.forEach(::validateCitationBounds)
+        scanResult.placeClusters.forEach(::validatePlaceCluster)
+        scanResult.appUsageSummaries.forEach(::validateAppUsageSummary)
+        scanResult.scopeFrom?.let(::requireInstant)
+        scanResult.scopeUntil?.let(::requireInstant)
+        scanResult.scopeFrom?.let { from ->
+            scanResult.scopeUntil?.let { until -> require(from.isBefore(until)) }
+        }
+        requireInstant(scanResult.scannedAt)
+        scanResult.missingSources.forEach { missing ->
+            validateMissingSource(missing, requireStableCode = true, requireTrustedConnector = false)
+        }
+
+        SOURCE_KINDS_BY_CONNECTOR[scanResult.connectorId]?.let { allowedKinds ->
+            require(scanResult.sourceReferences.all { source -> source.sourceKind in allowedKinds })
+        }
+        EVENT_KINDS_BY_CONNECTOR[scanResult.connectorId]?.let { allowedKinds ->
+            require(scanResult.derivedEvents.all { event -> event.kind in allowedKinds })
+        }
     }
 
     private fun validateCounts(snapshot: LocalMemorySnapshot) {
@@ -116,12 +158,18 @@ internal object TransferSnapshotValidator {
     }
 
     private fun validateSourceReference(source: SourceReference) {
-        requireId(source.id)
-        requireConnectorId(source.connectorId)
+        validateSourceReferenceBounds(source, requireDetached = true)
         require(source.connectorId in trustedConnectorIds)
         require(source.id.startsWith("source:${source.connectorId}:"))
         require(source.sourceKind in SOURCE_KINDS_BY_CONNECTOR.getValue(source.connectorId))
-        require(source.localPointer == null) { "Transfer source references must be detached." }
+    }
+
+    private fun validateSourceReferenceBounds(source: SourceReference, requireDetached: Boolean) {
+        requireId(source.id)
+        requireConnectorId(source.connectorId)
+        if (requireDetached) {
+            require(source.localPointer == null) { "Transfer source references must be detached." }
+        }
         source.externalIdHash?.let { requireValue(it, TransferBounds.MAX_VALUE_BYTES) }
         source.hmacHash?.let { requireValue(it, TransferBounds.MAX_VALUE_BYTES) }
         source.sourceAppIdentifier?.let { requireText(it, TransferBounds.MAX_VALUE_BYTES) }
@@ -130,10 +178,14 @@ internal object TransferSnapshotValidator {
     }
 
     private fun validateDerivedEvent(event: DerivedMemoryEvent) {
-        requireId(event.id)
+        validateDerivedEventBounds(event)
         val connectorId = connectorFromScopedId("event", event.id)
         require(connectorId != null)
         require(event.kind in EVENT_KINDS_BY_CONNECTOR.getValue(connectorId))
+    }
+
+    private fun validateDerivedEventBounds(event: DerivedMemoryEvent) {
+        requireId(event.id)
         requireText(event.summary, TransferBounds.MAX_SUMMARY_BYTES)
         requireReferenceList(event.sourceReferenceIds, TransferBounds.MAX_LIST_ITEMS, requireNonEmpty = true)
         requireReferenceList(event.citationIds, TransferBounds.MAX_LIST_ITEMS, requireNonEmpty = false)
@@ -149,8 +201,12 @@ internal object TransferSnapshotValidator {
     }
 
     private fun validateCitation(citation: MemoryCitation) {
-        requireId(citation.id)
+        validateCitationBounds(citation)
         require(connectorFromScopedId("citation", citation.id) != null)
+    }
+
+    private fun validateCitationBounds(citation: MemoryCitation) {
+        requireId(citation.id)
         requireId(citation.sourceReferenceId)
         citation.derivedMemoryEventId?.let(::requireId)
         requireText(citation.label, TransferBounds.MAX_LABEL_BYTES)
@@ -177,7 +233,9 @@ internal object TransferSnapshotValidator {
             requireNonEmpty = false,
         )
         require(summary.missingSources.size <= ConnectorScanStatus.MAX_MISSING_SOURCES)
-        summary.missingSources.forEach { missing -> validateMissingSource(missing, requireStableCode = false) }
+        summary.missingSources.forEach { missing ->
+            validateMissingSource(missing, requireStableCode = false, requireTrustedConnector = true)
+        }
         require(summary.missingSources.distinctBy(::missingSourceIdentity).size == summary.missingSources.size)
     }
 
@@ -239,17 +297,21 @@ internal object TransferSnapshotValidator {
         requireInstant(status.scannedAt)
         require(status.missingSources.size <= ConnectorScanStatus.MAX_MISSING_SOURCES)
         status.missingSources.forEach { missing ->
-            validateMissingSource(missing, requireStableCode = true)
+            validateMissingSource(missing, requireStableCode = true, requireTrustedConnector = true)
             require(missing.connectorId == null || missing.connectorId == status.connectorId)
         }
         require(status.missingSources.distinctBy(::missingSourceIdentity).size == status.missingSources.size)
     }
 
-    private fun validateMissingSource(missing: MissingSource, requireStableCode: Boolean) {
+    private fun validateMissingSource(
+        missing: MissingSource,
+        requireStableCode: Boolean,
+        requireTrustedConnector: Boolean,
+    ) {
         requireText(missing.explanation, TransferBounds.MAX_LABEL_BYTES)
         missing.connectorId?.let { connectorId ->
             requireConnectorId(connectorId)
-            require(connectorId in trustedConnectorIds)
+            if (requireTrustedConnector) require(connectorId in trustedConnectorIds)
         }
         if (requireStableCode) require(missing.issueCode != null)
         missing.issueCode?.let { issueCode -> require(missing.explanation == issueCode.defaultEnglish) }
@@ -423,29 +485,31 @@ internal object TransferSnapshotValidator {
 
     private fun requireValue(value: String, maxBytes: Int) {
         require(value.isNotBlank())
-        require(isWellFormedUnicode(value))
+        require(isClosedUnicode(value))
         require(value.toByteArray(UTF_8).size <= maxBytes)
-        require(value.none(Char::isISOControl))
     }
 
     private fun requireText(value: String, maxBytes: Int) {
         require(value.isNotBlank())
-        require(isWellFormedUnicode(value))
+        require(isClosedUnicode(value))
         require(value.toByteArray(UTF_8).size <= maxBytes)
-        require(value.none { character -> character.isISOControl() && character !in ALLOWED_TEXT_CONTROLS })
     }
 
-    private fun isWellFormedUnicode(value: String): Boolean {
+    private fun isClosedUnicode(value: String): Boolean {
         var index = 0
         while (index < value.length) {
-            val character = value[index++]
-            when {
-                character.isLowSurrogate() -> return false
-                character.isHighSurrogate() -> {
-                    if (index >= value.length || !value[index].isLowSurrogate()) return false
-                    index++
-                }
-            }
+            val codePoint = Character.codePointAt(value, index)
+            if (Character.charCount(codePoint) == 1 && value[index].isSurrogate()) return false
+            if (Character.isISOControl(codePoint)) return false
+            if (
+                Character.getType(codePoint) in setOf(
+                    Character.FORMAT.toInt(),
+                    Character.PRIVATE_USE.toInt(),
+                    Character.SURROGATE.toInt(),
+                    Character.UNASSIGNED.toInt(),
+                )
+            ) return false
+            index += Character.charCount(codePoint)
         }
         return true
     }
@@ -472,7 +536,7 @@ internal object TransferSnapshotValidator {
     }
 
     private const val APPLICATION_ID = "ai.grayin"
-    private const val MAX_STORE_SCHEMA_VERSION = 65_535
+    private const val CURRENT_STORE_SCHEMA_VERSION = 8
     private const val APP_USAGE_CONNECTOR_ID = "app_usage"
     private const val LOCAL_FILES_CONNECTOR_ID = "local_files"
     private const val MAX_PACKAGE_NAME_BYTES = 255
@@ -493,7 +557,6 @@ internal object TransferSnapshotValidator {
     private val MAX_INSTANT = Instant.parse("3000-01-01T00:00:00Z")
     private val MIN_DATE = LocalDate.of(1900, 1, 1)
     private val MAX_DATE = LocalDate.of(3000, 1, 1)
-    private val ALLOWED_TEXT_CONTROLS = setOf('\n', '\r', '\t')
     private val PACKAGE_NAME = Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*")
     private val SAFE_HMAC = Regex("[a-f0-9]{64}")
     private val SAFE_LOCAL_KEYWORD = Regex("[\\p{L}\\p{Nd}]+")

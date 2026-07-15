@@ -21,12 +21,6 @@ interface LocalMemoryStore : ConnectorReconsentGate {
     /** Persists one connector scan as a single validated transaction. */
     suspend fun saveConnectorScan(scanResult: ConnectorScanResult): StoreWriteResult
 
-    suspend fun saveDailySummaries(summaries: List<DailyMemorySummary>): StoreWriteResult
-
-    suspend fun savePlaceClusters(clusters: List<PlaceCluster>): StoreWriteResult
-
-    suspend fun saveAppUsageSummaries(summaries: List<AppUsageSummary>): StoreWriteResult
-
     suspend fun deleteConnectorData(
         connectorId: String,
         requireReconsent: Boolean = false,

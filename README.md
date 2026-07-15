@@ -41,7 +41,7 @@ Current usable app path:
 - Ask answers from indexed, cited local evidence and lists missing sources
 - Settings supports language selection: `system`, `korean`, `english`, or `japanese`
 - Settings installs, cancels, and deletes fixed-catalog `eng`, `kor`, or `jpn` OCR language data after an explicit user action
-- Settings exports and replace-imports the validated seven-section derived snapshot through an explicit local-only, password-authenticated encrypted document flow; connector access must be re-consented after import
+- Settings exports and replace-imports the validated seven-section derived snapshot through an explicit password-authenticated encrypted document flow; the picker requests on-device storage, and connector access must be re-consented after import
 - Settings offers independent persisted screenshot blocking and system biometric/device-credential app lock; app lock forces the secure-window policy and relocks after process start or a non-configuration background transition
 - Local Files accepts explicitly selected Text, Markdown, and PDF documents; PDF pages use embedded text or installed on-device OCR data
 - Bottom navigation uses icons and localized labels
@@ -56,6 +56,8 @@ Network use is limited to:
 - verified fixed-catalog model, authenticated-manifest, and user-selected OCR language-data downloads into app-private storage
 
 The app does not expose arbitrary or user-entered endpoints. External enrichment receives only an ephemeral typed lookup projection, never a stored derived-memory record. The app does not upload raw sources, evidence packs, prompts, answers, embeddings, or source references. It does not use remote LLMs, application backends, accounts, cloud sync, telemetry, ads, or crash reporting. See `docs/network-policy.md`.
+
+Encrypted export/import has no Grayin-owned network transport. Android's picker is launched with `EXTRA_LOCAL_ONLY`, which requests data already on the device; the UI tells the user to choose device storage because an external document provider controls its own storage or later sync behavior.
 
 External enrichment may fetch map/place, weather, or reverse-geocode details through typed gateway methods. Artifact downloads use a closed catalog with immutable HTTPS paths, exact byte counts, SHA-256 verification, and atomic installation. Current model transport entries are disabled until complete release metadata exists; official model pages and local import remain available. OCR language-data downloads are limited to the pinned `eng`, `kor`, and `jpn` catalog and can start only from Settings. These paths follow `docs/network-policy.md`.
 
@@ -74,13 +76,15 @@ The private bounded Pdfium/Tesseract document runtime, language-data installer, 
 
 See `docs/pdf-ocr.md` for the fixed catalog, privacy boundary, resource limits, and remaining device acceptance checks.
 
-The user can ask questions such as:
+With the corresponding source indexed, current bounded questions include:
 
-- Where did I go yesterday?
-- What did I do yesterday?
-- Was I drinking last week?
-- Am I busy next week?
-- Find food photos from last month.
+- Which location samples and clusters were indexed yesterday?
+- Which calendar events are indexed for next week?
+- Which photo metadata records were indexed last month?
+- Which payment, delivery, reservation, or transport notification signals were indexed?
+- Which app-usage sessions or local-document signals match this query?
+
+Photo-content recognition, calls/messages, and unobserved historical movement remain future evidence paths; Ask must report them as missing rather than infer them from metadata.
 
 Every answer must include evidence, inference, confidence, and missing-data explanation.
 

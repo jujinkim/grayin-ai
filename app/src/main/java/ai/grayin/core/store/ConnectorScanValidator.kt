@@ -10,10 +10,19 @@ import ai.grayin.core.model.MemoryCitation
 import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceKind
 import ai.grayin.core.model.SourceReference
+import ai.grayin.core.transfer.TransferSnapshotValidator
 import kotlin.text.Charsets.UTF_8
 
 internal object ConnectorScanValidator {
     fun validate(scanResult: ConnectorScanResult) {
+        validate(scanResult, storedSnapshot = false)
+    }
+
+    fun validateStoredSnapshot(scanResult: ConnectorScanResult) {
+        validate(scanResult, storedSnapshot = true)
+    }
+
+    private fun validate(scanResult: ConnectorScanResult, storedSnapshot: Boolean) {
         require(scanResult.connectorId.isNotBlank()) { "A connector scan must have a connector ID." }
         requireDistinctIds("source reference", scanResult.sourceReferences.map { it.id })
         requireDistinctIds("derived event", scanResult.derivedEvents.map { it.id })
@@ -106,9 +115,49 @@ internal object ConnectorScanValidator {
                 }
             }
         }
+        validateTransferCompatibleGraph(scanResult, storedSnapshot)
         if (scanResult.connectorId == LOCAL_FILES_CONNECTOR_ID) {
             validateLocalFilesScan(scanResult)
         }
+    }
+
+    private fun validateTransferCompatibleGraph(
+        scanResult: ConnectorScanResult,
+        storedSnapshot: Boolean,
+    ) {
+        scanResult.sourceReferences.forEach { source ->
+            source.localPointer?.let(::requireLivePointer)
+        }
+        TransferSnapshotValidator.validateConnectorScanBounds(scanResult)
+        if (storedSnapshot) {
+            ClosedConnectorRecordValidator.validateStoredSnapshot(scanResult)
+        } else {
+            ClosedConnectorRecordValidator.validate(scanResult)
+        }
+    }
+
+    private fun requireLivePointer(value: String) {
+        require(value.isNotBlank()) { "A live source pointer must not be blank." }
+        require(value.toByteArray(UTF_8).size <= MAX_LIVE_POINTER_UTF8_BYTES) {
+            "A live source pointer is too large."
+        }
+        require(value.none(Char::isISOControl)) { "A live source pointer contains a control character." }
+        require(isWellFormedUnicode(value)) { "A live source pointer contains malformed Unicode." }
+    }
+
+    private fun isWellFormedUnicode(value: String): Boolean {
+        var index = 0
+        while (index < value.length) {
+            val character = value[index++]
+            when {
+                character.isLowSurrogate() -> return false
+                character.isHighSurrogate() -> {
+                    if (index >= value.length || !value[index].isLowSurrogate()) return false
+                    index += 1
+                }
+            }
+        }
+        return true
     }
 
     private fun validateLocalFilesScan(scanResult: ConnectorScanResult) {
@@ -287,6 +336,7 @@ internal object ConnectorScanValidator {
     }
 
     private const val MAX_MISSING_SOURCE_EXPLANATION_CHARS = 240
+    private const val MAX_LIVE_POINTER_UTF8_BYTES = 4 * 1024
     private const val LOCAL_FILES_CONNECTOR_ID = "local_files"
     private const val MAX_LOCAL_FILE_GRAPH_ROWS = 256
     private const val MAX_PDF_PAGES_PER_DOCUMENT = 64

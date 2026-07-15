@@ -1,6 +1,6 @@
 # Encrypted Export and Import
 
-Grayin supports an explicit, password-protected, local document export/import flow. It is not Android backup, account storage, cloud sync, or an application-backend transfer. The document picker is launched with `EXTRA_LOCAL_ONLY`; the app never persists the selected backup URI permission.
+Grayin supports an explicit, password-protected document export/import flow. It is not Android backup, account storage, cloud sync, or an application-backend transfer. The document picker is launched with `EXTRA_LOCAL_ONLY`, which requests an already-on-device document, and the app never persists the selected backup URI permission. Because the picker provider is an external Android component, the user must still choose an on-device location; Grayin has no backup network client and cannot guarantee another provider's storage or later sync behavior.
 
 ## Version 1 Data Scope
 
@@ -47,7 +47,7 @@ Parsing validates the fixed header, supported IDs, reserved bytes, iteration cou
 
 ## Strict Payload Validation
 
-The authenticated plaintext is strict UTF-8 JSON with `payloadVersion: 1`, a creation timestamp, and exactly the seven mandatory arrays. Unknown or missing fields, unknown enum values, duplicate IDs, unsupported connector IDs, non-finite/range-invalid values, oversized fields or collections, and malformed timestamps are rejected.
+The authenticated plaintext is strict UTF-8 JSON with `payloadVersion: 1`, a creation timestamp, producer metadata declaring the current store schema v8, and exactly the seven mandatory arrays. A producer schema other than v8 is rejected as an invalid payload; legacy data must be opened and migrated by a compatible app before export. Unknown or missing fields, unknown enum values, duplicate IDs, unsupported connector IDs, non-finite/range-invalid values, oversized fields or collections, malformed or unsafe Unicode, and malformed timestamps are rejected.
 
 Validation also requires a closed graph:
 
@@ -57,6 +57,9 @@ Validation also requires a closed graph:
 - daily summaries, place clusters, and usage summaries reference existing events where applicable
 - connector scan statuses use stable issue codes only
 - Local Files rows satisfy the HMAC-only closed schema
+- Location, Photos, Calendar, Notifications, and App Usage rows satisfy the same connector-specific schema-v8 closed-record validator used for live scans; because v8 has no canonical `AppUsageSummary` producer, that section must be empty
+
+An incoming live Location cluster contains one observation. A stored/exported accumulated cluster may contain multiple distinct location source references only when they cover the stored location graph exactly once, its visit count equals that reference count, its first/last times equal the referenced source extrema, its confidence equals the strongest referenced event, its centroid remains on the 0.001-degree grid, and its ID retains the closed 32-hex suffix.
 
 The plaintext limit is 32 MiB, with tighter per-section, row, list, and string bounds. The export path applies the same validator and therefore refuses legacy or malformed stored graphs instead of encrypting them.
 
@@ -64,7 +67,7 @@ The plaintext limit is 32 MiB, with tighter per-section, row, list, and string b
 
 1. The user enters and confirms a password. Password state is never saveable, logged, or persisted.
 2. Grayin reads one consistent SQLCipher snapshot, detaches local pointers, validates it, and writes only authenticated ciphertext to a random token under `noBackupFilesDir`.
-3. Grayin launches a local-only `ACTION_CREATE_DOCUMENT` contract with the Grayin backup MIME type and a `.grayin` file name.
+3. Grayin launches `ACTION_CREATE_DOCUMENT` with `EXTRA_LOCAL_ONLY`, the Grayin backup MIME type, and a `.grayin` file name. The user is told to choose an on-device destination.
 4. The staged ciphertext is copied to the chosen document and closed before success is reported.
 5. The encrypted staging file is deleted on success or cancellation. Stale encrypted stages are removed on later startup.
 
@@ -75,9 +78,9 @@ No plaintext staging file is created. A partial destination is not accepted as a
 Import is replace-only; version 1 never merges graphs.
 
 1. The UI warns that import replaces all current derived memory, does not restore originals, permissions, settings, or local document links, disables automatic indexing and online enrichment, and requires every source to be reconnected.
-2. A local-only `ACTION_OPEN_DOCUMENT` contract copies a bounded encrypted file into `noBackupFilesDir`. Magic, version, and length are preflighted without taking a persistent URI grant.
+2. An `ACTION_OPEN_DOCUMENT` contract with `EXTRA_LOCAL_ONLY` requests an on-device source and copies the bounded encrypted file into `noBackupFilesDir`. Magic, version, and length are preflighted without taking a persistent URI grant.
 3. The password is entered transiently. The complete envelope is authenticated before JSON parsing or any mutation.
-4. The payload is decoded and graph-validated in memory.
+4. The payload producer schema, closed Unicode, connector-specific canonical records, and complete graph are decoded and validated in memory. This completes before connector consent, settings, or the existing store can be changed.
 5. Grayin durably disables automatic indexing, synchronizes/cancels its WorkManager job, turns online enrichment off, revokes every connector's app-level consent, clears the notification allowlist, and releases all Local Files grants.
 6. One SQLCipher transaction fences the automatic-indexing generation, clears the queue/runtime, replaces all seven derived sections with conflict-aborting inserts, and installs a re-consent barrier for every trusted connector.
 7. The encrypted stage and password are cleared after success. Password-policy, authentication, consent-reset, and store-transaction failures retain only the encrypted stage for an explicit retry; terminal format, payload, size, and I/O failures discard it.

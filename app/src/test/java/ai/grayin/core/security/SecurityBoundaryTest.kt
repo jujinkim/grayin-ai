@@ -27,6 +27,7 @@ class SecurityBoundaryTest {
         val manifest = File("src/main/AndroidManifest.xml").readText()
 
         assertTrue(manifest.contains("android.permission.READ_MEDIA_IMAGES"))
+        assertTrue(manifest.contains("android.permission.READ_MEDIA_VISUAL_USER_SELECTED"))
         assertTrue(manifest.contains("android.permission.READ_EXTERNAL_STORAGE"))
     }
 

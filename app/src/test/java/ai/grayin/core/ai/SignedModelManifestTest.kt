@@ -21,6 +21,7 @@ class SignedModelManifestTest {
     @Test
     fun validCanonicalP256EnvelopeIsAccepted() {
         val manifest = validManifest()
+        assertTrue(verifier().trustConfigured)
 
         val result = verifier().verify(signedEnvelope(manifest))
 
@@ -97,7 +98,7 @@ class SignedModelManifestTest {
     @Test
     fun rollbackPolicyRejectsOlderAndSameSequenceEquivocation() {
         val candidate = verified(validManifest())
-        val current = AcceptedModelManifestState(7L, candidate.payloadSha256)
+        val current = AcceptedModelManifestState(7L, candidate.payloadSha256, candidate.trustIdentity)
 
         assertEquals(
             ModelManifestAcceptanceDecision.ACCEPT_REPLAY,
@@ -123,6 +124,14 @@ class SignedModelManifestTest {
                 current,
                 verified(validManifest().copy(sequence = 8L)),
             ),
+        )
+
+        val rotatedKey = p256KeyPair()
+        val rotated = verified(validManifest().copy(sequence = 1L), rotatedKey)
+        assertTrue(rotated.trustIdentity != current.trustIdentity)
+        assertEquals(
+            ModelManifestAcceptanceDecision.ACCEPT_NEW,
+            ModelManifestRollbackPolicy.decide(current, rotated),
         )
     }
 
@@ -163,14 +172,21 @@ class SignedModelManifestTest {
         )
     }
 
-    private fun verified(manifest: ModelReleaseManifest): ModelManifestVerificationResult.Verified {
-        return verifier().verify(signedEnvelope(manifest)) as ModelManifestVerificationResult.Verified
+    private fun verified(
+        manifest: ModelReleaseManifest,
+        signingKey: KeyPair = keyPair,
+    ): ModelManifestVerificationResult.Verified {
+        return verifier(signingKey).verify(signedEnvelope(manifest, signingKey)) as
+            ModelManifestVerificationResult.Verified
     }
 
-    private fun signedEnvelope(manifest: ModelReleaseManifest): ByteArray {
+    private fun signedEnvelope(
+        manifest: ModelReleaseManifest,
+        signingKey: KeyPair = keyPair,
+    ): ByteArray {
         val payload = SignedModelManifestCodec.canonicalPayloadBytes(manifest)
         val signature = Signature.getInstance("SHA256withECDSA").run {
-            initSign(keyPair.private)
+            initSign(signingKey.private)
             update(payload)
             sign()
         }
@@ -197,9 +213,9 @@ class SignedModelManifestTest {
 
     private fun validEntry(): ModelReleaseManifestEntry {
         return ModelReleaseManifestEntry(
-            modelId = "grayin-gemma-4-E2B-it-q4-v1",
+            modelId = ModelCatalog.GRAYIN_DEDICATED_MODEL_ID,
             releaseVersion = "1.0.0",
-            fileName = "grayin-gemma-4-E2B-it-q4-v1.litertlm",
+            fileName = "grayin-gemma-4-E2B-it-wi8-afp32-v1.litertlm",
             downloadUrl = "https://models.example.test/releases/v1/model.litertlm",
             sizeBytes = 2_300_000_000L,
             sha256 = "a".repeat(64),

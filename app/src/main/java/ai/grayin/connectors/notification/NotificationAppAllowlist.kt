@@ -1,6 +1,7 @@
 package ai.grayin.connectors.notification
 
 import android.content.Context
+import ai.grayin.connectors.ConnectorValuePolicy
 import java.util.Locale
 
 data class NotificationAllowlistParseResult(
@@ -30,11 +31,14 @@ class NotificationAppAllowlist(context: Context) {
             val entries = rawValue.split(ENTRY_SEPARATOR)
                 .map(String::trim)
                 .filter(String::isNotEmpty)
-            val valid = entries
-                .filter(PACKAGE_NAME::matches)
-                .map(::normalize)
+            val normalizedEntries = entries.associateWith { entry ->
+                ConnectorValuePolicy.normalizedLowercasePackageName(entry)
+                    ?.takeIf(PACKAGE_NAME::matches)
+            }
+            val valid = normalizedEntries.values
+                .filterNotNull()
                 .toSortedSet()
-            val invalid = entries.filterNot(PACKAGE_NAME::matches).distinct()
+            val invalid = normalizedEntries.filterValues { value -> value == null }.keys.distinct()
             return NotificationAllowlistParseResult(valid, invalid)
         }
 

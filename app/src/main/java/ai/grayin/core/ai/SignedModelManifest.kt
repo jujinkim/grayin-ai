@@ -76,10 +76,26 @@ enum class ModelManifestRejectionCode {
     ENTRY_INVALID,
 }
 
+data class ModelManifestTrustIdentity(
+    val keyId: String,
+    val publicKeySha256: String,
+) {
+    init {
+        require(keyId.matches(SAFE_KEY_ID)) { "Manifest trust key ID is invalid." }
+        require(publicKeySha256.matches(SHA_256)) { "Manifest public-key fingerprint is invalid." }
+    }
+
+    private companion object {
+        val SAFE_KEY_ID = Regex("[A-Za-z0-9._-]{1,64}")
+        val SHA_256 = Regex("[a-f0-9]{64}")
+    }
+}
+
 sealed interface ModelManifestVerificationResult {
     data class Verified(
         val manifest: ModelReleaseManifest,
         val payloadSha256: String,
+        val trustIdentity: ModelManifestTrustIdentity,
     ) : ModelManifestVerificationResult
 
     data class Rejected(val code: ModelManifestRejectionCode) : ModelManifestVerificationResult
@@ -92,6 +108,18 @@ class SignedModelManifestVerifier(
     private val clock: Clock = Clock.systemUTC(),
 ) {
     private val publicKey: ECPublicKey? = parseP256PublicKey(publicKeyX509)
+
+    val trustIdentity: ModelManifestTrustIdentity? = publicKey
+        ?.takeIf { expectedKeyId.matches(SAFE_KEY_ID) }
+        ?.let { key ->
+            ModelManifestTrustIdentity(
+                keyId = expectedKeyId,
+                publicKeySha256 = sha256(key.encoded),
+            )
+        }
+
+    val trustConfigured: Boolean
+        get() = trustIdentity != null
 
     fun verify(envelopeBytes: ByteArray): ModelManifestVerificationResult {
         if (envelopeBytes.isEmpty() || envelopeBytes.size > MAX_ENVELOPE_BYTES) {
@@ -118,73 +146,16 @@ class SignedModelManifestVerifier(
 
         val manifest = SignedModelManifestCodec.decodeCanonicalPayload(payloadBytes)
             ?: return rejected(ModelManifestRejectionCode.PAYLOAD_INVALID)
-        validateManifest(manifest)?.let { return rejected(it) }
+        ModelReleaseManifestPolicy.validate(
+            manifest = manifest,
+            appVersionCode = appVersionCode,
+            nowEpochSeconds = clock.instant().epochSecond,
+        )?.let { return rejected(it) }
         return ModelManifestVerificationResult.Verified(
             manifest = manifest,
             payloadSha256 = sha256(payloadBytes),
+            trustIdentity = requireNotNull(trustIdentity),
         )
-    }
-
-    private fun validateManifest(manifest: ModelReleaseManifest): ModelManifestRejectionCode? {
-        if (manifest.schemaVersion != SUPPORTED_SCHEMA_VERSION) {
-            return ModelManifestRejectionCode.SCHEMA_UNSUPPORTED
-        }
-        if (manifest.sequence <= 0L) return ModelManifestRejectionCode.SEQUENCE_INVALID
-        if (
-            manifest.issuedAtEpochSeconds <= 0L ||
-            manifest.expiresAtEpochSeconds <= manifest.issuedAtEpochSeconds ||
-            manifest.expiresAtEpochSeconds - manifest.issuedAtEpochSeconds > MAX_VALIDITY_SECONDS
-        ) {
-            return ModelManifestRejectionCode.TIME_WINDOW_INVALID
-        }
-        val now = clock.instant().epochSecond
-        if (manifest.issuedAtEpochSeconds > now + MAX_CLOCK_SKEW_SECONDS) {
-            return ModelManifestRejectionCode.NOT_YET_VALID
-        }
-        if (manifest.expiresAtEpochSeconds < now - MAX_CLOCK_SKEW_SECONDS) {
-            return ModelManifestRejectionCode.EXPIRED
-        }
-        val maximumAppVersionCode = manifest.maximumAppVersionCode
-        if (
-            manifest.minimumAppVersionCode <= 0 ||
-            (maximumAppVersionCode != null && maximumAppVersionCode < manifest.minimumAppVersionCode) ||
-            appVersionCode < manifest.minimumAppVersionCode ||
-            (maximumAppVersionCode != null && appVersionCode > maximumAppVersionCode)
-        ) {
-            return ModelManifestRejectionCode.APP_VERSION_UNSUPPORTED
-        }
-        if (
-            manifest.models.isEmpty() ||
-            manifest.models.size > MAX_MODEL_ENTRIES ||
-            manifest.models.map { it.modelId }.toSet().size != manifest.models.size ||
-            manifest.models.any { !validEntry(it) }
-        ) {
-            return ModelManifestRejectionCode.ENTRY_INVALID
-        }
-        return null
-    }
-
-    private fun validEntry(entry: ModelReleaseManifestEntry): Boolean {
-        if (!entry.modelId.matches(SAFE_MODEL_ID)) return false
-        if (!entry.releaseVersion.matches(SAFE_RELEASE_VERSION)) return false
-        if (!entry.fileName.matches(SAFE_FILE_NAME) || !entry.fileName.endsWith(MODEL_EXTENSION)) return false
-        if (!entry.sha256.matches(SHA_256) || entry.sizeBytes !in MIN_MODEL_BYTES..MAX_MODEL_BYTES) return false
-        if (entry.liteRtLmRuntimeVersion != SUPPORTED_LITERT_LM_RUNTIME_VERSION) return false
-        if (entry.containerMajorVersion != SUPPORTED_CONTAINER_MAJOR_VERSION) return false
-        if (entry.replacesVersion != null && !entry.replacesVersion.matches(SAFE_RELEASE_VERSION)) return false
-        if (entry.artifactSpecOrNull() == null) return false
-        val licenseUri = runCatching { java.net.URI(entry.licenseUrl) }.getOrNull() ?: return false
-        if (
-            licenseUri.scheme != "https" ||
-            licenseUri.host.isNullOrBlank() ||
-            licenseUri.rawUserInfo != null ||
-            licenseUri.port != -1 ||
-            licenseUri.rawQuery != null ||
-            licenseUri.rawFragment != null
-        ) {
-            return false
-        }
-        return true
     }
 
     private fun parseP256PublicKey(encoded: ByteArray): ECPublicKey? = runCatching {
@@ -239,20 +210,103 @@ class SignedModelManifestVerifier(
         private const val MAX_PUBLIC_KEY_BYTES = 256
         private const val SIGNATURE_ALGORITHM = "SHA256withECDSA"
         private const val P256_CURVE_NAME = "secp256r1"
-        private const val MODEL_EXTENSION = ".litertlm"
         private val SAFE_KEY_ID = Regex("[A-Za-z0-9._-]{1,64}")
-        private val SAFE_MODEL_ID = Regex("[A-Za-z0-9._-]{1,80}")
-        private val SAFE_RELEASE_VERSION = Regex("[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
-        private val SAFE_FILE_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-        private val SHA_256 = Regex("[a-f0-9]{64}")
         private val BASE64_URL_NO_PADDING = Regex("[A-Za-z0-9_-]+")
     }
+}
+
+internal object ModelReleaseManifestPolicy {
+    fun validate(
+        manifest: ModelReleaseManifest,
+        appVersionCode: Int,
+        nowEpochSeconds: Long,
+    ): ModelManifestRejectionCode? {
+        if (manifest.schemaVersion != SignedModelManifestVerifier.SUPPORTED_SCHEMA_VERSION) {
+            return ModelManifestRejectionCode.SCHEMA_UNSUPPORTED
+        }
+        if (manifest.sequence <= 0L) return ModelManifestRejectionCode.SEQUENCE_INVALID
+        if (
+            manifest.issuedAtEpochSeconds <= 0L ||
+            manifest.expiresAtEpochSeconds <= manifest.issuedAtEpochSeconds ||
+            manifest.expiresAtEpochSeconds - manifest.issuedAtEpochSeconds >
+            SignedModelManifestVerifier.MAX_VALIDITY_SECONDS
+        ) {
+            return ModelManifestRejectionCode.TIME_WINDOW_INVALID
+        }
+        if (
+            manifest.issuedAtEpochSeconds >
+            nowEpochSeconds + SignedModelManifestVerifier.MAX_CLOCK_SKEW_SECONDS
+        ) {
+            return ModelManifestRejectionCode.NOT_YET_VALID
+        }
+        if (
+            manifest.expiresAtEpochSeconds <
+            nowEpochSeconds - SignedModelManifestVerifier.MAX_CLOCK_SKEW_SECONDS
+        ) {
+            return ModelManifestRejectionCode.EXPIRED
+        }
+        val maximumAppVersionCode = manifest.maximumAppVersionCode
+        if (
+            appVersionCode <= 0 ||
+            manifest.minimumAppVersionCode <= 0 ||
+            (maximumAppVersionCode != null && maximumAppVersionCode < manifest.minimumAppVersionCode) ||
+            appVersionCode < manifest.minimumAppVersionCode ||
+            (maximumAppVersionCode != null && appVersionCode > maximumAppVersionCode)
+        ) {
+            return ModelManifestRejectionCode.APP_VERSION_UNSUPPORTED
+        }
+        if (
+            manifest.models.isEmpty() ||
+            manifest.models.size > SignedModelManifestVerifier.MAX_MODEL_ENTRIES ||
+            manifest.models.map(ModelReleaseManifestEntry::modelId).toSet().size != manifest.models.size ||
+            manifest.models.any { entry -> !validEntry(entry) }
+        ) {
+            return ModelManifestRejectionCode.ENTRY_INVALID
+        }
+        return null
+    }
+
+    private fun validEntry(entry: ModelReleaseManifestEntry): Boolean {
+        if (!entry.modelId.matches(SAFE_MODEL_ID)) return false
+        if (!entry.releaseVersion.matches(SAFE_RELEASE_VERSION)) return false
+        if (!entry.fileName.matches(SAFE_FILE_NAME) || !entry.fileName.endsWith(MODEL_EXTENSION)) return false
+        if (
+            !entry.sha256.matches(SHA_256) ||
+            entry.sizeBytes !in SignedModelManifestVerifier.MIN_MODEL_BYTES..SignedModelManifestVerifier.MAX_MODEL_BYTES
+        ) {
+            return false
+        }
+        if (entry.liteRtLmRuntimeVersion != SignedModelManifestVerifier.SUPPORTED_LITERT_LM_RUNTIME_VERSION) {
+            return false
+        }
+        if (entry.containerMajorVersion != SignedModelManifestVerifier.SUPPORTED_CONTAINER_MAJOR_VERSION) return false
+        if (entry.replacesVersion != null && !entry.replacesVersion.matches(SAFE_RELEASE_VERSION)) return false
+        if (entry.artifactSpecOrNull() == null) return false
+        val licenseUri = runCatching { java.net.URI(entry.licenseUrl) }.getOrNull() ?: return false
+        return licenseUri.scheme == "https" &&
+            !licenseUri.host.isNullOrBlank() &&
+            licenseUri.rawUserInfo == null &&
+            licenseUri.port == -1 &&
+            licenseUri.rawQuery == null &&
+            licenseUri.rawFragment == null
+    }
+
+    private const val MODEL_EXTENSION = ".litertlm"
+    private val SAFE_MODEL_ID = Regex("[A-Za-z0-9._-]{1,80}")
+    private val SAFE_RELEASE_VERSION = Regex("[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
+    private val SAFE_FILE_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+    private val SHA_256 = Regex("[a-f0-9]{64}")
 }
 
 data class AcceptedModelManifestState(
     val sequence: Long,
     val payloadSha256: String,
+    val trustIdentity: ModelManifestTrustIdentity,
 )
+
+fun interface ModelManifestAcceptanceStore {
+    fun accept(candidate: ModelManifestVerificationResult.Verified): ModelManifestAcceptanceDecision
+}
 
 enum class ModelManifestAcceptanceDecision {
     ACCEPT_NEW,
@@ -268,7 +322,11 @@ object ModelManifestRollbackPolicy {
         current: AcceptedModelManifestState?,
         candidate: ModelManifestVerificationResult.Verified,
     ): ModelManifestAcceptanceDecision {
-        if (current == null || candidate.manifest.sequence > current.sequence) {
+        if (
+            current == null ||
+            current.trustIdentity != candidate.trustIdentity ||
+            candidate.manifest.sequence > current.sequence
+        ) {
             return ModelManifestAcceptanceDecision.ACCEPT_NEW
         }
         if (candidate.manifest.sequence < current.sequence) {
@@ -290,23 +348,65 @@ sealed interface StoredModelManifestState {
     data object Invalid : StoredModelManifestState
 }
 
-class ModelManifestStateStore(context: Context) {
+class ModelManifestStateStore(context: Context) : ModelManifestAcceptanceStore {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun readState(): StoredModelManifestState = synchronized(STATE_LOCK) {
         val hasSequence = prefs.contains(KEY_SEQUENCE)
         val hasDigest = prefs.contains(KEY_PAYLOAD_SHA256)
-        if (!hasSequence && !hasDigest) return@synchronized StoredModelManifestState.Empty
-        if (!hasSequence || !hasDigest) return@synchronized StoredModelManifestState.Invalid
+        val hasPayload = prefs.contains(KEY_CANONICAL_PAYLOAD)
+        val hasTrustKeyId = prefs.contains(KEY_TRUST_KEY_ID)
+        val hasTrustPublicKeySha256 = prefs.contains(KEY_TRUST_PUBLIC_KEY_SHA256)
+        if (
+            !hasSequence &&
+            !hasDigest &&
+            !hasPayload &&
+            !hasTrustKeyId &&
+            !hasTrustPublicKeySha256
+        ) {
+            return@synchronized StoredModelManifestState.Empty
+        }
+        if (!hasSequence || !hasDigest || !hasTrustKeyId || !hasTrustPublicKeySha256) {
+            return@synchronized StoredModelManifestState.Invalid
+        }
         val sequence = prefs.getLong(KEY_SEQUENCE, -1L)
         val digest = prefs.getString(KEY_PAYLOAD_SHA256, null)
+        val trustIdentity = runCatching {
+            ModelManifestTrustIdentity(
+                keyId = requireNotNull(prefs.getString(KEY_TRUST_KEY_ID, null)),
+                publicKeySha256 = requireNotNull(prefs.getString(KEY_TRUST_PUBLIC_KEY_SHA256, null)),
+            )
+        }.getOrNull() ?: return@synchronized StoredModelManifestState.Invalid
         if (sequence <= 0L || digest == null || !digest.matches(SHA_256)) {
             return@synchronized StoredModelManifestState.Invalid
         }
-        StoredModelManifestState.Accepted(AcceptedModelManifestState(sequence, digest))
+        if (hasPayload) {
+            val payload = prefs.getString(KEY_CANONICAL_PAYLOAD, null)
+                ?.encodeToByteArray()
+                ?: return@synchronized StoredModelManifestState.Invalid
+            if (payload.isEmpty() || payload.size > SignedModelManifestVerifier.MAX_PAYLOAD_BYTES) {
+                return@synchronized StoredModelManifestState.Invalid
+            }
+            val manifest = SignedModelManifestCodec.decodeCanonicalPayload(payload)
+                ?: return@synchronized StoredModelManifestState.Invalid
+            if (manifest.sequence != sequence || sha256(payload) != digest) {
+                return@synchronized StoredModelManifestState.Invalid
+            }
+        }
+        StoredModelManifestState.Accepted(AcceptedModelManifestState(sequence, digest, trustIdentity))
     }
 
-    fun accept(candidate: ModelManifestVerificationResult.Verified): ModelManifestAcceptanceDecision {
+    fun readAcceptedManifest(expectedTrustIdentity: ModelManifestTrustIdentity): ModelReleaseManifest? =
+        synchronized(STATE_LOCK) {
+            val accepted = readState() as? StoredModelManifestState.Accepted ?: return@synchronized null
+            if (accepted.value.trustIdentity != expectedTrustIdentity) return@synchronized null
+            val payload = prefs.getString(KEY_CANONICAL_PAYLOAD, null)
+                ?.encodeToByteArray()
+                ?: return@synchronized null
+            SignedModelManifestCodec.decodeCanonicalPayload(payload)
+        }
+
+    override fun accept(candidate: ModelManifestVerificationResult.Verified): ModelManifestAcceptanceDecision {
         return synchronized(STATE_LOCK) {
             val current = when (val stored = readState()) {
                 StoredModelManifestState.Empty -> null
@@ -314,25 +414,61 @@ class ModelManifestStateStore(context: Context) {
                 is StoredModelManifestState.Accepted -> stored.value
             }
             val decision = ModelManifestRollbackPolicy.decide(current, candidate)
-            if (decision != ModelManifestAcceptanceDecision.ACCEPT_NEW) return@synchronized decision
-            val persisted = prefs.edit()
-                .putLong(KEY_SEQUENCE, candidate.manifest.sequence)
-                .putString(KEY_PAYLOAD_SHA256, candidate.payloadSha256)
-                .commit()
-            if (persisted) {
-                ModelManifestAcceptanceDecision.ACCEPT_NEW
-            } else {
-                ModelManifestAcceptanceDecision.REJECT_PERSISTENCE_FAILURE
+            when (decision) {
+                ModelManifestAcceptanceDecision.ACCEPT_NEW -> {
+                    if (persistCandidate(candidate)) {
+                        ModelManifestAcceptanceDecision.ACCEPT_NEW
+                    } else {
+                        ModelManifestAcceptanceDecision.REJECT_PERSISTENCE_FAILURE
+                    }
+                }
+
+                ModelManifestAcceptanceDecision.ACCEPT_REPLAY -> {
+                    if (prefs.contains(KEY_CANONICAL_PAYLOAD) || persistCandidate(candidate)) {
+                        ModelManifestAcceptanceDecision.ACCEPT_REPLAY
+                    } else {
+                        ModelManifestAcceptanceDecision.REJECT_PERSISTENCE_FAILURE
+                    }
+                }
+
+                else -> decision
             }
         }
+    }
+
+    private fun persistCandidate(candidate: ModelManifestVerificationResult.Verified): Boolean {
+        val payload = SignedModelManifestCodec.canonicalPayloadBytes(candidate.manifest)
+        if (
+            payload.isEmpty() ||
+            payload.size > SignedModelManifestVerifier.MAX_PAYLOAD_BYTES ||
+            sha256(payload) != candidate.payloadSha256
+        ) {
+            return false
+        }
+        return prefs.edit()
+            .putLong(KEY_SEQUENCE, candidate.manifest.sequence)
+            .putString(KEY_PAYLOAD_SHA256, candidate.payloadSha256)
+            .putString(KEY_CANONICAL_PAYLOAD, payload.decodeToString())
+            .putString(KEY_TRUST_KEY_ID, candidate.trustIdentity.keyId)
+            .putString(KEY_TRUST_PUBLIC_KEY_SHA256, candidate.trustIdentity.publicKeySha256)
+            .commit()
     }
 
     internal companion object {
         const val PREFS_NAME = "grayin_model_manifest_state"
         const val KEY_SEQUENCE = "accepted_sequence"
         const val KEY_PAYLOAD_SHA256 = "accepted_payload_sha256"
+        const val KEY_CANONICAL_PAYLOAD = "accepted_canonical_payload"
+        const val KEY_TRUST_KEY_ID = "accepted_trust_key_id"
+        const val KEY_TRUST_PUBLIC_KEY_SHA256 = "accepted_trust_public_key_sha256"
         private val SHA_256 = Regex("[a-f0-9]{64}")
         private val STATE_LOCK = Any()
+
+        private fun sha256(value: ByteArray): String {
+            return MessageDigest.getInstance("SHA-256")
+                .digest(value)
+                .joinToString(separator = "") { byte -> "%02x".format(byte) }
+        }
     }
 }
 
@@ -369,9 +505,13 @@ internal object SignedModelManifestCodec {
 
 /** Production activation remains fail-closed until release operations provide both values. */
 object RemoteModelManifestConfiguration {
+    const val expectedKeyId: String = "grayin-model-manifest-production-1"
     val endpointUrl: String? = null
     val publicKeyX509Base64: String? = null
 
     val configured: Boolean
-        get() = endpointUrl != null && publicKeyX509Base64 != null
+        get() = RemoteModelManifestConfigurationValidator.production(
+            appVersionCode = 1,
+            clock = Clock.systemUTC(),
+        ) != null
 }

@@ -93,6 +93,8 @@ data class GrayinStrings(
     val sourceConnectionBody: String,
     val sourceConnectionPrivacyNote: String,
     val invokeSource: String,
+    val reselectPhotos: String,
+    val selectedPhotosAccess: String,
     val addLocalFile: String,
     val revoke: String,
     val delete: String,
@@ -331,11 +333,11 @@ data class GrayinStrings(
 
     fun backupDisclosure(): String = when (languageCode) {
         GrayinLanguage.KOREAN ->
-            "파생 메모리만 비밀번호로 암호화합니다. 원본·권한·설정은 포함하지 않으며 로컬 문서 공급자만 사용합니다."
+            "파생 메모리만 비밀번호로 암호화하며 원본·권한·설정은 제외합니다. Android에 기기 내 문서를 요청하지만 외부 문서 공급자의 저장·동기화 방식은 Grayin이 보장할 수 없으므로 기기 저장소를 선택하세요."
         GrayinLanguage.JAPANESE ->
-            "派生メモリのみをパスワードで暗号化します。原本・権限・設定は含めず、ローカル文書プロバイダーのみを使用します。"
+            "派生メモリのみをパスワードで暗号化し、原本・権限・設定は除外します。Androidには端末内文書を要求しますが、外部文書プロバイダーの保存・同期はGrayinでは保証できないため、端末ストレージを選択してください。"
         GrayinLanguage.ENGLISH ->
-            "Password-encrypts derived memory only. Originals, permissions, and settings are excluded; only local document providers are used."
+            "Password-encrypts derived memory only; originals, permissions, and settings are excluded. Android is asked for on-device documents, but Grayin cannot guarantee an external provider's storage or sync behavior; choose device storage."
     }
 
     fun exportEncryptedBackup(): String = when (languageCode) {
@@ -1390,6 +1392,8 @@ private val EnglishStrings = GrayinStrings(
     sourceConnectionBody = "Grayin can read and analyze only sources you connect here. Select a source, then run indexing so Ask can use derived evidence.",
     sourceConnectionPrivacyNote = "Indexing reads originals transiently and stores derived memory, citations, and source references only.",
     invokeSource = "Connect source",
+    reselectPhotos = "Change selected photos",
+    selectedPhotosAccess = "Android currently grants access only to photos you selected. Indexing is limited to that selection; use Change selected photos to update it.",
     addLocalFile = "Add Text, Markdown, or PDF",
     revoke = "Revoke",
     delete = "Delete",
@@ -1463,7 +1467,7 @@ private val EnglishStrings = GrayinStrings(
     localGemmaModelDownloadGuide = "Get model from Google AI Edge LiteRT-LM Gemma docs or Hugging Face repo: litert-community/gemma-4-E2B-it-litert-lm.",
     localGemmaModelDownloadUrl = "Download page: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
     localGemmaModelFileGuide = "Expected file name: gemma-4-E2B-it.litertlm.",
-    localGemmaModelDevInstallGuide = "Current build install path: adb push gemma-4-E2B-it.litertlm /data/local/tmp/grayin/.",
+    localGemmaModelDevInstallGuide = "Debug build install path: adb push gemma-4-E2B-it.litertlm /data/local/tmp/grayin/.",
     openLocalGemmaModelDownloadPage = "Open model download page",
     importLocalGemmaModel = "Import compatible LiteRT-LM model file",
     deleteLocalGemmaModel = "Delete imported model file",
@@ -1508,6 +1512,8 @@ private val KoreanStrings = EnglishStrings.copy(
     sourceConnectionBody = "Grayin은 여기서 사용자가 연결한 소스만 읽고 분석할 수 있습니다. 소스를 선택한 뒤 인덱싱을 실행해야 질문에서 파생 근거를 사용할 수 있습니다.",
     sourceConnectionPrivacyNote = "인덱싱은 원본을 일시적으로만 읽고 파생 기억, 인용, 소스 참조만 저장합니다.",
     invokeSource = "소스 연결",
+    reselectPhotos = "선택한 사진 변경",
+    selectedPhotosAccess = "현재 Android에서 선택한 사진에만 접근할 수 있습니다. 인덱싱도 해당 선택으로 제한되며, 선택한 사진 변경에서 다시 고를 수 있습니다.",
     addLocalFile = "Text, Markdown 또는 PDF 추가",
     revoke = "권한 해제",
     delete = "삭제",
@@ -1581,7 +1587,7 @@ private val KoreanStrings = EnglishStrings.copy(
     localGemmaModelDownloadGuide = "모델 획득: Google AI Edge LiteRT-LM Gemma 문서 또는 Hugging Face repo litert-community/gemma-4-E2B-it-litert-lm.",
     localGemmaModelDownloadUrl = "다운로드 페이지: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
     localGemmaModelFileGuide = "필요 파일명: gemma-4-E2B-it.litertlm.",
-    localGemmaModelDevInstallGuide = "현재 빌드 설치 경로: adb push gemma-4-E2B-it.litertlm /data/local/tmp/grayin/.",
+    localGemmaModelDevInstallGuide = "디버그 빌드 설치 경로: adb push gemma-4-E2B-it.litertlm /data/local/tmp/grayin/.",
     openLocalGemmaModelDownloadPage = "모델 다운로드 페이지 열기",
     importLocalGemmaModel = "호환 LiteRT-LM 모델 파일 가져오기",
     deleteLocalGemmaModel = "가져온 모델 파일 삭제",
@@ -1626,6 +1632,8 @@ private val JapaneseStrings = EnglishStrings.copy(
     sourceConnectionBody = "Grayinはここで接続したソースだけを読み取り、分析できます。ソースを選択してからインデックスすると、質問で派生根拠を使えます。",
     sourceConnectionPrivacyNote = "インデックスは原本を一時的にだけ読み取り、派生記憶、引用、ソース参照だけを保存します。",
     invokeSource = "ソースを接続",
+    reselectPhotos = "選択した写真を変更",
+    selectedPhotosAccess = "現在Androidで選択した写真だけにアクセスできます。インデックスもその選択範囲に限られ、選択した写真を変更から再選択できます。",
     addLocalFile = "Text、Markdown、PDFを追加",
     revoke = "許可を解除",
     delete = "削除",
@@ -1699,7 +1707,7 @@ private val JapaneseStrings = EnglishStrings.copy(
     localGemmaModelDownloadGuide = "モデル入手先: Google AI Edge LiteRT-LM Gemma docs または Hugging Face repo litert-community/gemma-4-E2B-it-litert-lm。",
     localGemmaModelDownloadUrl = "ダウンロードページ: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
     localGemmaModelFileGuide = "必要なファイル名: gemma-4-E2B-it.litertlm。",
-    localGemmaModelDevInstallGuide = "現在のビルドの設置先: adb push gemma-4-E2B-it.litertlm /data/local/tmp/grayin/。",
+    localGemmaModelDevInstallGuide = "デバッグビルドの設置先: adb push gemma-4-E2B-it.litertlm /data/local/tmp/grayin/。",
     openLocalGemmaModelDownloadPage = "モデルダウンロードページを開く",
     importLocalGemmaModel = "互換LiteRT-LMモデルファイルをインポート",
     deleteLocalGemmaModel = "インポート済みモデルファイルを削除",

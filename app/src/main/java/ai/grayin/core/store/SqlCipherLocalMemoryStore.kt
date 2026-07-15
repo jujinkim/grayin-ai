@@ -122,24 +122,6 @@ class SqlCipherLocalMemoryStore(
         }
     }
 
-    override suspend fun saveDailySummaries(summaries: List<DailyMemorySummary>): StoreWriteResult {
-        return writeRows(summaries) { db, summary ->
-            db.insertWithOnConflict(TABLE_DAILY_SUMMARIES, null, summary.toValues(), SQLiteDatabase.CONFLICT_REPLACE)
-        }
-    }
-
-    override suspend fun savePlaceClusters(clusters: List<PlaceCluster>): StoreWriteResult {
-        return writeRows(clusters) { db, cluster ->
-            db.insertWithOnConflict(TABLE_PLACE_CLUSTERS, null, cluster.toValues(), SQLiteDatabase.CONFLICT_REPLACE)
-        }
-    }
-
-    override suspend fun saveAppUsageSummaries(summaries: List<AppUsageSummary>): StoreWriteResult {
-        return writeRows(summaries) { db, summary ->
-            db.insertWithOnConflict(TABLE_APP_USAGE_SUMMARIES, null, summary.toValues(), SQLiteDatabase.CONFLICT_REPLACE)
-        }
-    }
-
     override suspend fun deleteConnectorData(
         connectorId: String,
         requireReconsent: Boolean,
@@ -417,7 +399,7 @@ class SqlCipherLocalMemoryStore(
             ) {
                 return@forEach
             }
-            ConnectorScanValidator.validate(
+            ConnectorScanValidator.validateStoredSnapshot(
                 ConnectorScanResult(
                     connectorId = connectorId,
                     processingState = status?.processingState ?: ProcessingState.COMPLETED,
@@ -1208,28 +1190,6 @@ class SqlCipherLocalMemoryStore(
         }
     }
 
-    private fun <T> writeRows(
-        rows: List<T>,
-        insert: (SQLiteDatabase, T) -> Long,
-    ): StoreWriteResult = withDatabase { db ->
-        var inserted = 0
-        db.beginTransaction()
-        try {
-            rows.forEach { row ->
-                check(insert(db, row) >= 0L) { "Could not persist a derived-memory record." }
-                inserted += 1
-            }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
-        }
-        StoreWriteResult(
-            insertedCount = inserted,
-            updatedCount = 0,
-            completedAt = Instant.now(),
-        )
-    }
-
     private fun <T> withDatabase(block: (SQLiteDatabase) -> T): T {
         loadSqlCipher()
         val dbFile = context.getDatabasePath(databaseName)
@@ -1278,6 +1238,9 @@ class SqlCipherLocalMemoryStore(
         }
         if (version < CONNECTOR_RECONSENT_SCHEMA_VERSION) {
             runMigration(db, CONNECTOR_RECONSENT_SCHEMA_VERSION, ::createConnectorReconsentTable)
+        }
+        if (version < CLOSED_DERIVED_RECORD_SCHEMA_VERSION) {
+            runMigration(db, CLOSED_DERIVED_RECORD_SCHEMA_VERSION, ::purgeLegacyOpenConnectorRecords)
         }
     }
 
@@ -1550,6 +1513,14 @@ class SqlCipherLocalMemoryStore(
             )
             """.trimIndent(),
         )
+    }
+
+    private fun purgeLegacyOpenConnectorRecords(db: SQLiteDatabase) {
+        val migratedAt = clock.instant()
+        LEGACY_OPEN_RECORD_CONNECTOR_IDS.forEach { connectorId ->
+            fenceActiveConnectorTasks(db, connectorId, migratedAt)
+            deleteConnectorRows(db, connectorId, migratedAt)
+        }
     }
 
     private fun fenceActiveConnectorTasks(
@@ -2314,7 +2285,7 @@ class SqlCipherLocalMemoryStore(
     )
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 7
+        const val CURRENT_SCHEMA_VERSION = 8
 
         private const val DB_NAME = "grayin-memory.db"
         private const val TABLE_SOURCE_REFERENCES = "source_references"
@@ -2336,7 +2307,8 @@ class SqlCipherLocalMemoryStore(
         private const val CONNECTOR_SCAN_STATUS_SCHEMA_VERSION = 4
         private const val CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION = 5
         private const val LOCAL_SOURCE_IDENTITY_SCHEMA_VERSION = 6
-        private const val CONNECTOR_RECONSENT_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION
+        private const val CONNECTOR_RECONSENT_SCHEMA_VERSION = 7
+        private const val CLOSED_DERIVED_RECORD_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION
         private const val SCHEMA_VERSION = CURRENT_SCHEMA_VERSION
         private const val MAX_QUEUE_SNAPSHOT_ITEMS = 500
         private const val MAX_CONNECTOR_ID_CHARS = 128
@@ -2353,6 +2325,13 @@ class SqlCipherLocalMemoryStore(
         private const val IMPORT_RECONSENT_AUTOMATIC_SETTINGS_KEY = "v1:import-reconsent-required"
         private const val LOCAL_FILES_CONNECTOR_ID = "local_files"
         private const val LOCATION_CONNECTOR_ID = "location"
+        private val LEGACY_OPEN_RECORD_CONNECTOR_IDS = listOf(
+            "app_usage",
+            "calendar",
+            "location",
+            "notification",
+            "photos",
+        )
 
         @Volatile
         private var loaded = false

@@ -1,6 +1,6 @@
 # Roadmap
 
-Current phase status: local-first MVP foundation and basic Android source connectors are implemented. Completion work below tracks production correctness, remaining features, and hardening.
+Current phase status: the repository-local implementation plan is complete through Step 8. Step 9 separates host-verifiable repository checks from external release inputs and physical-device acceptance so unavailable credentials, model artifacts, providers, or hardware are never presented as code placeholders.
 
 ## Current Capability
 
@@ -8,24 +8,24 @@ Current phase status: local-first MVP foundation and basic Android source connec
 - User-connected Android last-known location samples through runtime location permission.
 - User-connected Android calendar events through runtime calendar read permission.
 - User-connected Android photo metadata through runtime media read permission.
-- User-connected Android app usage summaries through usage-access settings.
+- User-connected Android completed app-usage session events through usage-access settings.
 - User-connected Android notification-derived signals through notification-listener settings access.
 - SQLCipher-backed derived-memory store protected by Android Keystore.
 - Ask flow over cited local evidence with confidence and missing-data output.
 - Local Gemma LiteRT-LM answer adapter over retrieved `EvidencePack`, with template fallback when the model file is unavailable.
-- Runtime local-model catalog for Grayin dedicated model placeholder, official Gemma 4 E2B, and official Gemma 4 E4B.
-- Fail-closed WorkManager model-download infrastructure using the shared fixed-artifact verifier; all current model network entries remain disabled until immutable URL, exact byte count, and SHA-256 metadata exist.
-- App-specific model training scaffold under `model-training/`, with Gemma/reference/output model artifacts excluded from git.
+- Runtime local-model catalog with a dedicated Grayin WI8/AFP32 release identity plus official Gemma 4 E2B/E4B information-page entries.
+- Fail-closed signed-manifest and WorkManager model-download infrastructure using the shared fixed-artifact verifier; production trust configuration and model transport remain disabled until a reviewed external release exists.
+- App-specific model training, LoRA merge, explicit WI8/AFP32 LiteRT export, exact 30-fixture CLI evaluation, and local provenance pipeline under `model-training/`, with all model artifacts excluded from git.
 - First-launch Sources intro explaining that user-connected sources must be indexed before Ask can use them.
 - Sources UI is backed by connector metadata and permission/index state.
 - Sources UI exposes top-level Index all now, persisted automatic indexing settings, and live queue/runtime status with localized outcomes.
 - Localized UI copy for system, Korean, English, and Japanese language settings.
 - Bottom navigation with icons and localized labels.
-- Settings shows local model selection, official model pages, local Gemma status, current adb install path, and `.litertlm` import/delete fallback controls. Catalog download/cancel/delete actions render only after a model entry has complete reviewed transport metadata; none currently does.
+- Settings shows local model selection, official model pages, local Gemma status, and `.litertlm` import/delete fallback controls. External-files/ADB development paths exist only in debuggable builds and are absent from release resolution and guidance. Catalog download/cancel/delete actions render only after a model entry has complete reviewed transport metadata; none currently does.
 - Settings installs, cancels, and deletes fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action; document indexing never initiates a download.
 - Local Files passes explicitly selected PDF descriptors to a private `:document` Pdfium/Tesseract runtime, which enforces descriptor, signature, page, bitmap, text, OCR, and time limits and returns only bounded derived AIDL results.
-- Local document selection stores only Keystore HMAC markers. SQLCipher schema v6 removes legacy URI/name-based Local Files graphs before HMAC-only reindexing.
-- Settings provides explicit local-only encrypted export/import of the validated seven-section derived snapshot. Version 1 uses password-derived AES-256-GCM, replace-only SQLCipher import, and mandatory connector re-consent.
+- Local document selection stores only Keystore HMAC markers. SQLCipher schema v8 retains the v6 Local Files identity purge and additionally fences work and removes legacy open-schema Location, Calendar, Photos, Notifications, and App Usage records.
+- Settings provides explicit encrypted export/import of the validated seven-section derived snapshot with no Grayin-owned network transport. Version 1 uses password-derived AES-256-GCM, exact current-schema validation, replace-only SQLCipher import, and mandatory connector re-consent; the Android picker requests on-device documents but an external provider controls its own storage behavior.
 - Settings provides independent persisted screenshot blocking and system biometric/device-credential app lock. App lock forces `FLAG_SECURE`, starts locked in a new process, and relocks after a non-configuration background transition.
 - INTERNET permission bounded by `docs/network-policy.md`: typed map/place/reverse-geocode/weather enrichment plus fixed-catalog model, authenticated manifest, or OCR language-data downloads.
 
@@ -68,7 +68,7 @@ The current Open-Meteo public endpoint is suitable only for non-commercial proto
 
 ### 4. PDF and OCR Indexing
 
-The installer boundary and planned document-runtime limits are specified in `docs/pdf-ocr.md`.
+The implemented installer boundary and document-runtime limits are specified in `docs/pdf-ocr.md`.
 
 - [x] Persist latest connector scan status and support atomic snapshot reconciliation for removed pages.
 - [x] Store bounded typed scan issue codes and localize them only after reading.
@@ -79,7 +79,6 @@ The installer boundary and planned document-runtime limits are specified in `doc
 - [x] Persist only HMAC source references, derived page summaries, keyword signals, and closed page citations.
 - [x] Add document size/page/render/text/OCR/time limits and explicit unsupported/missing-data results.
 - [x] Enforce the 10-minute connector scan limit, 128-page aggregate output limit, and atomic full-snapshot replacement.
-- [ ] Run device/emulator acceptance for embedded text, installed-pack OCR, cancellation, timeout, and `:document` process-death recovery.
 
 ### 5. Encrypted Export and Import
 
@@ -95,7 +94,7 @@ The installer boundary and planned document-runtime limits are specified in `doc
 - [x] Relock on process start and non-configuration background, and fence stale authentication callbacks without a bypass.
 - [x] Add JVM and Android lifecycle coverage for secure-window, lock, unlock, failure, rotation, and background transitions.
 
-The lifecycle instrumentation covers persisted secure-window startup, Activity recreation, unlocked-session configuration continuity, ordinary background relock, and protected-content gating. Its source compiles on the host; biometric/PIN system-UI execution, screenshots/recording, process death, and API 26/29/30 device behavior remain part of Step 9 device acceptance because no device or emulator is connected.
+The lifecycle instrumentation covers persisted secure-window startup, Activity recreation, unlocked-session configuration continuity, ordinary background relock, and protected-content gating. Its source compiles on the host; biometric/PIN system-UI execution, screenshots/recording, process death, and API 26/29/30 device behavior remain in the physical-device acceptance section because no device or emulator is connected.
 
 ### 7. Source and UI Completion
 
@@ -111,19 +110,45 @@ Location clusters accumulate user-triggered last-known observations by stable 0.
 - [x] Reject model downloads before connection unless immutable HTTPS URL, exact byte count, and pinned SHA-256 metadata are complete; reject redirects and publish atomically.
 - [x] Add durable model-download generation fencing before enabling a catalog transport entry.
 - [x] Implement canonical bounded remote-manifest parsing, ECDSA P-256 verification, compatibility/expiry checks, and durable rollback/equivocation state.
-- [ ] Configure a reviewed production P-256 public key and fixed manifest endpoint, then verify a real signed release manifest end to end.
+- [x] Fence stale work before any manifest/artifact connection, keep the Settings refresh gate process-wide, and fail closed on malformed response-length metadata.
+- [x] Reject app-private model-path symlinks and bind verified-file cache entries to stable filesystem identity.
 - [x] Validate imported LiteRT-LM container structure, version, size/space bounds, exact copy, and atomic publication beyond extension alone.
-- [ ] Verify an imported model's exact family/variant and successful engine initialization if the pinned LiteRT-LM API exposes an authenticated identity probe; until then the UI must disclose structural compatibility only.
 - [x] Expand held-out synthetic training/evaluation coverage across 10 behavior families and English/Korean/Japanese, then run the deterministic grounded-answer contract benchmark.
-- [ ] Run the same grounded-answer benchmark against predictions from the trained/exported release model and record device quality, latency, and memory results.
-- [ ] Merge/export the release adapter to `.litertlm` outside git.
-- [ ] Publish the Grayin model to an immutable external artifact URL and configure catalog metadata.
+- [x] Implement fail-closed local LoRA merge, explicit `dynamic_wi8_afp32` LiteRT export, exact 30-fixture CLI output gate, and provenance/local-manifest tooling without committing artifacts.
 
-External artifact publication requires a selected host, release credentials, license/terms URL, production public/private signing-key custody, fixed manifest endpoint, and final model file. Repository work must prepare and validate the release without committing weights, private keys, or credentials.
+Repository tooling prepares and validates a release without committing weights, private keys, credentials, or generated provenance. Actual release execution remains an external gate below.
 
 ### 9. Final Verification
 
-- [ ] Add JVM coverage for policy, queue, crypto, parsing, capability, and grounding behavior.
-- [ ] Add Android instrumentation tests for permissions, SQLCipher, document flows, WorkManager, notification filtering, and app security.
-- [ ] Run unit tests, Android lint, debug/release builds, security scans, and device smoke tests.
-- [ ] Remove stale roadmap/status text and confirm all hard constraints.
+- [ ] Run all JVM coverage for policy, queue, crypto, parsing, capability, connector closure, model release, and grounding behavior.
+- [ ] Compile Android instrumentation coverage for permissions, SQLCipher, document flows, WorkManager, notification filtering, app security, and model storage.
+- [ ] Run Android lint, debug/release builds, APK boundary inspections, model-training policy gates, and repository diff checks.
+- [ ] Remove stale roadmap/status text and confirm every repository-enforceable hard constraint.
+
+## External Operational Release Gates
+
+These require release artifacts, contracts, credentials, or key custody that do not belong in git:
+
+- select a commercial-compatible map/weather provider or paid contract and update its fixed typed adapter/disclosure
+- independently approve the base model, training adapter, licenses, exact input digests, and hermetic release environment
+- run the real LoRA merge and explicit WI8/AFP32 export, then pass all 30 CLI fixtures with the resulting `.litertlm`
+- publish the accepted model at an immutable HTTPS URL with final license/terms, exact byte count, and SHA-256
+- configure production P-256 signing-key custody and the fixed manifest endpoint, then verify a real signed release end to end
+
+## Physical-Device Acceptance Gates
+
+No device or emulator is connected in the current environment. The following must run on representative Android API levels and hardware:
+
+- connector permission/settings flows, Android 14 selected-photo reselection, usage access, and notification-listener delivery
+- persisted SAF grant/revoke, embedded PDF text, installed-pack OCR, cancellation, timeout, and `:document` process-death recovery
+- WorkManager charging/battery/thermal/window behavior and restart recovery
+- biometric/device-credential system UI, process death, rotation/background relock, screenshots/recording, and `FLAG_SECURE`
+- real LiteRT-LM engine initialization plus grounded quality, latency, and memory measurement for the accepted model
+- authenticated imported-model family/variant identity if the pinned runtime later exposes such a probe; current UI deliberately claims structural compatibility only
+
+## Explicit Future Scope
+
+- photo pixel understanding, visual captions, and visual-content clusters
+- a reviewed historical-location source beyond last-known observations seen by Grayin scans
+- calls, messages, browser history, audio, and video connectors
+- cloud sync, accounts, application backend, analytics, ads, crash reporting, remote LLMs, or agentic actions unless the product and security boundaries are explicitly revised

@@ -9,18 +9,22 @@ import ai.grayin.connectors.localfiles.LocalFilesConnector
 import ai.grayin.connectors.location.LocationConnector
 import ai.grayin.connectors.notification.NotificationAppAllowlist
 import ai.grayin.connectors.notification.NotificationConnector
+import ai.grayin.connectors.photos.PhotoPermissionPolicy
+import ai.grayin.connectors.photos.PhotosConnector
 import ai.grayin.core.ai.Gemma4LocalLanguageModel
 import ai.grayin.core.ai.Gemma4ModelPathResolver
 import ai.grayin.core.ai.LocalLanguageModel
 import ai.grayin.core.ai.LocalModelGrounding
 import ai.grayin.core.ai.LocalModelAnswerDraft
+import ai.grayin.core.ai.LocalModelPathPolicy
 import ai.grayin.core.ai.LocalModelStatus
-import ai.grayin.core.ai.ModelCatalog
+import ai.grayin.core.ai.ModelCatalogRepository
 import ai.grayin.core.ai.ModelCatalogEntry
 import ai.grayin.core.ai.ModelDownloadScheduler
 import ai.grayin.core.ai.ModelDownloadStatus
 import ai.grayin.core.ai.ModelInstallRecord
 import ai.grayin.core.ai.ModelInstallStore
+import ai.grayin.core.ai.RemoteModelManifestClient
 import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorScanStatus
@@ -89,6 +93,7 @@ data class ConnectorUiState(
     val status: String,
     val sensitivity: String,
     val canInvoke: Boolean = false,
+    val invokeLabel: String,
     val requiredPermissions: List<String> = emptyList(),
     val canAdd: Boolean = false,
     val canIndex: Boolean = false,
@@ -190,8 +195,16 @@ class GrayinMemoryController(
     private val onlineEnrichmentPreferences: OnlineEnrichmentPreferences = OnlineEnrichmentPreferences(
         context.applicationContext,
     ),
-    private val modelInstallStore: ModelInstallStore = ModelInstallStore(context.applicationContext),
-    private val modelDownloadScheduler: ModelDownloadScheduler = ModelDownloadScheduler(context.applicationContext),
+    private val modelCatalogRepository: ModelCatalogRepository = ModelCatalogRepository(context.applicationContext),
+    private val modelInstallStore: ModelInstallStore = ModelInstallStore(
+        context.applicationContext,
+        modelCatalogRepository,
+    ),
+    private val modelDownloadScheduler: ModelDownloadScheduler = ModelDownloadScheduler(
+        context.applicationContext,
+        modelCatalogRepository,
+        modelInstallStore,
+    ),
     private val ocrLanguagePackInstallStore: OcrLanguagePackInstallStore =
         OcrLanguagePackInstallStore(context.applicationContext),
     private val ocrLanguagePackDownloadScheduler: OcrLanguagePackDownloadScheduler =
@@ -207,11 +220,15 @@ class GrayinMemoryController(
     private val fallbackAnswerGenerator: GroundedAnswerGenerator = TemplateGroundedAnswerGenerator(),
 ) {
     private val appContext = context.applicationContext
+    private val remoteModelManifestClient = RemoteModelManifestClient.production(appContext)
     private val transferEnvelopeCodec = GrayinTransferEnvelopeCodec()
     private val backupStagingStore = EncryptedBackupStagingStore(appContext)
     private val automaticIndexingScheduler = AutomaticIndexingScheduler(appContext)
 
-    suspend fun snapshot(strings: GrayinStrings): GrayinSnapshot = withContext(Dispatchers.IO) {
+    suspend fun snapshot(
+        strings: GrayinStrings,
+        refreshRemoteModelCatalog: Boolean = false,
+    ): GrayinSnapshot = withContext(Dispatchers.IO) {
         val stored = store.loadSnapshot()
         val sourceReferences = stored.sourceReferences
         val events = stored.derivedMemoryEvents
@@ -238,11 +255,15 @@ class GrayinMemoryController(
                 strings.telemetryAbsent,
                 strings.crashAnalyticsAbsent,
                 strings.encryptedStoreSqlCipher,
-            ) + localModelRows(localModelStatus, strings) + listOf(
+            ) + localModelSettingsRows(
+                localModelStatus,
+                strings,
+                LocalModelPathPolicy.developmentPathsAllowed(appContext.applicationInfo.flags),
+            ) + listOf(
                 "${strings.indexedSourceReferencesPrefix} ${sourceReferences.size}",
                 "${strings.derivedMemoryEventsPrefix} ${events.size}",
             ),
-            modelOptions = localModelOptions(strings),
+            modelOptions = localModelOptions(strings, refreshRemoteModelCatalog),
             ocrLanguagePacks = ocrLanguagePackOptions(strings),
         )
     }
@@ -266,23 +287,13 @@ class GrayinMemoryController(
         )
     }
 
-    private fun localModelRows(status: LocalModelStatus, strings: GrayinStrings): List<String> {
-        val statusRow = when (status) {
-            LocalModelStatus.READY -> strings.localGemmaModelReady
-            LocalModelStatus.LOADING -> strings.localGemmaModelLoading
-            LocalModelStatus.UNAVAILABLE -> strings.localGemmaModelUnavailable
-        }
-        return listOf(
-            strings.localGemmaModelTitle,
-            statusRow,
-            strings.localGemmaModelApkNotBundled,
-            strings.localGemmaModelDevInstallGuide,
-        )
-    }
-
-    private suspend fun localModelOptions(strings: GrayinStrings): List<ModelOptionUiState> {
+    private suspend fun localModelOptions(
+        strings: GrayinStrings,
+        refreshRemoteModelCatalog: Boolean,
+    ): List<ModelOptionUiState> {
+        if (refreshRemoteModelCatalog) remoteModelManifestClient.refreshIfDue()
         val selectedModelId = modelInstallStore.selectedModelId()
-        return ModelCatalog.entries.map { entry ->
+        return modelCatalogRepository.entries().map { entry ->
             modelDownloadScheduler.reconcile(entry.id)
             val record = modelInstallStore.recordFor(entry)
             val selected = entry.id == selectedModelId
@@ -463,13 +474,13 @@ class GrayinMemoryController(
     }
 
     suspend fun selectLocalModel(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
-        val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
+        val entry = modelCatalogRepository.entry(modelId) ?: return@withContext strings.localModelUnknown
         modelInstallStore.selectModel(entry.id)
         strings.localModelSelected(entry.displayName)
     }
 
     suspend fun downloadLocalModel(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
-        val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
+        val entry = modelCatalogRepository.entry(modelId) ?: return@withContext strings.localModelUnknown
         if (!entry.downloadConfigured) return@withContext strings.localModelDownloadUnavailable
         modelInstallStore.selectModel(entry.id)
         if (!modelDownloadScheduler.enqueue(entry.id)) {
@@ -509,13 +520,13 @@ class GrayinMemoryController(
         }
 
     suspend fun cancelLocalModelDownload(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
-        val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
+        val entry = modelCatalogRepository.entry(modelId) ?: return@withContext strings.localModelUnknown
         modelDownloadScheduler.cancel(entry.id)
         strings.localModelDownloadCanceled(entry.displayName)
     }
 
     suspend fun deleteDownloadedLocalModel(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
-        val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
+        val entry = modelCatalogRepository.entry(modelId) ?: return@withContext strings.localModelUnknown
         val deleted = modelDownloadScheduler.delete(entry.id)
         if (deleted) {
             strings.localModelDeleted(entry.displayName)
@@ -948,6 +959,9 @@ class GrayinMemoryController(
         val isLocalFiles = connectorId == LocalFileMemoryExtractor.CONNECTOR_ID
         val connectorName = strings.connectorName(connectorId, connector.metadata.displayName)
         val reconsentRequired = store.isConnectorReconsentRequired(connectorId)
+        val partialPhotoAccess = connectorId == PhotosConnector.CONNECTOR_ID &&
+            PhotoPermissionPolicy.canReselect(permissionState.access)
+        val photoReselectionAvailable = partialPhotoAccess && state.consentEnabled && !reconsentRequired
         return ConnectorUiState(
             id = connectorId,
             name = connectorName,
@@ -961,7 +975,17 @@ class GrayinMemoryController(
             ),
             sensitivity = strings.sensitivityLabel(connector.metadata.sensitivity),
             canInvoke = !isLocalFiles && permissionState.canRequestPermission &&
-                (!state.consentEnabled || !permissionState.permissionGranted || reconsentRequired),
+                (
+                    !state.consentEnabled ||
+                        !permissionState.permissionGranted ||
+                        reconsentRequired ||
+                        partialPhotoAccess
+                ),
+            invokeLabel = if (photoReselectionAvailable) {
+                strings.reselectPhotos
+            } else {
+                strings.invokeSource
+            },
             requiredPermissions = permissionState.requiredPlatformPermissions,
             canAdd = isLocalFiles,
             canIndex = state.enabled && (isLocalFiles || permissionState.permissionGranted) && !reconsentRequired &&
@@ -978,7 +1002,12 @@ class GrayinMemoryController(
             } else {
                 null
             },
-            detailRows = strings.connectorScanDetailRows(scanStatus),
+            detailRows = buildList {
+                if (partialPhotoAccess) {
+                    add(strings.selectedPhotosAccess)
+                }
+                addAll(strings.connectorScanDetailRows(scanStatus))
+            },
             supportsDateRangeIndexing = connector.metadata.supportsDateRangeIndexing,
             lastRequestedScanRange = if (scanStatus?.scopeFrom != null && scanStatus.scopeUntil != null) {
                 IndexedDateRangePresentation(
@@ -1056,5 +1085,23 @@ class GrayinMemoryController(
         const val MAX_PLACE_ROWS = 30
         const val MAX_MANUAL_DRAIN_TASKS = 64
         const val MANUAL_INDEXING_LEASE_OWNER = "manual-ui"
+    }
+}
+
+internal fun localModelSettingsRows(
+    status: LocalModelStatus,
+    strings: GrayinStrings,
+    debuggable: Boolean,
+): List<String> {
+    val statusRow = when (status) {
+        LocalModelStatus.READY -> strings.localGemmaModelReady
+        LocalModelStatus.LOADING -> strings.localGemmaModelLoading
+        LocalModelStatus.UNAVAILABLE -> strings.localGemmaModelUnavailable
+    }
+    return buildList {
+        add(strings.localGemmaModelTitle)
+        add(statusRow)
+        add(strings.localGemmaModelApkNotBundled)
+        if (debuggable) add(strings.localGemmaModelDevInstallGuide)
     }
 }

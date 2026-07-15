@@ -47,8 +47,8 @@ class AndroidReverseGeocodeProvider(
             } ?: return EnrichmentResult.Unavailable(EnrichmentUnavailableReason.TIMEOUT)
             val address = lookup.address
                 ?: return EnrichmentResult.Unavailable(EnrichmentUnavailableReason.NOT_FOUND)
-            val locality = firstNonBlank(address.locality, address.subLocality)
-            val region = firstNonBlank(address.adminArea, address.subAdminArea)
+            val locality = firstClosedLabel(address.locality, address.subLocality)
+            val region = firstClosedLabel(address.adminArea, address.subAdminArea)
             val countryCode = address.countryCode
                 ?.takeIf { code -> COUNTRY_CODE.matches(code) }
                 ?.uppercase(Locale.ROOT)
@@ -73,13 +73,44 @@ class AndroidReverseGeocodeProvider(
         }
     }
 
-    private fun firstNonBlank(vararg values: String?): String? {
-        return values.firstOrNull { value -> !value.isNullOrBlank() }?.trim()
+    private fun firstClosedLabel(vararg values: String?): String? {
+        return values.firstNotNullOfOrNull(::closedLabel)
+    }
+
+    private fun closedLabel(value: String?): String? {
+        if (value == null || !hasOnlySafeUnicode(value)) return null
+        return value
+            .trim()
+            .replace(WHITESPACE, " ")
+            .takeIf { label ->
+                label.isNotBlank() && label.toByteArray(Charsets.UTF_8).size <= MAX_LABEL_UTF8_BYTES
+            }
+    }
+
+    private fun hasOnlySafeUnicode(value: String): Boolean {
+        var index = 0
+        while (index < value.length) {
+            val codePoint = Character.codePointAt(value, index)
+            if (Character.charCount(codePoint) == 1 && value[index].isSurrogate()) return false
+            if (Character.isISOControl(codePoint)) return false
+            if (
+                Character.getType(codePoint) in setOf(
+                    Character.FORMAT.toInt(),
+                    Character.PRIVATE_USE.toInt(),
+                    Character.SURROGATE.toInt(),
+                    Character.UNASSIGNED.toInt(),
+                )
+            ) return false
+            index += Character.charCount(codePoint)
+        }
+        return true
     }
 
     private companion object {
         const val REVERSE_GEOCODE_TIMEOUT_MILLIS = 8_000L
+        const val MAX_LABEL_UTF8_BYTES = 128
         val COUNTRY_CODE = Regex("[A-Za-z]{2}")
+        val WHITESPACE = Regex("\\s+")
     }
 
     private data class PlatformLookup(val address: CoarsePlatformAddress?)

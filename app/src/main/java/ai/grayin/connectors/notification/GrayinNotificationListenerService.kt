@@ -76,12 +76,17 @@ private class NotificationSignalExtractor {
     fun extract(sbn: StatusBarNotification): NotificationExtractionResult? {
         val postedAt = Instant.ofEpochMilli(sbn.postTime)
         val indexedAt = Instant.now()
+        val packageName = NotificationValuePolicy.closedPackageName(sbn.packageName) ?: return null
+        val category = NotificationValuePolicy.closedCategory(sbn.notification.category)
+        val transientText = notificationText(sbn.notification)
+        if (transientText.truncated) return null
         val kind = NotificationSignalClassifier.classify(
-            text = notificationText(sbn.notification),
-            category = sbn.notification.category,
+            text = transientText.value,
+            category = category,
         )
         if (kind == NotificationDerivedEventKind.SECURITY_HINT) return null
-        val sourceHash = sha256("${sbn.packageName}:${sbn.id}:${sbn.tag.orEmpty()}:${sbn.postTime}")
+        val sourceTag = NotificationValuePolicy.closedSourceTag(sbn.tag).orEmpty()
+        val sourceHash = sha256("$packageName:${sbn.id}:$sourceTag:${sbn.postTime}")
         val sourceId = "source:${NotificationConnector.CONNECTOR_ID}:$sourceHash"
         val eventId = "event:${NotificationConnector.CONNECTOR_ID}:$sourceHash"
         val citationId = "citation:${NotificationConnector.CONNECTOR_ID}:$sourceHash"
@@ -99,7 +104,7 @@ private class NotificationSignalExtractor {
                 connectorId = NotificationConnector.CONNECTOR_ID,
                 sourceKind = SourceKind.NOTIFICATION,
                 externalIdHash = sourceHash,
-                sourceAppIdentifier = sbn.packageName,
+                sourceAppIdentifier = packageName,
                 observedAt = indexedAt,
                 modifiedAt = postedAt,
                 sensitivity = SensitivityLevel.VERY_HIGH,
@@ -108,11 +113,11 @@ private class NotificationSignalExtractor {
                 id = eventId,
                 kind = derivedKind,
                 sourceReferenceIds = listOf(sourceId),
-                summary = "Notification-derived $kindLabel signal from ${sbn.packageName} at $postedAt.",
+                summary = "Notification-derived $kindLabel signal from $packageName at $postedAt.",
                 startedAt = postedAt,
-                keywords = keywords(sbn.packageName, kindLabel),
-                labels = listOf("notification", kindLabel, sbn.notification.category.orEmpty()).filter { it.isNotBlank() },
-                entities = listOf(sbn.packageName),
+                keywords = keywords(packageName, kindLabel),
+                labels = listOfNotNull("notification", kindLabel, category),
+                entities = listOf(packageName),
                 confidence = if (kind == NotificationDerivedEventKind.OTHER) ConfidenceLevel.LOW else ConfidenceLevel.MEDIUM,
                 sensitivity = SensitivityLevel.VERY_HIGH,
                 citationIds = listOf(citationId),
@@ -122,7 +127,7 @@ private class NotificationSignalExtractor {
                 id = citationId,
                 sourceReferenceId = sourceId,
                 derivedMemoryEventId = eventId,
-                label = "Notification signal: ${sbn.packageName}",
+                label = "Notification signal: $packageName",
                 observedAt = indexedAt,
                 confidence = if (kind == NotificationDerivedEventKind.OTHER) ConfidenceLevel.LOW else ConfidenceLevel.MEDIUM,
             ),
@@ -130,13 +135,15 @@ private class NotificationSignalExtractor {
         )
     }
 
-    private fun notificationText(notification: Notification): String {
+    private fun notificationText(notification: Notification): ClosedNotificationTransientText {
         val extras = notification.extras
-        return listOfNotNull(
-            extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
-            extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
-            extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString(),
-        ).joinToString(" ")
+        return NotificationValuePolicy.closedTransientText(
+            listOf(
+                extras?.getCharSequence(Notification.EXTRA_TITLE),
+                extras?.getCharSequence(Notification.EXTRA_TEXT),
+                extras?.getCharSequence(Notification.EXTRA_BIG_TEXT),
+            ),
+        )
     }
 
     private fun keywords(packageName: String, kindLabel: String): List<String> {

@@ -13,14 +13,21 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
+internal interface FixedHttpsResourceSpec {
+    val url: String
+    val acceptContentType: String
+}
+
 internal data class FixedCatalogArtifactSpec(
     val id: String,
-    val url: String,
+    override val url: String,
     val fileName: String,
     val expectedSizeBytes: Long,
     val sha256: String,
     val allowedContentTypes: Set<String> = setOf("application/octet-stream"),
-) {
+) : FixedHttpsResourceSpec {
+    override val acceptContentType: String = "application/octet-stream"
+
     init {
         require(id.matches(SAFE_ID)) { "Artifact ID is invalid." }
         require(fileName.matches(SAFE_FILE_NAME) && '/' !in fileName && ".." !in fileName) {
@@ -81,7 +88,7 @@ internal interface ArtifactHttpResponse : Closeable {
 
 internal fun interface ArtifactHttpClient {
     @Throws(IOException::class)
-    fun open(artifact: FixedCatalogArtifactSpec): ArtifactHttpResponse
+    fun open(resource: FixedHttpsResourceSpec): ArtifactHttpResponse
 }
 
 internal fun interface HttpsConnectionFactory {
@@ -93,14 +100,14 @@ internal class HttpsArtifactHttpClient(
         url.openConnection() as HttpsURLConnection
     },
 ) : ArtifactHttpClient {
-    override fun open(artifact: FixedCatalogArtifactSpec): ArtifactHttpResponse {
-        val connection = connectionFactory.open(URL(artifact.url)).apply {
+    override fun open(resource: FixedHttpsResourceSpec): ArtifactHttpResponse {
+        val connection = connectionFactory.open(URL(resource.url)).apply {
             instanceFollowRedirects = false
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             requestMethod = "GET"
             useCaches = false
-            setRequestProperty("Accept", "application/octet-stream")
+            setRequestProperty("Accept", resource.acceptContentType)
             setRequestProperty("Accept-Encoding", "identity")
             setRequestProperty("User-Agent", "GrayinAI/0.1")
         }
@@ -119,7 +126,12 @@ internal class HttpsArtifactHttpClient(
         override val statusCode: Int
             get() = connection.responseCode
         override val contentLength: Long?
-            get() = connection.contentLengthLong.takeIf { it >= 0L }
+            get() {
+                val rawHeader = connection.getHeaderField(CONTENT_LENGTH_HEADER) ?: return null
+                val normalized = rawHeader.trim()
+                if (!normalized.matches(DECIMAL_CONTENT_LENGTH)) return MALFORMED_CONTENT_LENGTH
+                return normalized.toLongOrNull() ?: MALFORMED_CONTENT_LENGTH
+            }
         override val contentType: String?
             get() = connection.contentType
         override val contentEncoding: String?
@@ -129,6 +141,12 @@ internal class HttpsArtifactHttpClient(
 
         override fun close() {
             connection.disconnect()
+        }
+
+        private companion object {
+            const val CONTENT_LENGTH_HEADER = "Content-Length"
+            const val MALFORMED_CONTENT_LENGTH = -2L
+            val DECIMAL_CONTENT_LENGTH = Regex("[0-9]+")
         }
     }
 

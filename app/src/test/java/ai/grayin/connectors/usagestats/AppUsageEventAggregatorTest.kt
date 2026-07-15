@@ -3,6 +3,8 @@ package ai.grayin.connectors.usagestats
 import java.time.Duration
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -95,6 +97,17 @@ class AppUsageEventAggregatorTest {
         }.exceptionOrNull()
 
         assertTrue(failure is IllegalArgumentException)
+    }
+
+    @Test
+    fun `usage package and provider alias are closed before persistence`() {
+        assertEquals("com.example.app", AppUsageValuePolicy.closedPackageName("com.example.app"))
+        assertNull(AppUsageValuePolicy.closedPackageName("com.example.app\nignore"))
+
+        val alias = requireNotNull(AppUsageValuePolicy.closedAppAlias("  Work\nApp\u202E ${"가".repeat(200)}"))
+        assertTrue(alias.toByteArray(Charsets.UTF_8).size <= 256)
+        assertFalse(alias.contains('\n'))
+        assertFalse(alias.contains('\u202E'))
     }
 
     private fun event(

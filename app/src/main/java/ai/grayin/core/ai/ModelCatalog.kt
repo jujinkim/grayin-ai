@@ -51,6 +51,8 @@ data class ModelCatalogEntry(
     val licenseLabel: String,
     val licenseUrl: String?,
     val recommended: Boolean,
+    val releaseVersion: String? = null,
+    val manifestSequence: Long? = null,
 ) {
     val transportMetadataComplete: Boolean
         get() = artifactSpecOrNull() != null
@@ -84,16 +86,19 @@ internal object ModelDownloadReleaseGate {
 
 object ModelCatalog {
     const val DEFAULT_MODEL_ID = "gemma-4-E2B-it"
+    const val GRAYIN_DEDICATED_MODEL_ID = "grayin-gemma-4-E2B-it-wi8-afp32-v1"
+
+    internal val remoteManifestModelIds = setOf(GRAYIN_DEDICATED_MODEL_ID)
 
     val entries: List<ModelCatalogEntry> = listOf(
         ModelCatalogEntry(
-            id = "grayin-gemma-4-E2B-it-q4-v1",
-            displayName = "Grayin Gemma 4 E2B Q4 v1",
+            id = GRAYIN_DEDICATED_MODEL_ID,
+            displayName = "Grayin Gemma 4 E2B WI8/AFP32 v1",
             provider = ModelProvider.GRAYIN_SERVER,
             providerLabel = "Grayin file server",
             downloadPageUrl = null,
             downloadUrl = null,
-            fileName = "grayin-gemma-4-E2B-it-q4-v1.litertlm",
+            fileName = "grayin-gemma-4-E2B-it-wi8-afp32-v1.litertlm",
             approxSizeBytes = 2_300_000_000L,
             expectedDownloadSizeBytes = null,
             sha256 = null,

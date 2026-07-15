@@ -10,7 +10,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-/** Closed Android document-picker policy for explicit, local-only encrypted backups. */
+/** Closed Android document-picker policy for encrypted backups that request on-device documents. */
 internal object BackupDocumentContractPolicy {
     const val MIME_TYPE = "application/vnd.ai.grayin.backup"
     const val FALLBACK_MIME_TYPE = "application/octet-stream"
@@ -35,7 +35,7 @@ internal object BackupDocumentContractPolicy {
         .withZone(ZoneOffset.UTC)
 }
 
-/** Creates one encrypted backup document without offering remote document providers. */
+/** Requests an on-device destination from the system document picker. */
 internal class CreateLocalBackupDocumentContract : ActivityResultContract<String, Uri?>() {
     override fun createIntent(context: Context, input: String): Intent {
         val suggestedName = BackupDocumentContractPolicy.requireValidSuggestedFileName(input)
@@ -54,7 +54,7 @@ internal class CreateLocalBackupDocumentContract : ActivityResultContract<String
     }
 }
 
-/** Opens one encrypted backup document without offering remote document providers. */
+/** Requests an on-device source from the system document picker. */
 internal class OpenLocalBackupDocumentContract : ActivityResultContract<Unit, Uri?>() {
     override fun createIntent(context: Context, input: Unit): Intent {
         return Intent(Intent.ACTION_OPEN_DOCUMENT).apply {

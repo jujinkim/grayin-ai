@@ -77,6 +77,15 @@ class GrayinLanguageTest {
     }
 
     @Test
+    fun backupDisclosureDistinguishesGrayinTransportFromExternalDocumentProvider() {
+        val disclosure = GrayinText.forOption(GrayinLanguageOption.ENGLISH).backupDisclosure()
+
+        assertTrue(disclosure.contains("on-device documents"))
+        assertTrue(disclosure.contains("external provider"))
+        assertTrue(disclosure.contains("choose device storage"))
+    }
+
+    @Test
     fun storageKeysMatchSettingsContract() {
         assertEquals("system", GrayinLanguageOption.SYSTEM.storageKey)
         assertEquals("korean", GrayinLanguageOption.KOREAN.storageKey)
@@ -171,6 +180,8 @@ class GrayinLanguageTest {
         )
         assertTrue(english.localDocumentSupportDisclosure().contains("PDF"))
         assertTrue(korean.localDocumentRevokeAllAction().contains("모든"))
+        assertEquals("Change selected photos", english.reselectPhotos)
+        assertTrue(english.selectedPhotosAccess.contains("selected"))
     }
 
     @Test

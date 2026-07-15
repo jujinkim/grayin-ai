@@ -73,11 +73,11 @@ Grayin AI is not:
 - If data is unavailable, denied, unsupported, or not indexed, the answer must say so.
 - Answers must be evidence-grounded with confidence and missing-data explanation.
 
-## Product Mental Model
+## Long-Term Product Mental Model
 
 The user does not want to browse raw data manually.
 
-The user wants to ask:
+The following questions describe the broader product direction, not a claim that every evidence path is implemented in the current repository:
 
 - “Where did I go yesterday?”
 - “What did I do yesterday?”
@@ -88,28 +88,28 @@ The user wants to ask:
 - “Last month, what was the pretty food I photographed on a date?”
 - “Around this time last year, I drank in Seoul. What were the 1st, 2nd, and 3rd places, and when did I move between them?”
 
-Grayin AI should answer these questions using indexed local evidence.
+Grayin AI should answer a question only when the installed connectors have indexed sufficient local evidence. The current repository can answer bounded questions about observed location samples/clusters, calendar events, photo metadata, notification-derived non-security signals, exact app-usage sessions, and selected Text/Markdown/PDF page signals. Calls, photo contents, and historical movement not observed by Grayin remain unavailable and must be reported as missing.
 
-## Supported Evidence Types in MVP
+## Evidence Scope
 
-The MVP should conceptually support these evidence sources through implemented connectors or future indexing paths:
+The current repository implements these evidence sources:
 
 - location clusters
 - place visits
 - calendar events
 - photo metadata
-- photo keywords
-- photo clusters
+- closed photo metadata type/orientation signals
 - notification-derived payment events
 - notification-derived delivery/reservation/transport events
-- app usage summaries
+- exact app-usage session events
 - local files
 - Markdown notes
 - PDF/page indexes
-- OCR-derived text
-- future local LLM-generated summaries
+- bounded structural PDF/OCR page signals
 
-Current usable local MVP implementation supports user-selected Text, Markdown, and PDF documents, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app usage summaries, and connected Android notification-derived signals after explicit permission or settings access. PDF pages use embedded text when available and installed on-device OCR language data otherwise. A separate default-OFF Location switch permits bounded Android reverse geocoding and fixed Open-Meteo weather lookup through `OnlineEnrichmentGateway`; failures preserve coordinate-only local indexing. Ask can use a local Gemma LiteRT-LM model over retrieved `EvidencePack` data when a runtime-downloaded or manually imported `.litertlm` model file is installed, with template fallback when unavailable. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
+Current usable local MVP implementation supports user-selected Text, Markdown, and PDF documents, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app-usage sessions, and connected Android notification-derived signals after explicit permission or settings access. PDF pages use embedded text when available and installed on-device OCR language data otherwise, but neither extracted text nor OCR transcripts are persisted. A separate default-OFF Location switch permits bounded Android reverse geocoding and fixed Open-Meteo weather lookup through `OnlineEnrichmentGateway`; failures preserve coordinate-only local indexing. Ask can use a local Gemma LiteRT-LM model over retrieved `EvidencePack` data when a verified runtime-downloaded or manually imported `.litertlm` model file is installed, with template fallback when unavailable.
+
+Future evidence paths include photo pixel understanding and visual clusters, a platform-appropriate historical location source, calls/messages/browser/audio/video, and richer local summaries. They remain out of scope until their permissions, provenance, and zero-raw-retention processing paths are explicitly designed and implemented.
 
 ## Important Definitions
 
@@ -246,7 +246,7 @@ Purpose:
 - reference photos through URI/source reference
 - extract metadata where possible
 - create photo memory index records
-- create placeholder keywords in MVP
+- create only closed metadata type/orientation signals; do not claim visual-content understanding
 
 Rules:
 
@@ -268,7 +268,8 @@ Purpose:
 Purpose:
 
 - derive structured life events from notifications
-- payment, delivery, reservation, transport, message hint, security hint
+- payment, delivery, reservation, transport, and message-hint signals
+- detect security-code hints transiently and discard the entire arrival instead of storing a security event
 
 Rules:
 
@@ -286,8 +287,8 @@ Rules:
 Purpose:
 
 - index usage stats where permission allows
-- derive app usage summaries
-- infer context such as work/study/entertainment patterns
+- derive exact completed app-usage session events and duration buckets
+- leave work/study/entertainment inference to future explicitly reviewed logic
 
 Rules:
 
@@ -308,7 +309,7 @@ Rules:
 
 - never copy original files
 - never store original file content
-- index only derived text, summary, keywords, embeddings, citations
+- index only closed structural summaries, bounded keyword signals, confidence, and closed citations; do not persist extracted text, OCR transcripts, or embeddings
 - store document/page identity only as a domain-separated Android Keystore HMAC
 - never crawl folders, discover documents automatically, or start an OCR language-data download while indexing
 
@@ -327,7 +328,7 @@ Manual indexing should support:
 - index one connector
 - index one date range
 
-Calendar, Photos, and App Usage support manual 7-, 30-, and 90-day ranges. The chosen inclusive local dates are converted with the current system time zone to a half-open instant range, including daylight-saving transitions. Photos use an exclusive upper bound; App Usage transiently derives only completed sessions whose transition timestamps are inside the bounds and reports Android's limited-history caveat. Location is a current foreground observation, Local Files is non-temporal, and Notifications are event-driven, so those connectors do not expose range controls. The latest requested connector scan range is persisted in SQLCipher and rendered in Sources. Calendar, Photos, and App Usage use bounded output with typed partial-range issue codes; reaching the App Usage transient input bound stores no partial sessions.
+Calendar, Photos, and App Usage support manual 7-, 30-, and 90-day ranges. The chosen inclusive local dates are converted with the current system time zone to a half-open instant range, including daylight-saving transitions. Photos use an exclusive upper bound; each successful query replaces the prior Photos graph with the bounded result for that latest range, reconciling narrower-range, deleted, and deselected rows. App Usage transiently derives only completed sessions whose transition timestamps are inside the bounds and reports Android's limited-history caveat. Location is a current foreground observation, Local Files is non-temporal, and Notifications are event-driven, so those connectors do not expose range controls. The latest requested connector scan range is persisted in SQLCipher and rendered in Sources. Calendar, Photos, and App Usage use bounded output with typed partial-range issue codes; reaching the App Usage transient input bound stores no partial sessions.
 
 Processing states:
 
@@ -388,7 +389,7 @@ However, the model must be replaceable.
 
 The app should use `Gemma4LocalLanguageModel` when a local `.litertlm` model file is installed, and fall back to deterministic grounded templates when it is not ready.
 
-The APK must not bundle Gemma model weights. Settings should tell users that model weights come from the official Google AI Edge LiteRT-LM Gemma docs or Hugging Face repo `litert-community/gemma-4-E2B-it-litert-lm`, then let users import a local `.litertlm` file into app-private storage. Developer installation under `/data/local/tmp/grayin/` remains supported.
+The APK must not bundle Gemma model weights. Settings should tell users that model weights come from the official Google AI Edge LiteRT-LM Gemma docs or Hugging Face repo `litert-community/gemma-4-E2B-it-litert-lm`, then let users import a local `.litertlm` file into app-private storage. Developer installation under `/data/local/tmp/grayin/` is supported only in debuggable builds and is neither resolved nor advertised by release builds.
 
 No remote or commercial LLM API in MVP.
 
@@ -459,7 +460,7 @@ Keep `allowBackup=false` and explicit legacy/Android 12+ cloud and device-transf
 
 ## Export and Import
 
-Grayin implements an explicit local-only, password-protected, authenticated export/import flow. Version 1 is replace-only and follows `docs/export-import.md`.
+Grayin implements an explicit password-protected, authenticated export/import flow with no app-owned network transport. The Android picker requests on-device documents with `EXTRA_LOCAL_ONLY`, while the user remains responsible for choosing device storage because an external document provider is outside Grayin's trust boundary. Version 1 is replace-only and follows `docs/export-import.md`.
 
 Encrypted export may include:
 

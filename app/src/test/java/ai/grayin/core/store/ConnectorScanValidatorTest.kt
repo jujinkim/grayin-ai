@@ -29,6 +29,112 @@ class ConnectorScanValidatorTest {
     }
 
     @Test
+    fun `accepts all five current live connector record shapes`() {
+        validCurrentConnectorScans().forEach(ConnectorScanValidator::validate)
+    }
+
+    @Test
+    fun `accepts a literal untitled calendar title emitted with high confidence`() {
+        val scan = validScan().copy(
+            derivedEvents = validScan().derivedEvents.map { event ->
+                event.copy(
+                    summary = "Calendar event indexed: Untitled calendar event, from ${event.startedAt}.",
+                )
+            },
+            citations = validScan().citations.map { citation ->
+                citation.copy(label = "Calendar: Untitled calendar event")
+            },
+        )
+
+        ConnectorScanValidator.validate(scan)
+    }
+
+    @Test
+    fun `stored snapshot accepts an accumulated location cluster while a live scan does not`() {
+        val first = validCurrentConnectorScans().single { scan -> scan.connectorId == "location" }
+        val second = currentScan(
+            connectorId = "location",
+            hash = "6".repeat(32),
+            sourceKind = SourceKind.LOCATION,
+            sourcePointer = null,
+            eventKind = DerivedMemoryEventKind.PLACE_VISIT,
+            summary = "Location sample indexed near Seoul at ${first.scannedAt}.",
+            keywords = listOf("location", "place", "gps", "Seoul"),
+            labels = listOf("location", "place-visit", "gps", "Seoul"),
+            citationLabel = "Location sample: Seoul",
+        )
+        val accumulated = first.copy(
+            sourceReferences = (first.sourceReferences + second.sourceReferences).map { source ->
+                source.copy(localPointer = null)
+            },
+            derivedEvents = first.derivedEvents + second.derivedEvents,
+            citations = first.citations + second.citations,
+            placeClusters = listOf(
+                first.placeClusters.single().copy(
+                    visitCount = 2,
+                    sourceReferenceIds = listOf(
+                        first.sourceReferences.single().id,
+                        second.sourceReferences.single().id,
+                    ),
+                ),
+            ),
+        )
+
+        ConnectorScanValidator.validateStoredSnapshot(accumulated)
+        assertThrows(IllegalArgumentException::class.java) {
+            ConnectorScanValidator.validate(accumulated)
+        }
+    }
+
+    @Test
+    fun `rejects legacy open fields at the live connector boundary`() {
+        val scans = validCurrentConnectorScans().associateBy(ConnectorScanResult::connectorId)
+        val invalid = listOf(
+            scans.getValue("location").let { scan ->
+                scan.copy(
+                    derivedEvents = scan.derivedEvents.map { event ->
+                        event.copy(keywords = event.keywords.take(2) + "vendor-provider")
+                    },
+                )
+            },
+            scans.getValue("photos").let { scan ->
+                scan.copy(
+                    derivedEvents = scan.derivedEvents.map { event ->
+                        event.copy(summary = "Photo filename indexed: secret.jpg")
+                    },
+                )
+            },
+            scans.getValue("calendar").let { scan ->
+                scan.copy(
+                    sourceReferences = scan.sourceReferences.map { source ->
+                        source.copy(sourceAppIdentifier = "Private calendar name")
+                    },
+                )
+            },
+            scans.getValue("notification").let { scan ->
+                scan.copy(
+                    derivedEvents = scan.derivedEvents.map { event ->
+                        event.copy(labels = event.labels + "provider-private-category")
+                    },
+                )
+            },
+            scans.getValue("app_usage").let { scan ->
+                scan.copy(
+                    citations = scan.citations.map { citation ->
+                        citation.copy(label = "App usage: ${"x".repeat(257)}")
+                    },
+                )
+            },
+        )
+
+        invalid.forEach { scan ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ConnectorScanValidator.validate(scan)
+            }
+        }
+    }
+
+    @Test
     fun `rejects a source owned by another connector`() {
         val scan = validScan().let { valid ->
             valid.copy(
@@ -48,7 +154,7 @@ class ConnectorScanValidatorTest {
         val scan = validScan().let { valid ->
             valid.copy(
                 derivedEvents = valid.derivedEvents.map { event ->
-                    event.copy(citationIds = listOf("citation:test:missing"))
+                    event.copy(citationIds = listOf("citation:calendar:missing"))
                 },
             )
         }
@@ -70,9 +176,88 @@ class ConnectorScanValidatorTest {
     }
 
     @Test
+    fun `rejects records that cannot pass the encrypted transfer boundary`() {
+        val valid = validScan()
+        val invalidScans = listOf(
+            valid.copy(
+                derivedEvents = valid.derivedEvents.map { event ->
+                    event.copy(summary = "x".repeat(16 * 1024 + 1))
+                },
+            ),
+            valid.copy(
+                citations = valid.citations.map { citation ->
+                    citation.copy(label = "invalid\u0000label")
+                },
+            ),
+            valid.copy(
+                sourceReferences = valid.sourceReferences.map { source ->
+                    source.copy(sourceKind = SourceKind.PHOTO)
+                },
+            ),
+        )
+
+        invalidScans.forEach { scan ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ConnectorScanValidator.validate(scan)
+            }
+        }
+    }
+
+    @Test
+    fun `rejects oversized or malformed live source pointers`() {
+        val valid = validScan()
+        listOf(
+            "x".repeat(4 * 1024 + 1),
+            "content://calendar/event\nraw",
+            "content://calendar/\uD800",
+        ).forEach { pointer ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ConnectorScanValidator.validate(
+                    valid.copy(
+                        sourceReferences = valid.sourceReferences.map { source ->
+                            source.copy(localPointer = pointer)
+                        },
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `rejects scan-only connector IDs that cannot cross the transfer boundary`() {
+        val at = Instant.parse("2026-07-15T00:00:00Z")
+        listOf("x".repeat(65), "calendar\nprovider").forEach { connectorId ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ConnectorScanValidator.validate(
+                    ConnectorScanResult(
+                        connectorId = connectorId,
+                        processingState = ProcessingState.COMPLETED,
+                        scannedAt = at,
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `rejects empty or reversed scan scopes`() {
+        val at = Instant.parse("2026-07-15T00:00:00Z")
+        listOf(at, at.minusSeconds(1)).forEach { until ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ConnectorScanValidator.validate(
+                    validScan().copy(
+                        scopeFrom = at,
+                        scopeUntil = until,
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `rejects a citation cross-linked to another event`() {
         val valid = validScan()
-        val secondEventId = "event:test:2"
+        val secondEventId = "event:calendar:2"
         val scan = valid.copy(
             derivedEvents = valid.derivedEvents + valid.derivedEvents.first().copy(
                 id = secondEventId,
@@ -115,7 +300,7 @@ class ConnectorScanValidatorTest {
                     capability = MemoryCapability.HAS_TEXT,
                     availability = SourceAvailability.UNSUPPORTED,
                     explanation = "parser failed\nraw detail",
-                    connectorId = "test",
+                    connectorId = "calendar",
                     issueCode = ConnectorScanIssueCode.LOCAL_DOCUMENT_READ_FAILED,
                 ),
             ),
@@ -136,7 +321,7 @@ class ConnectorScanValidatorTest {
                         capability = MemoryCapability.HAS_TEXT,
                         availability = SourceAvailability.NOT_INDEXED,
                         explanation = issueCode.defaultEnglish,
-                        connectorId = "test",
+                        connectorId = "calendar",
                         issueCode = issueCode,
                     ),
                 ),
@@ -150,7 +335,7 @@ class ConnectorScanValidatorTest {
             capability = MemoryCapability.HAS_TEXT,
             availability = SourceAvailability.UNSUPPORTED,
             explanation = "RAW_SENTINEL",
-            connectorId = "test",
+            connectorId = "calendar",
         )
         val mismatched = codeLess.copy(
             issueCode = ConnectorScanIssueCode.LOCAL_DOCUMENT_READ_FAILED,
@@ -330,28 +515,37 @@ class ConnectorScanValidatorTest {
 
     private fun validScan(): ConnectorScanResult {
         val at = Instant.parse("2026-07-15T00:00:00Z")
-        val sourceId = "source:test:1"
-        val eventId = "event:test:1"
-        val citationId = "citation:test:1"
+        val hash = "1".repeat(32)
+        val sourceId = "source:calendar:$hash"
+        val eventId = "event:calendar:$hash"
+        val citationId = "citation:calendar:$hash"
         return ConnectorScanResult(
-            connectorId = "test",
+            connectorId = "calendar",
             processingState = ProcessingState.COMPLETED,
             sourceReferences = listOf(
                 SourceReference(
                     id = sourceId,
-                    connectorId = "test",
-                    sourceKind = SourceKind.LOCAL_FILE,
+                    connectorId = "calendar",
+                    sourceKind = SourceKind.CALENDAR,
+                    localPointer = "content://com.android.calendar/events/1",
+                    externalIdHash = hash,
+                    sourceAppIdentifier = "android-calendar",
                     observedAt = at,
+                    modifiedAt = at,
                     sensitivity = SensitivityLevel.HIGH,
                 ),
             ),
             derivedEvents = listOf(
                 DerivedMemoryEvent(
                     id = eventId,
-                    kind = DerivedMemoryEventKind.LOCAL_FILE_INDEX,
+                    kind = DerivedMemoryEventKind.CALENDAR_EVENT,
                     sourceReferenceIds = listOf(sourceId),
-                    summary = "Derived test summary.",
-                    confidence = ConfidenceLevel.MEDIUM,
+                    summary = "Calendar event indexed: Team meeting, from $at.",
+                    startedAt = at,
+                    keywords = listOf("team", "meeting"),
+                    labels = listOf("calendar"),
+                    confidence = ConfidenceLevel.HIGH,
+                    sensitivity = SensitivityLevel.HIGH,
                     citationIds = listOf(citationId),
                     createdAt = at,
                 ),
@@ -361,7 +555,148 @@ class ConnectorScanValidatorTest {
                     id = citationId,
                     sourceReferenceId = sourceId,
                     derivedMemoryEventId = eventId,
-                    label = "Test citation",
+                    label = "Calendar: Team meeting",
+                    observedAt = at,
+                    confidence = ConfidenceLevel.HIGH,
+                ),
+            ),
+            scannedAt = at,
+        )
+    }
+
+    private fun validCurrentConnectorScans(): List<ConnectorScanResult> {
+        val at = Instant.parse("2026-07-15T00:00:00Z")
+        val usageEndedAt = at.plusSeconds(30 * 60)
+        return listOf(
+            currentScan(
+                connectorId = "location",
+                hash = "2".repeat(32),
+                sourceKind = SourceKind.LOCATION,
+                sourcePointer = "location-provider:gps",
+                eventKind = DerivedMemoryEventKind.PLACE_VISIT,
+                summary = "Location sample indexed near Seoul at $at.",
+                keywords = listOf("location", "place", "gps", "Seoul"),
+                labels = listOf("location", "place-visit", "gps", "Seoul"),
+                citationLabel = "Location sample: Seoul",
+            ).let { scan ->
+                val sourceId = scan.sourceReferences.single().id
+                scan.copy(
+                    placeClusters = listOf(
+                        PlaceCluster(
+                            id = "place-cluster:location:${"a".repeat(32)}",
+                            regionLabel = "Seoul",
+                            centroidLatitude = 37.5,
+                            centroidLongitude = 127.0,
+                            radiusMeters = 50.0,
+                            firstSeenAt = at,
+                            lastSeenAt = at,
+                            visitCount = 1,
+                            sourceReferenceIds = listOf(sourceId),
+                            confidence = ConfidenceLevel.MEDIUM,
+                        ),
+                    ),
+                )
+            },
+            currentScan(
+                connectorId = "photos",
+                hash = "3".repeat(32),
+                sourceKind = SourceKind.PHOTO,
+                sourcePointer = "content://media/external/images/media/3",
+                eventKind = DerivedMemoryEventKind.PHOTO_INDEX,
+                summary = "Photo metadata indexed at $at. Type: image/jpeg. Dimensions: 1920x1080.",
+                keywords = listOf("photo", "jpeg", "landscape"),
+                labels = listOf("photo", "jpeg", "landscape"),
+                citationLabel = "Photo metadata",
+            ),
+            validScan(),
+            currentScan(
+                connectorId = "notification",
+                hash = "4".repeat(32),
+                sourceKind = SourceKind.NOTIFICATION,
+                sourceAppIdentifier = "com.example.pay",
+                eventKind = DerivedMemoryEventKind.PAYMENT,
+                summary = "Notification-derived payment signal from com.example.pay at $at.",
+                keywords = listOf("example", "pay", "payment", "notification"),
+                labels = listOf("notification", "payment", "status"),
+                entities = listOf("com.example.pay"),
+                citationLabel = "Notification signal: com.example.pay",
+                sensitivity = SensitivityLevel.VERY_HIGH,
+            ),
+            currentScan(
+                connectorId = "app_usage",
+                hash = "5".repeat(32),
+                sourceKind = SourceKind.APP_USAGE,
+                sourceAppIdentifier = "com.example.app",
+                eventKind = DerivedMemoryEventKind.APP_USAGE,
+                summary = "App usage indexed: Example used for about 30 minute(s) between $at and $usageEndedAt.",
+                keywords = listOf("example"),
+                labels = listOf("app-usage", "medium-session"),
+                entities = listOf("com.example.app"),
+                citationLabel = "App usage: Example",
+                sensitivity = SensitivityLevel.VERY_HIGH,
+                endedAt = usageEndedAt,
+            ),
+        )
+    }
+
+    private fun currentScan(
+        connectorId: String,
+        hash: String,
+        sourceKind: SourceKind,
+        eventKind: DerivedMemoryEventKind,
+        summary: String,
+        keywords: List<String>,
+        labels: List<String>,
+        citationLabel: String,
+        sourcePointer: String? = null,
+        sourceAppIdentifier: String? = null,
+        entities: List<String> = emptyList(),
+        sensitivity: SensitivityLevel = SensitivityLevel.HIGH,
+        endedAt: Instant? = null,
+    ): ConnectorScanResult {
+        val at = Instant.parse("2026-07-15T00:00:00Z")
+        val sourceId = "source:$connectorId:$hash"
+        val eventId = "event:$connectorId:$hash"
+        val citationId = "citation:$connectorId:$hash"
+        return ConnectorScanResult(
+            connectorId = connectorId,
+            processingState = ProcessingState.COMPLETED,
+            sourceReferences = listOf(
+                SourceReference(
+                    id = sourceId,
+                    connectorId = connectorId,
+                    sourceKind = sourceKind,
+                    localPointer = sourcePointer,
+                    externalIdHash = hash,
+                    sourceAppIdentifier = sourceAppIdentifier,
+                    observedAt = at,
+                    modifiedAt = endedAt ?: at,
+                    sensitivity = sensitivity,
+                ),
+            ),
+            derivedEvents = listOf(
+                DerivedMemoryEvent(
+                    id = eventId,
+                    kind = eventKind,
+                    sourceReferenceIds = listOf(sourceId),
+                    summary = summary,
+                    startedAt = at,
+                    endedAt = endedAt,
+                    keywords = keywords,
+                    labels = labels,
+                    entities = entities,
+                    confidence = ConfidenceLevel.MEDIUM,
+                    sensitivity = sensitivity,
+                    citationIds = listOf(citationId),
+                    createdAt = at,
+                ),
+            ),
+            citations = listOf(
+                MemoryCitation(
+                    id = citationId,
+                    sourceReferenceId = sourceId,
+                    derivedMemoryEventId = eventId,
+                    label = citationLabel,
                     observedAt = at,
                     confidence = ConfidenceLevel.MEDIUM,
                 ),

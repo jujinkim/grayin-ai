@@ -39,6 +39,7 @@ The Calendar connector:
 - supports app-level revoke by disabling the connector and deleting derived data
 - supports bounded manual date ranges
 - reads one row past its 200-event output bound to report a typed partial-range status instead of claiming full coverage
+- normalizes and independently UTF-8-bounds title and location before derived storage or citation; does not project calendar display/account names and uses fixed `android-calendar` source-app metadata
 
 ## Location
 
@@ -47,6 +48,7 @@ The Location connector:
 - requires explicit Android location permission
 - requires user connection before indexing
 - reads last-known provider location only inside connector-owned scan scopes
+- reduces the Android provider name to `gps`, `network`, `passive`, `fused`, or `other` before identity, pointer, keyword, or label persistence
 - stores rounded location signals in derived place-visit events
 - emits a stable place cluster for the 0.001-degree rounded coordinate and merges later observations idempotently inside the SQLCipher scan transaction
 - accumulates only observations seen by user-triggered scans; it does not read an Android location-history archive
@@ -60,13 +62,16 @@ The Location connector:
 The Photos connector:
 
 - requires explicit Android photo/media read permission
+- distinguishes Android 14+ full-library access from selected-photos-only access and keeps system reselection available for the partial state
 - requires user connection before indexing
 - reads MediaStore image metadata only inside connector-owned scan scopes
 - never reads or copies original image bytes
+- never stores MediaStore `DISPLAY_NAME` or another photo file name; MIME is reduced to a closed image allowlist and dimensions to plausible positive values
 - exposes media capability only; metadata orientation/type labels are not treated as visual-content labels
 - emits source references, derived photo index events, and citations
 - supports app-level revoke by disabling the connector and deleting derived data
 - supports bounded manual date ranges with an exclusive upper instant bound
+- uses `DATE_MODIFIED` seconds for selection and ordering when `DATE_TAKEN` is missing or non-positive
 - reads one row past its 200-photo output bound to report a typed partial-range status instead of claiming full coverage
 
 ## App Usage
@@ -83,6 +88,7 @@ The App Usage connector:
 - emits only completed, non-overlapping foreground sessions with stable identities; an in-progress or lower-bound-crossing session is omitted rather than guessed
 - reports typed limited-history, transient-event-limit, and derived-output-limit issues; transient input truncation stores no partial result
 - atomically replaces the App Usage connector snapshot for a completed bounded scan, which removes legacy expanded aggregates and prevents overlapping range totals; a transient input-limit failure preserves the prior snapshot
+- skips package names outside the closed 255-byte grammar, bounds app aliases to one 256-byte line, and caps activity-class input before transient aggregation
 
 ## Notifications
 
@@ -93,6 +99,8 @@ The Notifications connector:
 - requires a user-managed application-package allowlist that defaults to empty
 - rejects malformed package entries and checks the posting package before reading notification extras
 - reads posted notification title/text only transiently inside listener callbacks
+- caps normalized classifier input at 4 KiB and skips an entire oversized arrival rather than classifying a truncated prefix
+- maps app-authored notification category values through a closed Android category set before classification or derived labels
 - skips security-code notifications
 - stores only derived notification signal events and source references
 - does not store raw notification text

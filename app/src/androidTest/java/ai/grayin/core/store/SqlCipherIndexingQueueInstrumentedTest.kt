@@ -1175,6 +1175,192 @@ class SqlCipherIndexingQueueInstrumentedTest {
     }
 
     @Test
+    fun v7MigrationPurgesOpenConnectorRecordsAndFencesQueuedRescans() = runBlocking {
+        val databaseName = newDatabaseName()
+        val migratedAt = Instant.parse("2026-07-15T08:00:00Z")
+        val memoryStore = store(databaseName, Clock.fixed(migratedAt, ZoneOffset.UTC))
+        memoryStore.saveConnectorScan(scanResult("preserved"))
+        val connectorKinds = linkedMapOf(
+            "app_usage" to SourceKind.APP_USAGE,
+            "calendar" to SourceKind.CALENDAR,
+            "location" to SourceKind.LOCATION,
+            "notification" to SourceKind.NOTIFICATION,
+            "photos" to SourceKind.PHOTO,
+        )
+        memoryStore.enqueue(
+            connectorKinds.keys.map { connectorId ->
+                manualTask(
+                    id = "legacy-$connectorId-rescan",
+                    requestedAt = migratedAt.minusSeconds(60),
+                    connectorId = connectorId,
+                )
+            },
+        )
+        val runningBeforeMigration = memoryStore.claimNextAtomically(
+            leaseOwner = "legacy-worker",
+            claimedAt = migratedAt.minusSeconds(30),
+            leaseUntil = migratedAt.plusSeconds(3_600),
+            trigger = IndexingTrigger.MANUAL,
+        )
+        assertNotNull(runningBeforeMigration)
+        assertEquals(IndexingQueueState.RUNNING, runningBeforeMigration?.state)
+        val databasePath = context.getDatabasePath(databaseName).absolutePath
+        val at = migratedAt.minusSeconds(120).toString()
+        val eventKinds = mapOf(
+            "app_usage" to DerivedMemoryEventKind.APP_USAGE,
+            "calendar" to DerivedMemoryEventKind.CALENDAR_EVENT,
+            "location" to DerivedMemoryEventKind.PLACE_VISIT,
+            "notification" to DerivedMemoryEventKind.PAYMENT,
+            "photos" to DerivedMemoryEventKind.PHOTO_INDEX,
+        )
+        SQLiteDatabase.openOrCreateDatabase(databasePath, TEST_PASSPHRASE, null, null).use { database ->
+            connectorKinds.forEach { (connectorId, sourceKind) ->
+                val sourceId = "source:$connectorId:legacy"
+                val eventId = "event:$connectorId:legacy"
+                val citationId = "citation:$connectorId:legacy"
+                database.insertOrThrow(
+                    "source_references",
+                    null,
+                    ContentValues().apply {
+                        put("id", sourceId)
+                        put("connector_id", connectorId)
+                        put("source_kind", sourceKind.name)
+                        put("source_app_identifier", "raw.provider.identifier")
+                        put("observed_at", at)
+                        put("sensitivity", "HIGH")
+                    },
+                )
+                database.insertOrThrow(
+                    "derived_memory_events",
+                    null,
+                    ContentValues().apply {
+                        put("id", eventId)
+                        put("kind", eventKinds.getValue(connectorId).name)
+                        put("source_reference_ids", JSONArray().put(sourceId).toString())
+                        put("summary", "Raw $connectorId provider-derived text")
+                        put("keywords", JSONArray().put("raw-provider-token").toString())
+                        put("labels", JSONArray().put("raw-provider-label").toString())
+                        put("entities", JSONArray().put("raw.provider.identifier").toString())
+                        put("confidence", ConfidenceLevel.MEDIUM.name)
+                        put("sensitivity", "HIGH")
+                        put("citation_ids", JSONArray().put(citationId).toString())
+                        put("created_at", at)
+                    },
+                )
+                database.insertOrThrow(
+                    "citations",
+                    null,
+                    ContentValues().apply {
+                        put("id", citationId)
+                        put("source_reference_id", sourceId)
+                        put("derived_memory_event_id", eventId)
+                        put("label", "Raw $connectorId provider citation")
+                        put("observed_at", at)
+                        put("confidence", ConfidenceLevel.MEDIUM.name)
+                    },
+                )
+                database.insertOrThrow(
+                    "connector_scan_status",
+                    null,
+                    ContentValues().apply {
+                        put("connector_id", connectorId)
+                        put("processing_state", ProcessingState.COMPLETED.name)
+                        put("missing_sources", JSONArray().toString())
+                        put("scanned_at", at)
+                    },
+                )
+            }
+            database.insertOrThrow(
+                "place_clusters",
+                null,
+                ContentValues().apply {
+                    put("id", "place-cluster:location:legacy")
+                    put("label", "Raw precise place label")
+                    put("region_label", "Raw provider region")
+                    put("centroid_latitude", 37.5665)
+                    put("centroid_longitude", 126.9780)
+                    put("radius_meters", 15.0)
+                    put("first_seen_at", at)
+                    put("last_seen_at", at)
+                    put("visit_count", 1)
+                    put("source_reference_ids", JSONArray().put("source:location:legacy").toString())
+                    put("confidence", ConfidenceLevel.MEDIUM.name)
+                },
+            )
+            database.insertOrThrow(
+                "app_usage_summaries",
+                null,
+                ContentValues().apply {
+                    put("id", "app-usage:app_usage:legacy")
+                    put("source_reference_ids", JSONArray().put("source:app_usage:legacy").toString())
+                    put("date", "2026-07-15")
+                    put("package_name", "raw.provider.identifier")
+                    put("app_alias", "Raw private application alias")
+                    put("category", AppUsageCategory.OTHER.name)
+                    put("total_duration_minutes", 30)
+                    put("launch_count", 1)
+                    put("active_time_bucket_labels", JSONArray().put("raw-time-bucket").toString())
+                    put("confidence", ConfidenceLevel.MEDIUM.name)
+                },
+            )
+            database.insertOrThrow(
+                "daily_summaries",
+                null,
+                ContentValues().apply {
+                    put("id", "daily:legacy-open-connectors")
+                    put("date", "2026-07-15")
+                    put("summary", "Summary containing every legacy connector graph")
+                    put(
+                        "derived_memory_event_ids",
+                        JSONArray(connectorKinds.keys.map { connectorId -> "event:$connectorId:legacy" }).toString(),
+                    )
+                    put("place_cluster_ids", JSONArray().put("place-cluster:location:legacy").toString())
+                    put("app_usage_summary_ids", JSONArray().put("app-usage:app_usage:legacy").toString())
+                    put("confidence", ConfidenceLevel.MEDIUM.name)
+                    put("missing_sources", JSONArray().toString())
+                },
+            )
+            database.execSQL("PRAGMA user_version = 7")
+        }
+
+        val migratedStore = store(databaseName, Clock.fixed(migratedAt, ZoneOffset.UTC))
+        val migrated = migratedStore.loadSnapshot()
+
+        assertTrue(migrated.sourceReferences.none { it.connectorId in connectorKinds.keys })
+        assertTrue(
+            migrated.derivedMemoryEvents.none { event ->
+                connectorKinds.keys.any { connectorId -> event.id.startsWith("event:$connectorId:") }
+            },
+        )
+        assertTrue(
+            migrated.citations.none { citation ->
+                connectorKinds.keys.any { connectorId -> citation.id.startsWith("citation:$connectorId:") }
+            },
+        )
+        assertTrue(migrated.placeClusters.none { it.id == "place-cluster:location:legacy" })
+        assertTrue(migrated.appUsageSummaries.none { it.id == "app-usage:app_usage:legacy" })
+        assertTrue(migrated.dailySummaries.none { it.id == "daily:legacy-open-connectors" })
+        assertTrue(migrated.connectorScanStatuses.none { it.connectorId in connectorKinds.keys })
+        assertTrue(migrated.sourceReferences.any { it.connectorId == TEST_CONNECTOR_ID })
+        val fencedItems = migratedStore.snapshot().items
+            .filter { item -> item.task.connectorId in connectorKinds.keys }
+        assertEquals(connectorKinds.size, fencedItems.size)
+        fencedItems.forEach { item ->
+                assertEquals(IndexingQueueState.SKIPPED, item.state)
+                assertEquals(IndexingSkipReason.SOURCE_DATA_DELETED, item.skipReason)
+                assertNull(item.leaseOwner)
+                assertNull(item.leaseUntil)
+            }
+        SQLiteDatabase.openOrCreateDatabase(databasePath, TEST_PASSPHRASE, null, null).use { database ->
+            val version = database.rawQuery("PRAGMA user_version", null).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                cursor.getInt(0)
+            }
+            assertEquals(SqlCipherLocalMemoryStore.CURRENT_SCHEMA_VERSION, version)
+        }
+    }
+
+    @Test
     fun v6MigrationCreatesEmptyReconsentTableWithoutChangingDerivedData() = runBlocking {
         val databaseName = newDatabaseName()
         val memoryStore = store(databaseName)

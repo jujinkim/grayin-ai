@@ -52,6 +52,18 @@ class GrayinTransferEnvelopeCodecTest {
     }
 
     @Test
+    fun `envelope refuses to encrypt a prior store schema`() {
+        val priorSchema = TransferTestFixtures.payload().let { payload ->
+            payload.copy(producer = payload.producer.copy(storeSchemaVersion = 7))
+        }
+
+        assertFailure(
+            TransferFailureCode.INVALID_PAYLOAD,
+            deterministicCodec().encrypt(priorSchema, password),
+        )
+    }
+
+    @Test
     fun `wrong password and ciphertext tamper have the same authentication failure`() {
         val codec = deterministicCodec()
         val envelope = success(codec.encrypt(TransferTestFixtures.payload(), password))
@@ -82,8 +94,8 @@ class GrayinTransferEnvelopeCodecTest {
         val original = TransferTestFixtures.payload().let { payload ->
             payload.copy(
                 snapshot = payload.snapshot.copy(
-                    derivedMemoryEvents = payload.snapshot.derivedMemoryEvents.mapIndexed { index, event ->
-                        if (index == 0) event.copy(summary = sentinel) else event
+                    dailySummaries = payload.snapshot.dailySummaries.mapIndexed { index, summary ->
+                        if (index == 0) summary.copy(summary = sentinel) else summary
                     },
                 ),
             )

@@ -10,6 +10,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
 @RunWith(AndroidJUnit4::class)
@@ -23,8 +26,9 @@ class ModelInstallStoreInstrumentedTest {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
         entry = requireNotNull(ModelCatalog.entry("gemma-4-E2B-it"))
-        context.filesDir.resolve("models/${entry.id}").deleteRecursively()
-        context.filesDir.resolve("models/$TEST_MODEL_ID").deleteRecursively()
+        deleteTestPathNoFollow(context.filesDir.resolve("models/${entry.id}"))
+        deleteTestPathNoFollow(context.filesDir.resolve("models/$TEST_MODEL_ID"))
+        context.cacheDir.resolve("model-install-symlink-target").deleteRecursively()
         store = ModelInstallStore(context)
     }
 
@@ -180,6 +184,71 @@ class ModelInstallStoreInstrumentedTest {
     }
 
     @Test
+    fun releaseReconfigurationKeepsOldVerifiedModelUntilNewReleasePublishes() {
+        val firstEntry = configuredEntry(MODEL_BYTES, "test-v1.litertlm")
+        val firstGeneration = store.beginInstall(firstEntry)
+        val firstPart = store.partFile(firstEntry, firstGeneration, "worker-one")
+        firstPart.parentFile?.mkdirs()
+        firstPart.writeBytes(MODEL_BYTES)
+        assertEquals(ModelPublishResult.PUBLISHED, store.publishVerified(firstEntry, firstGeneration, firstPart))
+        val firstRecord = store.recordFor(firstEntry)
+        val firstFile = java.io.File(requireNotNull(firstRecord.installedPath))
+        val firstDigest = requireNotNull(firstRecord.sha256)
+        assertTrue(firstFile.isFile)
+
+        val disabledEntry = firstEntry.copy(
+            downloadUrl = null,
+            expectedDownloadSizeBytes = null,
+            sha256 = null,
+        )
+        val disabledGeneration = store.synchronizeConfiguration(disabledEntry)
+        assertTrue(disabledGeneration > firstGeneration)
+        val disabledRecord = store.recordFor(disabledEntry)
+        assertEquals(ModelDownloadStatus.READY, disabledRecord.status)
+        assertEquals(firstFile.absolutePath, disabledRecord.installedPath)
+        assertEquals(firstDigest, disabledRecord.sha256)
+        assertTrue(firstFile.isFile)
+
+        val replacementEntry = configuredEntry(REPLACEMENT_MODEL_BYTES, "test-v2.litertlm")
+        val reconfiguredGeneration = store.synchronizeConfiguration(replacementEntry)
+        assertTrue(reconfiguredGeneration > disabledGeneration)
+        assertFalse(store.isCurrentGeneration(firstEntry.id, firstGeneration))
+        val reconfiguredRecord = store.recordFor(replacementEntry)
+        assertEquals(ModelDownloadStatus.READY, reconfiguredRecord.status)
+        assertEquals(firstFile.absolutePath, reconfiguredRecord.installedPath)
+        assertEquals(firstDigest, reconfiguredRecord.sha256)
+        assertTrue(firstFile.isFile)
+
+        val failedGeneration = store.beginInstall(replacementEntry)
+        assertTrue(
+            store.recordFailed(
+                replacementEntry,
+                failedGeneration,
+                ModelDownloadFailureCode.NETWORK_OR_IO_FAILURE,
+            ),
+        )
+        assertEquals(firstFile.absolutePath, store.recordFor(replacementEntry).installedPath)
+        assertTrue(firstFile.isFile)
+
+        val replacementGeneration = store.beginInstall(replacementEntry)
+        val replacementPart = store.partFile(replacementEntry, replacementGeneration, "worker-two")
+        replacementPart.parentFile?.mkdirs()
+        replacementPart.writeBytes(REPLACEMENT_MODEL_BYTES)
+        assertEquals(
+            ModelPublishResult.PUBLISHED,
+            store.publishVerified(replacementEntry, replacementGeneration, replacementPart),
+        )
+
+        val replacementRecord = store.recordFor(replacementEntry)
+        val replacementFile = java.io.File(requireNotNull(replacementRecord.installedPath))
+        assertEquals(ModelDownloadStatus.READY, replacementRecord.status)
+        assertTrue(replacementFile.isFile)
+        assertTrue(replacementFile.absolutePath != firstFile.absolutePath)
+        assertEquals(sha256(REPLACEMENT_MODEL_BYTES), replacementRecord.sha256)
+        assertFalse(firstFile.exists())
+    }
+
+    @Test
     fun cancelAndDeleteEachAdvanceGenerationBeforeRemovingState() {
         val configuredEntry = configuredEntry(MODEL_BYTES)
         val installGeneration = store.beginInstall(configuredEntry)
@@ -218,6 +287,73 @@ class ModelInstallStoreInstrumentedTest {
         assertTrue(first.parentFile == second.parentFile)
     }
 
+    @Test
+    fun parentSymlinkIsRejectedAndCleanupDoesNotFollowItsExternalTarget() {
+        val configuredEntry = configuredEntry(MODEL_BYTES)
+        val digest = requireNotNull(configuredEntry.sha256)
+        val installDirectory = context.filesDir.resolve("models/${configuredEntry.id}")
+        val externalTarget = context.cacheDir.resolve("model-install-symlink-target").apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        val externalModel = externalTarget.resolve("releases/$digest/model.litertlm").apply {
+            parentFile?.mkdirs()
+            writeBytes(MODEL_BYTES)
+        }
+        installDirectory.parentFile?.mkdirs()
+        Files.createSymbolicLink(installDirectory.toPath(), externalTarget.toPath())
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString("${configuredEntry.id}.status", ModelDownloadStatus.READY.name)
+            .putString(
+                "${configuredEntry.id}.path",
+                installDirectory.resolve("releases/$digest/model.litertlm").absolutePath,
+            )
+            .putLong("${configuredEntry.id}.installed_bytes", MODEL_BYTES.size.toLong())
+            .putString("${configuredEntry.id}.sha256", digest)
+            .commit()
+
+        val record = store.recordFor(configuredEntry)
+
+        assertEquals(ModelDownloadStatus.NOT_DOWNLOADED, record.status)
+        assertNull(record.installedPath)
+        assertFalse(Files.exists(installDirectory.toPath(), LinkOption.NOFOLLOW_LINKS))
+        assertTrue(externalModel.isFile)
+        assertEquals(MODEL_BYTES.toList(), externalModel.readBytes().toList())
+        externalTarget.deleteRecursively()
+    }
+
+    @Test
+    fun verifiedCacheRejectsAtomicReplacementWithSameSizeAndMtime() {
+        val configuredEntry = configuredEntry(MODEL_BYTES)
+        val generation = store.beginInstall(configuredEntry)
+        val part = store.partFile(configuredEntry, generation, "worker-one")
+        part.writeBytes(MODEL_BYTES)
+        assertEquals(ModelPublishResult.PUBLISHED, store.publishVerified(configuredEntry, generation, part))
+        val installed = java.io.File(requireNotNull(store.recordFor(configuredEntry).installedPath))
+        val preservedModifiedAt = 1_700_000_000_000L
+        assertTrue(installed.setLastModified(preservedModifiedAt))
+        assertEquals(ModelDownloadStatus.READY, store.recordFor(configuredEntry).status)
+
+        val replacementBytes = MODEL_BYTES.copyOf().also { bytes -> bytes[0] = (bytes[0].toInt() xor 1).toByte() }
+        val replacement = installed.resolveSibling("replacement.litertlm")
+        replacement.writeBytes(replacementBytes)
+        assertTrue(replacement.setLastModified(preservedModifiedAt))
+        Files.move(
+            replacement.toPath(),
+            installed.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+        assertEquals(MODEL_BYTES.size.toLong(), installed.length())
+        assertEquals(preservedModifiedAt, installed.lastModified())
+
+        val record = store.recordFor(configuredEntry)
+
+        assertEquals(ModelDownloadStatus.NOT_DOWNLOADED, record.status)
+        assertNull(record.installedPath)
+        assertFalse(installed.exists())
+    }
+
     private fun configuredEntry(
         bytes: ByteArray,
         fileName: String = "test-v1.litertlm",
@@ -232,9 +368,7 @@ class ModelInstallStoreInstrumentedTest {
             fileName = fileName,
             approxSizeBytes = bytes.size.toLong(),
             expectedDownloadSizeBytes = bytes.size.toLong(),
-            sha256 = MessageDigest.getInstance("SHA-256")
-                .digest(bytes)
-                .joinToString(separator = "") { byte -> "%02x".format(byte) },
+            sha256 = sha256(bytes),
             recommendedRamGb = 1,
             licenseLabel = "Test terms",
             licenseUrl = "https://artifacts.example.test/terms",
@@ -242,9 +376,24 @@ class ModelInstallStoreInstrumentedTest {
         )
     }
 
+    private fun sha256(bytes: ByteArray): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+    private fun deleteTestPathNoFollow(file: java.io.File) {
+        if (Files.isSymbolicLink(file.toPath())) {
+            Files.deleteIfExists(file.toPath())
+        } else {
+            file.deleteRecursively()
+        }
+    }
+
     private companion object {
         const val PREFS_NAME = "grayin_model_installs"
         const val TEST_MODEL_ID = "test-model-v1"
         val MODEL_BYTES = "verified-model-v1".toByteArray()
+        val REPLACEMENT_MODEL_BYTES = "verified-model-v2".toByteArray()
     }
 }

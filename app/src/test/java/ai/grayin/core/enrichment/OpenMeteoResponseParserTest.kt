@@ -38,6 +38,22 @@ class OpenMeteoResponseParserTest {
         assertNull(OpenMeteoResponseParser.parse("not-json", 1_000))
     }
 
+    @Test
+    fun rejectsWeatherCodeAndTimestampIntegerOverflow() {
+        assertNull(
+            OpenMeteoResponseParser.parse(
+                response("1000", "10.0", "0.0", "4294967296"),
+                1_000,
+            ),
+        )
+        assertNull(
+            OpenMeteoResponseParser.parse(
+                response(Long.MIN_VALUE.toString(), "10.0", "0.0", "0"),
+                0,
+            ),
+        )
+    }
+
     private fun response(
         times: String,
         temperatures: String,

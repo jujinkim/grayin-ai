@@ -7,6 +7,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
 import android.os.Process
+import ai.grayin.connectors.ConnectorValuePolicy
 import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorDeleteResult
 import ai.grayin.core.connector.ConnectorMetadata
@@ -203,13 +204,16 @@ class AppUsageConnector(
 
                     else -> null
                 } ?: continue
-                val packageName = event.packageName?.takeIf(String::isNotBlank) ?: continue
+                val packageName = AppUsageValuePolicy.closedPackageName(event.packageName) ?: continue
                 add(
                     AppUsageTransitionEvent(
                         packageName = packageName,
                         occurredAt = Instant.ofEpochMilli(event.timeStamp),
                         transition = transition,
-                        activityClassName = event.className,
+                        activityClassName = ConnectorValuePolicy.closedText(
+                            event.className,
+                            MAX_TRANSIENT_ACTIVITY_CLASS_BYTES,
+                        ),
                     ),
                 )
             }
@@ -326,10 +330,11 @@ class AppUsageConnector(
     private fun prefs() = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private fun appAlias(packageName: String): String {
-        return runCatching {
+        val providerAlias = runCatching {
             val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
             context.packageManager.getApplicationLabel(appInfo).toString()
-        }.getOrDefault(packageName)
+        }.getOrNull()
+        return AppUsageValuePolicy.closedAppAlias(providerAlias) ?: packageName
     }
 
     private fun usageBucket(minutes: Long): String {
@@ -385,6 +390,7 @@ class AppUsageConnector(
         private const val KEY_LAST_INDEXED_AT = "last_indexed_at"
         private const val MAX_USAGE_ROWS = 100
         private const val MAX_TRANSITION_EVENTS = 100_000
+        private const val MAX_TRANSIENT_ACTIVITY_CLASS_BYTES = 256
         private const val MILLIS_PER_MINUTE = 60_000L
         private const val MIN_TOKEN_LENGTH = 3
         private const val MAX_TOKEN_LENGTH = 32
@@ -394,4 +400,16 @@ class AppUsageConnector(
         private val WORD_PATTERN = Regex("[\\p{L}\\p{Nd}]+")
         private val STOP_WORDS = setOf("com", "android", "google")
     }
+}
+
+internal object AppUsageValuePolicy {
+    fun closedPackageName(value: String?): String? {
+        return ConnectorValuePolicy.closedPackageName(value)
+    }
+
+    fun closedAppAlias(value: String?): String? {
+        return ConnectorValuePolicy.closedText(value, MAX_APP_ALIAS_BYTES)
+    }
+
+    private const val MAX_APP_ALIAS_BYTES = 256
 }

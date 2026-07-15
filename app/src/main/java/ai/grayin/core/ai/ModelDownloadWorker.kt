@@ -20,21 +20,37 @@ class ModelDownloadWorker(
     appContext: Context,
     workerParameters: WorkerParameters,
 ) : CoroutineWorker(appContext, workerParameters) {
-    private val installStore = ModelInstallStore(appContext)
+    private val catalogRepository = ModelCatalogRepository(appContext)
+    private val installStore = ModelInstallStore(appContext, catalogRepository)
     private val downloader = FixedCatalogArtifactDownloader()
+    private val manifestClient = RemoteModelManifestClient.production(appContext)
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val modelId = inputData.getString(KEY_MODEL_ID) ?: return@withContext Result.failure()
         val generation = inputData.getLong(KEY_GENERATION, -1L)
-        val entry = ModelCatalog.entry(modelId) ?: return@withContext Result.failure()
-        installStore.synchronizeConfiguration(entry)
-        if (!installStore.isCurrentGeneration(modelId, generation)) return@withContext Result.success()
+        val entry = when (
+            val preflight = ModelDownloadPreflight.run(
+                modelId = modelId,
+                generation = generation,
+                isCurrentGeneration = installStore::isCurrentGeneration,
+                refreshManifest = { manifestClient.refresh() },
+                resolveEntry = catalogRepository::entry,
+                synchronizeConfiguration = installStore::synchronizeConfiguration,
+            )
+        ) {
+            ModelDownloadPreflightResult.STALE_GENERATION -> return@withContext Result.success()
+            ModelDownloadPreflightResult.UNKNOWN_MODEL -> return@withContext Result.failure()
+            is ModelDownloadPreflightResult.Ready -> preflight.entry
+        }
         if (!entry.downloadConfigured) {
             return@withContext fail(entry, generation, ModelDownloadFailureCode.DOWNLOAD_NOT_CONFIGURED)
         }
         val artifact = entry.artifactSpecOrNull()
             ?: return@withContext fail(entry, generation, ModelDownloadFailureCode.DOWNLOAD_NOT_CONFIGURED)
-        val partFile = installStore.partFile(entry, generation, id.toString())
+        val partFile = runCatching { installStore.partFile(entry, generation, id.toString()) }
+            .getOrElse {
+                return@withContext fail(entry, generation, ModelDownloadFailureCode.ATOMIC_INSTALL_FAILED)
+            }
 
         try {
             setForeground(createForegroundInfo(entry, 0))
@@ -117,13 +133,13 @@ class ModelDownloadWorker(
                 }
             }
         } catch (_: StaleModelGenerationException) {
-            partFile.delete()
+            installStore.discardPartFile(entry, generation, partFile)
             Result.success()
         } catch (error: CancellationException) {
-            partFile.delete()
+            installStore.discardPartFile(entry, generation, partFile)
             throw error
         } catch (_: Throwable) {
-            partFile.delete()
+            installStore.discardPartFile(entry, generation, partFile)
             if (
                 installStore.recordFailed(
                     entry = entry,
@@ -208,5 +224,35 @@ class ModelDownloadWorker(
 
         private const val NOTIFICATION_CHANNEL_ID = "grayin_model_downloads"
         private const val NOTIFICATION_ID = 2101
+    }
+}
+
+internal sealed interface ModelDownloadPreflightResult {
+    data object STALE_GENERATION : ModelDownloadPreflightResult
+
+    data object UNKNOWN_MODEL : ModelDownloadPreflightResult
+
+    data class Ready(val entry: ModelCatalogEntry) : ModelDownloadPreflightResult
+}
+
+internal object ModelDownloadPreflight {
+    suspend fun run(
+        modelId: String,
+        generation: Long,
+        isCurrentGeneration: (modelId: String, generation: Long) -> Boolean,
+        refreshManifest: suspend () -> Unit,
+        resolveEntry: (modelId: String) -> ModelCatalogEntry?,
+        synchronizeConfiguration: (entry: ModelCatalogEntry) -> Long,
+    ): ModelDownloadPreflightResult {
+        if (!isCurrentGeneration(modelId, generation)) {
+            return ModelDownloadPreflightResult.STALE_GENERATION
+        }
+        refreshManifest()
+        val entry = resolveEntry(modelId) ?: return ModelDownloadPreflightResult.UNKNOWN_MODEL
+        synchronizeConfiguration(entry)
+        if (!isCurrentGeneration(modelId, generation)) {
+            return ModelDownloadPreflightResult.STALE_GENERATION
+        }
+        return ModelDownloadPreflightResult.Ready(entry)
     }
 }

@@ -1,6 +1,7 @@
 package ai.grayin.core.ai
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
@@ -129,20 +130,26 @@ class Gemma4LocalLanguageModel(
 class Gemma4ModelPathResolver(
     private val context: Context,
     private val modelInstallStore: ModelInstallStore = ModelInstallStore(context.applicationContext),
+    private val allowDevelopmentPaths: Boolean = LocalModelPathPolicy.developmentPathsAllowed(
+        context.applicationInfo.flags,
+    ),
 ) {
     fun resolveModelPath(): String? {
         return LiteRtLmReadyPathResolver.firstCompatibleFile(modelCandidates())?.absolutePath
     }
 
     fun modelCandidates(): List<File> {
-        val externalFilesDir = context.getExternalFilesDir(null)
         val selectedDownloadedModel = modelInstallStore.selectedReadyModelFile()
-        return listOfNotNull(
-            selectedDownloadedModel,
-            File(context.filesDir, INTERNAL_MODEL_PATH),
-            externalFilesDir?.let { File(it, EXTERNAL_MODEL_PATH) },
-            File(ADB_MODEL_PATH),
-        )
+        return buildList {
+            selectedDownloadedModel?.let(::add)
+            add(File(context.filesDir, INTERNAL_MODEL_PATH))
+            if (allowDevelopmentPaths) {
+                context.getExternalFilesDir(null)?.let { externalFilesDir ->
+                    add(File(externalFilesDir, EXTERNAL_MODEL_PATH))
+                }
+                add(File(ADB_MODEL_PATH))
+            }
+        }
     }
 
     suspend fun installModelFromUri(uri: Uri): Long = IMPORT_MUTEX.withLock {
@@ -204,12 +211,15 @@ class Gemma4ModelPathResolver(
     }
 
     private fun managedModelFiles(): List<File> {
-        val externalFilesDir = context.getExternalFilesDir(null)
-        return listOfNotNull(
-            File(context.filesDir, INTERNAL_MODEL_PATH),
-            File(context.filesDir, "models/$STAGING_MODEL_FILE_NAME"),
-            externalFilesDir?.let { File(it, EXTERNAL_MODEL_PATH) },
-        )
+        return buildList {
+            add(File(context.filesDir, INTERNAL_MODEL_PATH))
+            add(File(context.filesDir, "models/$STAGING_MODEL_FILE_NAME"))
+            if (allowDevelopmentPaths) {
+                context.getExternalFilesDir(null)?.let { externalFilesDir ->
+                    add(File(externalFilesDir, EXTERNAL_MODEL_PATH))
+                }
+            }
+        }
     }
 
     private fun documentMetadata(uri: Uri): ModelDocumentMetadata {
@@ -261,5 +271,11 @@ class Gemma4ModelPathResolver(
         const val CACHE_DIR = "litertlm"
         const val STAGING_MODEL_FILE_NAME = "$MODEL_FILE_NAME.importing"
         val IMPORT_MUTEX = Mutex()
+    }
+}
+
+internal object LocalModelPathPolicy {
+    fun developmentPathsAllowed(applicationInfoFlags: Int): Boolean {
+        return applicationInfoFlags and ApplicationInfo.FLAG_DEBUGGABLE != 0
     }
 }

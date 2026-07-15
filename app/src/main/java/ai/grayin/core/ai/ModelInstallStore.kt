@@ -5,10 +5,17 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 data class ModelInstallRecord(
     val modelId: String,
@@ -29,38 +36,41 @@ enum class ModelPublishResult {
     FAILED,
 }
 
-class ModelInstallStore(context: Context) {
+class ModelInstallStore(
+    context: Context,
+    private val catalogRepository: ModelCatalogRepository = ModelCatalogRepository(context.applicationContext),
+) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun selectedModelId(): String {
         return prefs.getString(KEY_SELECTED_MODEL_ID, ModelCatalog.DEFAULT_MODEL_ID)
-            ?.takeIf { ModelCatalog.entry(it) != null }
+            ?.takeIf { catalogRepository.entry(it) != null }
             ?: ModelCatalog.DEFAULT_MODEL_ID
     }
 
     fun selectedEntry(): ModelCatalogEntry {
-        return ModelCatalog.entry(selectedModelId()) ?: requireNotNull(ModelCatalog.entry(ModelCatalog.DEFAULT_MODEL_ID))
+        return catalogRepository.entry(selectedModelId())
+            ?: requireNotNull(catalogRepository.entry(ModelCatalog.DEFAULT_MODEL_ID))
     }
 
     fun selectModel(modelId: String) {
-        require(ModelCatalog.entry(modelId) != null) { "Unknown model id." }
+        require(catalogRepository.entry(modelId) != null) { "Unknown model id." }
         prefs.edit().putString(KEY_SELECTED_MODEL_ID, modelId).apply()
     }
 
     fun recordFor(entry: ModelCatalogEntry): ModelInstallRecord = synchronized(INSTALL_LOCK) {
         synchronizeConfigurationLocked(entry)
         var status = statusFor(entry.id)
-        val installedFile = modelFile(entry)
-        val fileReady = verifyInstalledCatalogModel(entry, installedFile)
-        if (!fileReady && hasUntrustedInstallState(entry, installedFile, status)) {
-            installedFile.delete()
-            VERIFIED_FILE_CACHE.remove(installedFile.absolutePath)
+        var installedFile = verifiedStoredInstalledModel(entry)
+        if (installedFile == null && hasUntrustedInstallState(entry, status)) {
+            deleteUntrustedInstallStateLocked(entry)
             cleanupStagingLocked(entry)
             clearInstallMetadata(entry.id)
             status = ModelDownloadStatus.NOT_DOWNLOADED
         }
-        val installedPath = installedFile.absolutePath.takeIf { fileReady }
+        installedFile = verifiedStoredInstalledModel(entry)
+        val installedPath = installedFile?.absolutePath
         val effectiveStatus = when {
             installedPath != null && status != ModelDownloadStatus.DOWNLOADING && status != ModelDownloadStatus.QUEUED -> {
                 ModelDownloadStatus.READY
@@ -84,7 +94,7 @@ class ModelInstallStore(context: Context) {
             progressPercent = prefs.getInt(progressKey(entry.id), -1).takeIf { it in 0..100 },
             downloadedBytes = prefs.getLong(downloadedBytesKey(entry.id), 0L),
             totalBytes = prefs.getLong(totalBytesKey(entry.id), -1L).takeIf { it > 0L },
-            installedBytes = if (installedPath == null) 0L else installedFile.length(),
+            installedBytes = installedFile?.length() ?: 0L,
             installedPath = installedPath,
             sha256 = prefs.getString(shaKey(entry.id), null).takeIf { installedPath != null },
             failureCode = storedFailureCode(entry.id),
@@ -181,21 +191,36 @@ class ModelInstallStore(context: Context) {
         partFile: File,
     ): ModelPublishResult = synchronized(INSTALL_LOCK) {
         if (!isExpectedPartFile(entry, generation, partFile)) {
+            cleanupStagingLocked(entry)
             return@synchronized ModelPublishResult.FAILED
         }
         if (!isCurrentGenerationLocked(entry.id, generation)) {
-            partFile.delete()
+            deleteFileNoFollowWithinFilesDir(partFile)
             return@synchronized ModelPublishResult.STALE_GENERATION
         }
+        val previouslyInstalled = verifiedStoredInstalledModel(entry)
         val destination = modelFile(entry)
         val destinationDir = checkNotNull(destination.parentFile)
         if (
-            (!destinationDir.isDirectory && !destinationDir.mkdirs()) ||
+            !ensureDirectoryWithoutSymbolicLinks(destinationDir) ||
             !verifyArtifactFile(entry, partFile)
         ) {
-            partFile.delete()
+            deleteFileNoFollowWithinFilesDir(partFile)
             recordFailedLocked(entry, ModelDownloadFailureCode.ATOMIC_INSTALL_FAILED)
             return@synchronized ModelPublishResult.FAILED
+        }
+        if (previouslyInstalled?.absolutePath == destination.absolutePath) {
+            deleteFileNoFollowWithinFilesDir(partFile)
+            if (!verifyInstalledCatalogModel(entry, destination)) {
+                recordFailedLocked(entry, ModelDownloadFailureCode.CHECKSUM_MISMATCH)
+                return@synchronized ModelPublishResult.FAILED
+            }
+            return@synchronized if (persistReadyLocked(entry, destination)) {
+                ModelPublishResult.PUBLISHED
+            } else {
+                recordFailedLocked(entry, ModelDownloadFailureCode.ATOMIC_INSTALL_FAILED)
+                ModelPublishResult.FAILED
+            }
         }
         try {
             VERIFIED_FILE_CACHE.remove(destination.absolutePath)
@@ -206,45 +231,60 @@ class ModelInstallStore(context: Context) {
                 StandardCopyOption.REPLACE_EXISTING,
             )
         } catch (_: AtomicMoveNotSupportedException) {
-            partFile.delete()
+            deleteFileNoFollowWithinFilesDir(partFile)
             recordFailedLocked(entry, ModelDownloadFailureCode.ATOMIC_INSTALL_FAILED)
             return@synchronized ModelPublishResult.FAILED
         } catch (_: IOException) {
-            partFile.delete()
+            deleteFileNoFollowWithinFilesDir(partFile)
             recordFailedLocked(entry, ModelDownloadFailureCode.ATOMIC_INSTALL_FAILED)
             return@synchronized ModelPublishResult.FAILED
         }
         if (!verifyInstalledCatalogModel(entry, destination)) {
-            destination.delete()
+            deleteFileNoFollowWithinFilesDir(destination)
+            VERIFIED_FILE_CACHE.remove(destination.absolutePath)
             recordFailedLocked(entry, ModelDownloadFailureCode.CHECKSUM_MISMATCH)
             return@synchronized ModelPublishResult.FAILED
         }
-        val installedBytes = destination.length()
-        val persisted = prefs.edit()
+        if (!persistReadyLocked(entry, destination)) {
+            deleteFileNoFollowWithinFilesDir(destination)
+            VERIFIED_FILE_CACHE.remove(destination.absolutePath)
+            recordFailedLocked(entry, ModelDownloadFailureCode.ATOMIC_INSTALL_FAILED)
+            return@synchronized ModelPublishResult.FAILED
+        }
+        if (previouslyInstalled != null && previouslyInstalled.absolutePath != destination.absolutePath) {
+            deleteFileNoFollowWithinFilesDir(previouslyInstalled)
+            VERIFIED_FILE_CACHE.remove(previouslyInstalled.absolutePath)
+        }
+        pruneRetiredReleaseDirectoriesLocked(entry, destination)
+        ModelPublishResult.PUBLISHED
+    }
+
+    private fun persistReadyLocked(entry: ModelCatalogEntry, installedFile: File): Boolean {
+        val installedBytes = installedFile.length()
+        return prefs.edit()
             .putString(statusKey(entry.id), ModelDownloadStatus.READY.name)
             .putInt(progressKey(entry.id), 100)
             .putLong(downloadedBytesKey(entry.id), installedBytes)
             .putLong(totalBytesKey(entry.id), installedBytes)
-            .putString(pathKey(entry.id), destination.absolutePath)
+            .putString(pathKey(entry.id), installedFile.absolutePath)
             .putLong(installedBytesKey(entry.id), installedBytes)
             .putString(shaKey(entry.id), requireNotNull(entry.sha256))
             .remove(failureKey(entry.id))
             .commit()
-        if (persisted) ModelPublishResult.PUBLISHED else ModelPublishResult.FAILED
     }
 
     fun invalidateForCancel(entry: ModelCatalogEntry): Long = synchronized(INSTALL_LOCK) {
         synchronizeConfigurationLocked(entry)
         val nextGeneration = nextGeneration(entry.id)
-        val installedReady = verifyInstalledCatalogModel(entry, modelFile(entry))
-        val status = if (installedReady) ModelDownloadStatus.READY else ModelDownloadStatus.NOT_DOWNLOADED
+        val installedFile = verifiedStoredInstalledModel(entry)
+        val status = if (installedFile != null) ModelDownloadStatus.READY else ModelDownloadStatus.NOT_DOWNLOADED
         check(
             prefs.edit()
                 .putLong(generationKey(entry.id), nextGeneration)
                 .putString(statusKey(entry.id), status.name)
-                .putInt(progressKey(entry.id), if (installedReady) 100 else -1)
-                .putLong(downloadedBytesKey(entry.id), if (installedReady) modelFile(entry).length() else 0L)
-                .putLong(totalBytesKey(entry.id), if (installedReady) modelFile(entry).length() else -1L)
+                .putInt(progressKey(entry.id), if (installedFile != null) 100 else -1)
+                .putLong(downloadedBytesKey(entry.id), installedFile?.length() ?: 0L)
+                .putLong(totalBytesKey(entry.id), installedFile?.length() ?: -1L)
                 .remove(failureKey(entry.id))
                 .commit(),
         ) { "Could not invalidate model download work." }
@@ -255,9 +295,11 @@ class ModelInstallStore(context: Context) {
     fun deleteInstalled(entry: ModelCatalogEntry, generation: Long): Boolean = synchronized(INSTALL_LOCK) {
         if (!isCurrentGenerationLocked(entry.id, generation)) return@synchronized false
         cleanupStagingLocked(entry)
-        val destination = modelFile(entry)
-        if (destination.exists() && !destination.delete()) return@synchronized false
-        VERIFIED_FILE_CACHE.remove(destination.absolutePath)
+        val installDir = installDir(entry)
+        if (!deleteTreeNoFollowWithinFilesDir(installDir)) return@synchronized false
+        VERIFIED_FILE_CACHE.keys
+            .filter { path -> isPathInside(installDir, File(path)) }
+            .forEach(VERIFIED_FILE_CACHE::remove)
         prefs.edit()
             .putString(statusKey(entry.id), ModelDownloadStatus.NOT_DOWNLOADED.name)
             .putInt(progressKey(entry.id), -1)
@@ -275,13 +317,29 @@ class ModelInstallStore(context: Context) {
     }
 
     fun modelFile(entry: ModelCatalogEntry): File {
-        return File(installDir(entry), INSTALLED_MODEL_FILE_NAME)
+        val releaseDigest = entry.sha256?.takeIf { entry.downloadConfigured && it.matches(SHA_256) }
+        return if (releaseDigest == null) {
+            File(installDir(entry), INSTALLED_MODEL_FILE_NAME)
+        } else {
+            File(File(File(installDir(entry), RELEASES_DIR_NAME), releaseDigest), INSTALLED_MODEL_FILE_NAME)
+        }
     }
 
     fun partFile(entry: ModelCatalogEntry, generation: Long, workerId: String): File {
         require(generation > 0L) { "Model download generation must be positive." }
         require(workerId.matches(SAFE_WORKER_ID)) { "Model download worker ID is invalid." }
+        check(ensureDirectoryWithoutSymbolicLinks(stagingDir(entry))) {
+            "Model staging directory is not a safe app-private path."
+        }
         return File(stagingDir(entry), "$generation.$workerId$PART_SUFFIX")
+    }
+
+    fun discardPartFile(entry: ModelCatalogEntry, generation: Long, partFile: File) = synchronized(INSTALL_LOCK) {
+        if (isExpectedPartFile(entry, generation, partFile)) {
+            deleteFileNoFollowWithinFilesDir(partFile)
+        } else {
+            cleanupStagingLocked(entry)
+        }
     }
 
     private fun synchronizeConfigurationLocked(entry: ModelCatalogEntry) {
@@ -299,28 +357,22 @@ class ModelInstallStore(context: Context) {
         if (storedFingerprint == configuredFingerprint && !legacyActiveWork) return
 
         val nextGeneration = nextGeneration(entry.id)
-        val destination = modelFile(entry)
-        val installedReady = verifyInstalledCatalogModel(entry, destination)
-        if (!installedReady) {
-            destination.delete()
-            VERIFIED_FILE_CACHE.remove(destination.absolutePath)
-        }
+        val installedFile = verifiedStoredInstalledModel(entry)
         val editor = prefs.edit()
             .putLong(generationKey(entry.id), nextGeneration)
             .putString(configurationKey(entry.id), configuredFingerprint)
             .putString(
                 statusKey(entry.id),
-                if (installedReady) ModelDownloadStatus.READY.name else ModelDownloadStatus.NOT_DOWNLOADED.name,
+                if (installedFile != null) ModelDownloadStatus.READY.name else ModelDownloadStatus.NOT_DOWNLOADED.name,
             )
-            .putInt(progressKey(entry.id), if (installedReady) 100 else -1)
-            .putLong(downloadedBytesKey(entry.id), if (installedReady) destination.length() else 0L)
-            .putLong(totalBytesKey(entry.id), if (installedReady) destination.length() else -1L)
+            .putInt(progressKey(entry.id), if (installedFile != null) 100 else -1)
+            .putLong(downloadedBytesKey(entry.id), installedFile?.length() ?: 0L)
+            .putLong(totalBytesKey(entry.id), installedFile?.length() ?: -1L)
             .remove(failureKey(entry.id))
-        if (installedReady) {
+        if (installedFile != null) {
             editor
-                .putString(pathKey(entry.id), destination.absolutePath)
-                .putLong(installedBytesKey(entry.id), destination.length())
-                .putString(shaKey(entry.id), requireNotNull(entry.sha256))
+                .putString(pathKey(entry.id), installedFile.absolutePath)
+                .putLong(installedBytesKey(entry.id), installedFile.length())
         } else {
             editor
                 .remove(pathKey(entry.id))
@@ -335,23 +387,21 @@ class ModelInstallStore(context: Context) {
         entry: ModelCatalogEntry,
         failureCode: ModelDownloadFailureCode,
     ): Boolean {
-        val destination = modelFile(entry)
-        val installedReady = verifyInstalledCatalogModel(entry, destination)
-        val status = if (installedReady) ModelDownloadStatus.READY else ModelDownloadStatus.FAILED
+        val installedFile = verifiedStoredInstalledModel(entry)
+        val status = if (installedFile != null) ModelDownloadStatus.READY else ModelDownloadStatus.FAILED
         val editor = prefs.edit()
             .putString(statusKey(entry.id), status.name)
-            .putInt(progressKey(entry.id), if (installedReady) 100 else -1)
-            .putLong(downloadedBytesKey(entry.id), if (installedReady) destination.length() else 0L)
+            .putInt(progressKey(entry.id), if (installedFile != null) 100 else -1)
+            .putLong(downloadedBytesKey(entry.id), installedFile?.length() ?: 0L)
             .putLong(
                 totalBytesKey(entry.id),
-                if (installedReady) destination.length() else entry.expectedDownloadSizeBytes ?: -1L,
+                installedFile?.length() ?: entry.expectedDownloadSizeBytes ?: -1L,
             )
             .putString(failureKey(entry.id), failureCode.storageKey)
-        if (installedReady) {
+        if (installedFile != null) {
             editor
-                .putString(pathKey(entry.id), destination.absolutePath)
-                .putLong(installedBytesKey(entry.id), destination.length())
-                .putString(shaKey(entry.id), requireNotNull(entry.sha256))
+                .putString(pathKey(entry.id), installedFile.absolutePath)
+                .putLong(installedBytesKey(entry.id), installedFile.length())
         } else {
             editor
                 .remove(pathKey(entry.id))
@@ -362,18 +412,23 @@ class ModelInstallStore(context: Context) {
     }
 
     private fun installDir(entry: ModelCatalogEntry): File {
+        require(entry.id.matches(SAFE_MODEL_ID)) { "Model ID is not safe for app-private storage." }
         return File(appContext.filesDir, "models/${entry.id}")
     }
 
     private fun stagingDir(entry: ModelCatalogEntry): File = File(installDir(entry), STAGING_DIR_NAME)
 
     private fun cleanupStagingLocked(entry: ModelCatalogEntry) {
-        stagingDir(entry).deleteRecursively()
+        deleteTreeNoFollowWithinFilesDir(stagingDir(entry))
     }
 
     private fun isExpectedPartFile(entry: ModelCatalogEntry, generation: Long, partFile: File): Boolean {
         if (!partFile.name.matches(Regex("${generation}\\.[A-Za-z0-9_-]{1,80}\\.part"))) return false
-        return runCatching { partFile.parentFile?.canonicalFile == stagingDir(entry).canonicalFile }.getOrDefault(false)
+        return runCatching {
+            val actualParent = partFile.parentFile?.toPath()?.toAbsolutePath()?.normalize()
+            val expectedParent = stagingDir(entry).toPath().toAbsolutePath().normalize()
+            actualParent == expectedParent && isSafeAppPrivatePath(partFile)
+        }.getOrDefault(false)
     }
 
     private fun statusFor(modelId: String): ModelDownloadStatus {
@@ -395,7 +450,6 @@ class ModelInstallStore(context: Context) {
 
     private fun hasUntrustedInstallState(
         entry: ModelCatalogEntry,
-        installedFile: File,
         status: ModelDownloadStatus,
     ): Boolean {
         if (
@@ -410,10 +464,77 @@ class ModelInstallStore(context: Context) {
         ) {
             return true
         }
-        return installedFile.exists() ||
-            stagingDir(entry).listFiles().orEmpty().isNotEmpty() ||
+        return containsUntrustedFileOrLink(installDir(entry)) ||
             prefs.contains(pathKey(entry.id)) ||
+            prefs.contains(installedBytesKey(entry.id)) ||
+            prefs.contains(shaKey(entry.id)) ||
             status == ModelDownloadStatus.READY
+    }
+
+    private fun verifiedStoredInstalledModel(entry: ModelCatalogEntry): File? {
+        val path = prefs.getString(pathKey(entry.id), null) ?: return null
+        val expectedBytes = prefs.getLong(installedBytesKey(entry.id), -1L).takeIf { it > 0L } ?: return null
+        val expectedSha256 = prefs.getString(shaKey(entry.id), null)
+            ?.takeIf { it.matches(SHA_256) }
+            ?: return null
+        val file = File(path)
+        if (!isAllowedInstalledPath(entry, file, expectedSha256)) return null
+        return file.takeIf { verifyFile(it, expectedBytes, expectedSha256) }
+    }
+
+    private fun isAllowedInstalledPath(
+        entry: ModelCatalogEntry,
+        file: File,
+        expectedSha256: String,
+    ): Boolean {
+        return runCatching {
+            val root = installDir(entry).toPath().toAbsolutePath().normalize()
+            val actualFile = file.toPath().toAbsolutePath().normalize()
+            val legacyFile = root.resolve(INSTALLED_MODEL_FILE_NAME)
+            val releaseFile = File(
+                File(File(installDir(entry), RELEASES_DIR_NAME), expectedSha256),
+                INSTALLED_MODEL_FILE_NAME,
+            ).toPath().toAbsolutePath().normalize()
+            isSafeAppPrivatePath(file) && (actualFile == legacyFile || actualFile == releaseFile)
+        }.getOrDefault(false)
+    }
+
+    private fun verifyFile(
+        file: File,
+        expectedBytes: Long,
+        expectedSha256: String,
+        cacheVerifiedIdentity: Boolean = true,
+    ): Boolean {
+        val before = readStableFileIdentity(file)
+        if (before == null || before.sizeBytes != expectedBytes) {
+            VERIFIED_FILE_CACHE.remove(file.absolutePath)
+            return false
+        }
+        val cached = VERIFIED_FILE_CACHE[file.absolutePath]
+        if (
+            cacheVerifiedIdentity &&
+            before.cacheable &&
+            cached != null &&
+            cached.expectedSha256 == expectedSha256 &&
+            cached.identity == before
+        ) {
+            return true
+        }
+        val verified = runCatching { sha256(file) == expectedSha256 }.getOrDefault(false)
+        val after = readStableFileIdentity(file)
+        if (!verified || after == null || before != after) {
+            VERIFIED_FILE_CACHE.remove(file.absolutePath)
+            return false
+        }
+        if (cacheVerifiedIdentity && after.cacheable) {
+            VERIFIED_FILE_CACHE[file.absolutePath] = VerifiedFileCacheEntry(
+                expectedSha256 = expectedSha256,
+                identity = after,
+            )
+        } else {
+            VERIFIED_FILE_CACHE.remove(file.absolutePath)
+        }
+        return true
     }
 
     private fun verifyInstalledCatalogModel(entry: ModelCatalogEntry, file: File): Boolean {
@@ -423,43 +544,176 @@ class ModelInstallStore(context: Context) {
         }
         val expectedBytes = entry.expectedDownloadSizeBytes ?: return false
         val expectedSha256 = entry.sha256 ?: return false
-        if (
-            !file.isFile ||
-            !file.canRead() ||
-            file.length() != expectedBytes ||
-            Files.isSymbolicLink(file.toPath())
-        ) {
-            VERIFIED_FILE_CACHE.remove(file.absolutePath)
-            return false
-        }
-        val cached = VERIFIED_FILE_CACHE[file.absolutePath]
-        if (
-            cached != null &&
-            cached.expectedSha256 == expectedSha256 &&
-            cached.sizeBytes == file.length() &&
-            cached.lastModifiedMillis == file.lastModified()
-        ) {
-            return true
-        }
-        val verified = runCatching { sha256(file) == expectedSha256 }.getOrDefault(false)
-        if (verified) {
-            VERIFIED_FILE_CACHE[file.absolutePath] = VerifiedFileCacheEntry(
-                expectedSha256 = expectedSha256,
-                sizeBytes = file.length(),
-                lastModifiedMillis = file.lastModified(),
-            )
-        } else {
-            VERIFIED_FILE_CACHE.remove(file.absolutePath)
-        }
-        return verified
+        return verifyFile(file, expectedBytes, expectedSha256)
     }
 
     private fun verifyArtifactFile(entry: ModelCatalogEntry, file: File): Boolean {
         val expectedBytes = entry.expectedDownloadSizeBytes ?: return false
         val expectedSha256 = entry.sha256 ?: return false
-        if (!entry.downloadConfigured || !file.isFile || !file.canRead()) return false
-        if (file.length() != expectedBytes || Files.isSymbolicLink(file.toPath())) return false
-        return runCatching { sha256(file) == expectedSha256 }.getOrDefault(false)
+        if (!entry.downloadConfigured) return false
+        return verifyFile(
+            file = file,
+            expectedBytes = expectedBytes,
+            expectedSha256 = expectedSha256,
+            cacheVerifiedIdentity = false,
+        )
+    }
+
+    private fun deleteUntrustedInstallStateLocked(entry: ModelCatalogEntry) {
+        val directory = installDir(entry)
+        deleteTreeNoFollowWithinFilesDir(directory)
+        VERIFIED_FILE_CACHE.keys
+            .filter { path -> isPathInside(directory, File(path)) }
+            .forEach(VERIFIED_FILE_CACHE::remove)
+    }
+
+    private fun pruneRetiredReleaseDirectoriesLocked(entry: ModelCatalogEntry, activeFile: File) {
+        val releases = File(installDir(entry), RELEASES_DIR_NAME)
+        if (!isSafeAppPrivatePath(releases)) {
+            deleteFirstSymbolicLinkWithinFilesDir(releases)
+            return
+        }
+        releases.listFiles().orEmpty().forEach { releaseDirectory ->
+            if (!isPathInside(releaseDirectory, activeFile)) {
+                VERIFIED_FILE_CACHE.keys
+                    .filter { path -> isPathInside(releaseDirectory, File(path)) }
+                    .forEach(VERIFIED_FILE_CACHE::remove)
+                deleteTreeNoFollowWithinFilesDir(releaseDirectory)
+            }
+        }
+        val legacyFile = File(installDir(entry), INSTALLED_MODEL_FILE_NAME)
+        if (legacyFile.absolutePath != activeFile.absolutePath) {
+            VERIFIED_FILE_CACHE.remove(legacyFile.absolutePath)
+            deleteFileNoFollowWithinFilesDir(legacyFile)
+        }
+    }
+
+    private fun isPathInside(parent: File, child: File): Boolean {
+        return runCatching {
+            val parentPath = parent.toPath().toAbsolutePath().normalize()
+            val childPath = child.toPath().toAbsolutePath().normalize()
+            childPath.startsWith(parentPath)
+        }.getOrDefault(false)
+    }
+
+    private fun readStableFileIdentity(file: File): StableFileIdentity? {
+        if (!isSafeAppPrivatePath(file)) return null
+        return runCatching {
+            val path = file.toPath()
+            val attributes = Files.readAttributes(
+                path,
+                BasicFileAttributes::class.java,
+                LinkOption.NOFOLLOW_LINKS,
+            )
+            if (!attributes.isRegularFile || attributes.isSymbolicLink || !Files.isReadable(path)) {
+                return@runCatching null
+            }
+            val changeTimeNanos = runCatching {
+                (Files.getAttribute(path, UNIX_CHANGE_TIME, LinkOption.NOFOLLOW_LINKS) as? FileTime)
+                    ?.to(TimeUnit.NANOSECONDS)
+            }.getOrNull()
+            StableFileIdentity(
+                sizeBytes = attributes.size(),
+                lastModifiedNanos = attributes.lastModifiedTime().to(TimeUnit.NANOSECONDS),
+                creationTimeNanos = attributes.creationTime().to(TimeUnit.NANOSECONDS),
+                fileKey = attributes.fileKey()?.toString(),
+                changeTimeNanos = changeTimeNanos,
+            )
+        }.getOrNull()
+    }
+
+    private fun ensureDirectoryWithoutSymbolicLinks(directory: File): Boolean {
+        if (!isPathWithinFilesDir(directory) || firstSymbolicLinkWithinFilesDir(directory) != null) return false
+        if (!directory.isDirectory && !directory.mkdirs()) return false
+        return directory.isDirectory && firstSymbolicLinkWithinFilesDir(directory) == null
+    }
+
+    private fun isSafeAppPrivatePath(file: File): Boolean {
+        return isPathWithinFilesDir(file) && firstSymbolicLinkWithinFilesDir(file) == null
+    }
+
+    private fun isPathWithinFilesDir(file: File): Boolean {
+        return runCatching {
+            val filesRoot = appContext.filesDir.toPath().toAbsolutePath().normalize()
+            val candidate = file.toPath().toAbsolutePath().normalize()
+            candidate != filesRoot && candidate.startsWith(filesRoot)
+        }.getOrDefault(false)
+    }
+
+    private fun firstSymbolicLinkWithinFilesDir(file: File): Path? {
+        return runCatching {
+            val filesRoot = appContext.filesDir.toPath().toAbsolutePath().normalize()
+            val candidate = file.toPath().toAbsolutePath().normalize()
+            if (candidate == filesRoot || !candidate.startsWith(filesRoot)) return@runCatching null
+            var current = filesRoot
+            filesRoot.relativize(candidate).forEach { component ->
+                current = current.resolve(component)
+                if (Files.isSymbolicLink(current)) return@runCatching current
+            }
+            null
+        }.getOrNull()
+    }
+
+    private fun deleteFirstSymbolicLinkWithinFilesDir(file: File): Boolean {
+        val symbolicLink = firstSymbolicLinkWithinFilesDir(file) ?: return false
+        return runCatching { Files.deleteIfExists(symbolicLink) }.getOrDefault(false)
+    }
+
+    private fun deleteFileNoFollowWithinFilesDir(file: File): Boolean {
+        if (!isPathWithinFilesDir(file)) return false
+        val symbolicLink = firstSymbolicLinkWithinFilesDir(file)
+        if (symbolicLink != null) {
+            return runCatching { Files.deleteIfExists(symbolicLink) }.getOrDefault(false)
+        }
+        return runCatching { Files.deleteIfExists(file.toPath()) }.getOrDefault(false)
+    }
+
+    private fun deleteTreeNoFollowWithinFilesDir(directory: File): Boolean {
+        if (!isPathWithinFilesDir(directory)) return false
+        val symbolicLink = firstSymbolicLinkWithinFilesDir(directory)
+        if (symbolicLink != null) {
+            return runCatching { Files.deleteIfExists(symbolicLink) }.getOrDefault(false)
+        }
+        val root = directory.toPath()
+        if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return true
+        return runCatching {
+            Files.walkFileTree(
+                root,
+                object : SimpleFileVisitor<Path>() {
+                    override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                        Files.delete(file)
+                        return FileVisitResult.CONTINUE
+                    }
+
+                    override fun postVisitDirectory(dir: Path, error: IOException?): FileVisitResult {
+                        if (error != null) throw error
+                        Files.delete(dir)
+                        return FileVisitResult.CONTINUE
+                    }
+                },
+            )
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun containsUntrustedFileOrLink(directory: File): Boolean {
+        if (!isPathWithinFilesDir(directory)) return true
+        if (firstSymbolicLinkWithinFilesDir(directory) != null) return true
+        val root = directory.toPath()
+        if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return false
+        return runCatching {
+            var found = false
+            Files.walkFileTree(
+                root,
+                object : SimpleFileVisitor<Path>() {
+                    override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                        found = true
+                        return FileVisitResult.TERMINATE
+                    }
+                },
+            )
+            found
+        }.getOrDefault(true)
     }
 
     private fun sha256(file: File): String {
@@ -541,16 +795,30 @@ class ModelInstallStore(context: Context) {
         const val PREFS_NAME = "grayin_model_installs"
         const val KEY_SELECTED_MODEL_ID = "selected_model_id"
         const val INSTALLED_MODEL_FILE_NAME = "model.litertlm"
+        const val RELEASES_DIR_NAME = "releases"
         const val STAGING_DIR_NAME = "staging"
         const val PART_SUFFIX = ".part"
         val SAFE_WORKER_ID = Regex("[A-Za-z0-9_-]{1,80}")
+        val SAFE_MODEL_ID = Regex("[A-Za-z0-9._-]{1,80}")
+        val SHA_256 = Regex("[a-f0-9]{64}")
+        const val UNIX_CHANGE_TIME = "unix:ctime"
         val INSTALL_LOCK = Any()
         val VERIFIED_FILE_CACHE = ConcurrentHashMap<String, VerifiedFileCacheEntry>()
     }
 
     private data class VerifiedFileCacheEntry(
         val expectedSha256: String,
-        val sizeBytes: Long,
-        val lastModifiedMillis: Long,
+        val identity: StableFileIdentity,
     )
+
+    private data class StableFileIdentity(
+        val sizeBytes: Long,
+        val lastModifiedNanos: Long,
+        val creationTimeNanos: Long,
+        val fileKey: String?,
+        val changeTimeNanos: Long?,
+    ) {
+        val cacheable: Boolean
+            get() = fileKey != null && changeTimeNanos != null
+    }
 }

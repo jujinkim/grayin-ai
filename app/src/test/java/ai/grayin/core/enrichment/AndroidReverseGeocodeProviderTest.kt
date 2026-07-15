@@ -49,6 +49,48 @@ class AndroidReverseGeocodeProviderTest {
         assertEquals(EnrichmentResult.Unavailable(EnrichmentUnavailableReason.TIMEOUT), timeout)
     }
 
+    @Test
+    fun rejectsOversizedAndControlBearingProviderLabels() = runBlocking {
+        val provider = AndroidReverseGeocodeProvider(
+            FakePlatformGeocoder(
+                address = CoarsePlatformAddress(
+                    locality = "a".repeat(129),
+                    subLocality = "  Jongno   District  ",
+                    adminArea = "Seoul\u0000Injected",
+                    subAdminArea = null,
+                    countryCode = "KOR",
+                ),
+            ),
+        )
+
+        val result = provider.lookup(ReverseGeocodeRequest(GeoCoordinate(37.5, 127.0)))
+
+        val place = (result as EnrichmentResult.Available).value
+        assertEquals("Jongno District", place.localityLabel)
+        assertEquals(null, place.regionLabel)
+        assertEquals(null, place.countryCode)
+    }
+
+    @Test
+    fun rejectsFormatPrivateUnassignedAndMalformedProviderLabels() = runBlocking {
+        val provider = AndroidReverseGeocodeProvider(
+            FakePlatformGeocoder(
+                address = CoarsePlatformAddress(
+                    locality = "Seoul\u202Eredirected",
+                    subLocality = "private\uE000value",
+                    adminArea = "unassigned\u0378value",
+                    subAdminArea = "malformed\uD800value",
+                    countryCode = "KOR",
+                ),
+            ),
+        )
+
+        assertEquals(
+            EnrichmentResult.Unavailable(EnrichmentUnavailableReason.NOT_FOUND),
+            provider.lookup(ReverseGeocodeRequest(GeoCoordinate(37.5, 127.0))),
+        )
+    }
+
     private class FakePlatformGeocoder(
         private val present: Boolean = true,
         private val address: CoarsePlatformAddress? = null,

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
+import ai.grayin.connectors.ConnectorValuePolicy
 import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorDeleteResult
 import ai.grayin.core.connector.ConnectorMetadata
@@ -23,6 +24,8 @@ import ai.grayin.core.enrichment.OnlineEnrichmentGateway
 import ai.grayin.core.enrichment.OnlineEnrichmentPolicy
 import ai.grayin.core.enrichment.PlaceLookupResult
 import ai.grayin.core.enrichment.ReverseGeocodeRequest
+import ai.grayin.core.enrichment.WeatherLookupRequest
+import ai.grayin.core.enrichment.WeatherLookupResult
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.ConnectorCapability
 import ai.grayin.core.model.ConnectorScanIssueCode
@@ -40,6 +43,8 @@ import ai.grayin.core.model.SourceKind
 import ai.grayin.core.model.SourceReference
 import java.security.MessageDigest
 import java.time.Instant
+import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 
 class LocationConnector(
@@ -118,8 +123,13 @@ class LocationConnector(
             ?: return skipped(now, SourceAvailability.NOT_INDEXED, ConnectorScanIssueCode.NO_LAST_KNOWN_LOCATION)
         val sampleAt = location.sampleAt(now)
         val coordinate = location.roundedCoordinate()
-        val placeLookup = placeLookup(coordinate)
-        val result = location.toExtractionResult(now, sampleAt, coordinate, placeLookup)
+        val enrichment = LocationOnlineEnrichmentPolicy.lookup(
+            enabled = enrichmentPreferences.isEnabled(),
+            gateway = enrichmentGateway,
+            coordinate = coordinate,
+            observedAt = sampleAt,
+        )
+        val result = location.toExtractionResult(now, sampleAt, coordinate, enrichment)
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = ProcessingState.COMPLETED,
@@ -168,26 +178,16 @@ class LocationConnector(
             .maxByOrNull { it.time }
     }
 
-    private suspend fun placeLookup(coordinate: GeoCoordinate): PlaceLookupResult? {
-        if (!enrichmentPreferences.isEnabled()) return null
-        return runCatching {
-            OnlineEnrichmentPolicy.requireAllowed(OnlineEnrichmentFeature.REVERSE_GEOCODE_LOOKUP)
-            when (val result = enrichmentGateway.reverseGeocode(ReverseGeocodeRequest(coordinate))) {
-                is EnrichmentResult.Available -> result.value
-                is EnrichmentResult.Unavailable -> null
-            }
-        }.getOrNull()
-    }
-
     private fun Location.toExtractionResult(
         observedAt: Instant,
         sampleAt: Instant,
         coordinate: GeoCoordinate,
-        placeLookup: PlaceLookupResult?,
+        enrichment: LocationOnlineEnrichment,
     ): LocationExtractionResult {
+        val closedProvider = LocationProviderPolicy.closed(provider)
         val sourceHash = sha256(
             LocationPlaceClusterPolicy.sourceIdentityMaterial(
-                provider = provider,
+                provider = closedProvider,
                 sampleAt = sampleAt,
                 coordinate = coordinate,
             ),
@@ -195,9 +195,10 @@ class LocationConnector(
         val sourceId = "source:$CONNECTOR_ID:$sourceHash"
         val eventId = "event:$CONNECTOR_ID:$sourceHash"
         val citationId = "citation:$CONNECTOR_ID:$sourceHash"
-        val regionLabel = placeLookup?.displayLabel()?.let(LocationPlaceClusterPolicy::closedRegionLabel)
+        val regionLabel = enrichment.place?.displayLabel()?.let(LocationPlaceClusterPolicy::closedRegionLabel)
         val region = regionLabel ?: "lat ${coordinate.latitude}, lon ${coordinate.longitude}"
-        val placeKeywords = placeLookup?.keywords().orEmpty()
+        val placeKeywords = enrichment.place?.keywords().orEmpty()
+        val weatherSignals = LocationWeatherSignalPolicy.close(enrichment.weather)
         val confidence = if (hasAccuracy() && accuracy.isFinite() && accuracy in 0f..250f) {
             ConfidenceLevel.MEDIUM
         } else {
@@ -208,7 +209,7 @@ class LocationConnector(
                 id = sourceId,
                 connectorId = CONNECTOR_ID,
                 sourceKind = SourceKind.LOCATION,
-                localPointer = provider?.let { "location-provider:$it" },
+                localPointer = "location-provider:$closedProvider",
                 externalIdHash = sourceHash,
                 observedAt = observedAt,
                 modifiedAt = sampleAt,
@@ -218,13 +219,15 @@ class LocationConnector(
                 id = eventId,
                 kind = DerivedMemoryEventKind.PLACE_VISIT,
                 sourceReferenceIds = listOf(sourceId),
-                summary = "Location sample indexed near $region at $sampleAt.",
+                summary = "Location sample indexed near $region at $sampleAt.${weatherSignals.summarySuffix}",
                 startedAt = sampleAt,
-                keywords = listOf("location", "place", provider.orEmpty())
+                keywords = listOf("location", "place", closedProvider)
                     .plus(placeKeywords)
+                    .plus(weatherSignals.keywords)
                     .filter { it.isNotBlank() },
-                labels = listOf("location", "place-visit", provider.orEmpty())
+                labels = listOf("location", "place-visit", closedProvider)
                     .plus(placeKeywords)
+                    .plus(weatherSignals.labels)
                     .filter { it.isNotBlank() },
                 confidence = confidence,
                 sensitivity = SensitivityLevel.HIGH,
@@ -342,6 +345,104 @@ class LocationConnector(
     }
 }
 
+internal object LocationProviderPolicy {
+    fun closed(value: String?): String {
+        val normalized = value?.trim()?.lowercase(Locale.ROOT)
+        return normalized?.takeIf(ALLOWED_PROVIDERS::contains) ?: OTHER_PROVIDER
+    }
+
+    private const val OTHER_PROVIDER = "other"
+    private val ALLOWED_PROVIDERS = setOf("fused", "gps", "network", "passive")
+}
+
+internal data class LocationOnlineEnrichment(
+    val place: PlaceLookupResult? = null,
+    val weather: WeatherLookupResult? = null,
+)
+
+internal object LocationOnlineEnrichmentPolicy {
+    suspend fun lookup(
+        enabled: Boolean,
+        gateway: OnlineEnrichmentGateway,
+        coordinate: GeoCoordinate,
+        observedAt: Instant,
+    ): LocationOnlineEnrichment {
+        if (!enabled) return LocationOnlineEnrichment()
+        val place = availableOrNull(OnlineEnrichmentFeature.REVERSE_GEOCODE_LOOKUP) {
+            gateway.reverseGeocode(ReverseGeocodeRequest(coordinate))
+        }
+        val weather = availableOrNull(OnlineEnrichmentFeature.WEATHER_LOOKUP) {
+            gateway.getWeather(WeatherLookupRequest(coordinate, observedAt))
+        }
+        return LocationOnlineEnrichment(place = place, weather = weather)
+    }
+
+    private suspend fun <T> availableOrNull(
+        feature: OnlineEnrichmentFeature,
+        request: suspend () -> EnrichmentResult<T>,
+    ): T? {
+        return try {
+            OnlineEnrichmentPolicy.requireAllowed(feature)
+            when (val result = request()) {
+                is EnrichmentResult.Available -> result.value
+                is EnrichmentResult.Unavailable -> null
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+internal data class ClosedLocationWeatherSignals(
+    val summarySuffix: String = "",
+    val keywords: List<String> = emptyList(),
+    val labels: List<String> = emptyList(),
+)
+
+internal object LocationWeatherSignalPolicy {
+    fun close(weather: WeatherLookupResult?): ClosedLocationWeatherSignals {
+        if (
+            weather == null ||
+            weather.weatherCode !in WMO_WEATHER_CODES ||
+            !weather.temperatureCelsius.isFinite() ||
+            weather.temperatureCelsius !in MIN_TEMPERATURE_CELSIUS..MAX_TEMPERATURE_CELSIUS ||
+            !weather.precipitationMillimeters.isFinite() ||
+            weather.precipitationMillimeters !in 0.0..MAX_PRECIPITATION_MILLIMETERS
+        ) {
+            return ClosedLocationWeatherSignals()
+        }
+        val codeLabel = "weather-code-${weather.weatherCode}"
+        val temperature = String.format(Locale.ROOT, "%.1f", weather.temperatureCelsius)
+        val precipitation = String.format(Locale.ROOT, "%.1f", weather.precipitationMillimeters)
+        return ClosedLocationWeatherSignals(
+            summarySuffix = " Weather signal: WMO ${weather.weatherCode}, " +
+                "temperature $temperature C, precipitation $precipitation mm.",
+            keywords = buildList {
+                add("weather")
+                add(codeLabel)
+                if (weather.precipitationMillimeters > 0.0) add("precipitation")
+            },
+            labels = listOf("weather", codeLabel),
+        )
+    }
+
+    private const val MIN_TEMPERATURE_CELSIUS = -100.0
+    private const val MAX_TEMPERATURE_CELSIUS = 70.0
+    private const val MAX_PRECIPITATION_MILLIMETERS = 1_000.0
+    private val WMO_WEATHER_CODES = setOf(
+        0, 1, 2, 3,
+        45, 48,
+        51, 53, 55, 56, 57,
+        61, 63, 65, 66, 67,
+        71, 73, 75, 77,
+        80, 81, 82,
+        85, 86,
+        95, 96, 99,
+    )
+}
+
 internal object LocationPlaceClusterPolicy {
     fun sourceIdentityMaterial(
         provider: String?,
@@ -349,7 +450,8 @@ internal object LocationPlaceClusterPolicy {
         coordinate: GeoCoordinate,
     ): String {
         val rounded = roundedCoordinate(coordinate.latitude, coordinate.longitude)
-        return "location-source-v1:${provider.orEmpty()}:$sampleAt:${rounded.latitude}:${rounded.longitude}"
+        val closedProvider = LocationProviderPolicy.closed(provider)
+        return "location-source-v1:$closedProvider:$sampleAt:${rounded.latitude}:${rounded.longitude}"
     }
 
     fun roundedCoordinate(latitude: Double, longitude: Double): GeoCoordinate {
@@ -391,20 +493,34 @@ internal object LocationPlaceClusterPolicy {
     }
 
     fun closedRegionLabel(value: String?): String? {
-        return closedText(value, MAX_REGION_LABEL_CHARS)
+        return closedText(value, MAX_REGION_LABEL_BYTES)
     }
 
     fun closedKeyword(value: String?): String? {
-        return closedText(value, MAX_KEYWORD_CHARS)
+        return closedText(value, MAX_KEYWORD_BYTES)
     }
 
-    private fun closedText(value: String?, maxChars: Int): String? {
-        val normalized = value
-            ?.trim()
-            ?.replace(WHITESPACE, " ")
-            ?.takeIf { text -> text.isNotBlank() && text.none(Char::isISOControl) }
-            ?: return null
-        return normalized.take(maxChars).trim().takeIf(String::isNotBlank)
+    private fun closedText(value: String?, maxUtf8Bytes: Int): String? {
+        if (value == null || containsUnsafeUnicode(value)) return null
+        return ConnectorValuePolicy.closedText(value, maxUtf8Bytes)
+    }
+
+    private fun containsUnsafeUnicode(value: String): Boolean {
+        var index = 0
+        while (index < value.length) {
+            val codePoint = Character.codePointAt(value, index)
+            if (Character.charCount(codePoint) == 1 && value[index].isSurrogate()) return true
+            if (
+                Character.getType(codePoint) in setOf(
+                    Character.FORMAT.toInt(),
+                    Character.PRIVATE_USE.toInt(),
+                    Character.SURROGATE.toInt(),
+                    Character.UNASSIGNED.toInt(),
+                )
+            ) return true
+            index += Character.charCount(codePoint)
+        }
+        return false
     }
 
     private fun roundAndNormalize(value: Double): Double {
@@ -414,8 +530,7 @@ internal object LocationPlaceClusterPolicy {
 
     private const val COORDINATE_ROUNDING_FACTOR = 1000.0
     private const val HASH_ID_CHARS = 32
-    private const val MAX_REGION_LABEL_CHARS = 128
-    private const val MAX_KEYWORD_CHARS = 64
+    private const val MAX_REGION_LABEL_BYTES = 128
+    private const val MAX_KEYWORD_BYTES = 64
     private const val MAX_RADIUS_METERS = 100_000.0
-    private val WHITESPACE = Regex("\\s+")
 }

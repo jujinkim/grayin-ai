@@ -62,6 +62,130 @@ class FixedCatalogArtifactDownloaderTest {
     }
 
     @Test
+    fun boundedDocumentSpecRejectsNonFixedEndpoints() {
+        val invalidUrls = listOf(
+            "http://models.example.test/manifest.json",
+            "https://user@models.example.test/manifest.json",
+            "https://models.example.test:8443/manifest.json",
+            "https://models.example.test/manifest.json?device=1",
+            "https://models.example.test/manifest.json#latest",
+        )
+
+        invalidUrls.forEach { url ->
+            assertThrows(IllegalArgumentException::class.java) {
+                manifestSpec(url = url)
+            }
+        }
+    }
+
+    @Test
+    fun boundedDocumentFetcherCapsBodyAndRejectsRedirectTypeAndEncoding() = runBlocking {
+        val validBytes = "{\"manifest\":true}".toByteArray()
+        val available = BoundedFixedEndpointDownloader(
+            ArtifactHttpClient {
+                FakeResponse(
+                    bodyBytes = validBytes,
+                    contentLength = validBytes.size.toLong(),
+                    contentType = "application/json; charset=utf-8",
+                )
+            },
+        ).fetch(manifestSpec())
+        assertTrue(available is BoundedDocumentDownloadResult.Available)
+        assertTrue(validBytes.contentEquals((available as BoundedDocumentDownloadResult.Available).bytes))
+
+        val rejected = listOf(
+            FakeResponse(statusCode = 302, bodyBytes = validBytes) to ArtifactDownloadFailureCode.REDIRECT_REJECTED,
+            FakeResponse(contentType = "text/html", bodyBytes = validBytes) to
+                ArtifactDownloadFailureCode.CONTENT_TYPE_INVALID,
+            FakeResponse(
+                contentType = "application/json",
+                contentEncoding = "gzip",
+                bodyBytes = validBytes,
+            ) to
+                ArtifactDownloadFailureCode.CONTENT_ENCODING_INVALID,
+            FakeResponse(
+                contentLength = 65L,
+                contentType = "application/json",
+                bodyBytes = validBytes,
+            ) to ArtifactDownloadFailureCode.SIZE_MISMATCH,
+            FakeResponse(
+                contentLength = null,
+                contentType = "application/json",
+                bodyBytes = ByteArray(65),
+            ) to ArtifactDownloadFailureCode.SIZE_MISMATCH,
+            FakeResponse(
+                contentLength = -2L,
+                contentType = "application/json",
+                bodyBytes = validBytes,
+            ) to ArtifactDownloadFailureCode.SIZE_MISMATCH,
+        )
+        rejected.forEach { (response, expectedCode) ->
+            val result = BoundedFixedEndpointDownloader(ArtifactHttpClient { response })
+                .fetch(manifestSpec(maximumSizeBytes = 64))
+            assertEquals(BoundedDocumentDownloadResult.Failed(expectedCode), result)
+        }
+    }
+
+    @Test
+    fun sharedHttpsClientUsesJsonAcceptAndDisablesRedirectsForManifest() {
+        val connection = FakeHttpsConnection(URL("https://models.example.test/manifest.json"))
+        val response = HttpsArtifactHttpClient(HttpsConnectionFactory { connection }).open(manifestSpec())
+
+        assertTrue(connection.connectCalled)
+        assertFalse(connection.followRedirectsAtConnect)
+        assertEquals("application/json", connection.getRequestProperty("Accept"))
+        assertEquals("identity", connection.getRequestProperty("Accept-Encoding"))
+        response.close()
+    }
+
+    @Test
+    fun sharedHttpsClientPreservesMalformedContentLengthAsFailClosedSignal() = runBlocking {
+        val validBytes = "{\"manifest\":true}".toByteArray()
+        val malformedHeaders = listOf("-2", "+16", "invalid", "999999999999999999999999")
+
+        malformedHeaders.forEach { contentLengthHeader ->
+            val connection = FakeHttpsConnection(
+                url = URL("https://models.example.test/manifest.json"),
+                responseStatusCode = 200,
+                responseContentType = "application/json",
+                responseContentLengthHeader = contentLengthHeader,
+                responseBody = validBytes,
+            )
+
+            val result = BoundedFixedEndpointDownloader(
+                HttpsArtifactHttpClient(HttpsConnectionFactory { connection }),
+            ).fetch(manifestSpec())
+
+            assertEquals(
+                BoundedDocumentDownloadResult.Failed(ArtifactDownloadFailureCode.SIZE_MISMATCH),
+                result,
+            )
+            assertFalse(connection.bodyOpened)
+            assertTrue(connection.disconnected)
+        }
+    }
+
+    @Test
+    fun sharedHttpsClientLeavesMissingContentLengthBoundedByBodyCap() = runBlocking {
+        val validBytes = "{\"manifest\":true}".toByteArray()
+        val connection = FakeHttpsConnection(
+            url = URL("https://models.example.test/manifest.json"),
+            responseStatusCode = 200,
+            responseContentType = "application/json",
+            responseContentLengthHeader = null,
+            responseBody = validBytes,
+        )
+
+        val result = BoundedFixedEndpointDownloader(
+            HttpsArtifactHttpClient(HttpsConnectionFactory { connection }),
+        ).fetch(manifestSpec())
+
+        assertTrue(result is BoundedDocumentDownloadResult.Available)
+        assertTrue(validBytes.contentEquals((result as BoundedDocumentDownloadResult.Available).bytes))
+        assertTrue(connection.bodyOpened)
+    }
+
+    @Test
     fun exactSizeAndDigestProducesVerifiedPart() = runBlocking {
         val bytes = "verified artifact".toByteArray()
         val response = FakeResponse(
@@ -251,6 +375,19 @@ class FixedCatalogArtifactDownloaderTest {
         )
     }
 
+    private fun manifestSpec(
+        url: String = "https://models.example.test/releases/manifest.json",
+        maximumSizeBytes: Int = 64 * 1024,
+    ): FixedEndpointDocumentSpec {
+        return FixedEndpointDocumentSpec(
+            id = "model-release-manifest",
+            url = url,
+            maximumSizeBytes = maximumSizeBytes,
+            allowedContentTypes = setOf("application/json"),
+            acceptContentType = "application/json",
+        )
+    }
+
     private fun sha256(bytes: ByteArray): String {
         return MessageDigest.getInstance("SHA-256")
             .digest(bytes)
@@ -279,7 +416,13 @@ class FixedCatalogArtifactDownloaderTest {
         }
     }
 
-    private class FakeHttpsConnection(url: URL) : HttpsURLConnection(url) {
+    private class FakeHttpsConnection(
+        url: URL,
+        private val responseStatusCode: Int = 302,
+        private val responseContentType: String = "text/html",
+        private val responseContentLengthHeader: String? = "0",
+        private val responseBody: ByteArray = byteArrayOf(),
+    ) : HttpsURLConnection(url) {
         var connectCalled = false
         var followRedirectsAtConnect = true
         var disconnected = false
@@ -302,15 +445,23 @@ class FixedCatalogArtifactDownloaderTest {
 
         override fun getServerCertificates(): Array<Certificate> = emptyArray()
 
-        override fun getResponseCode(): Int = 302
+        override fun getResponseCode(): Int = responseStatusCode
 
-        override fun getContentLengthLong(): Long = 0L
+        override fun getContentLengthLong(): Long = responseContentLengthHeader?.toLongOrNull() ?: -1L
 
-        override fun getContentType(): String = "text/html"
+        override fun getContentType(): String = responseContentType
+
+        override fun getHeaderField(name: String?): String? {
+            return if (name.equals("Content-Length", ignoreCase = true)) {
+                responseContentLengthHeader
+            } else {
+                super.getHeaderField(name)
+            }
+        }
 
         override fun getInputStream(): InputStream {
             bodyOpened = true
-            return ByteArrayInputStream(byteArrayOf())
+            return ByteArrayInputStream(responseBody)
         }
     }
 }
