@@ -493,6 +493,7 @@ class GrayinMemoryController(
             plan = plan,
             plannedMissingSources = plannedMissingSources,
             scanStatuses = stored.connectorScanStatuses,
+            issueExplanation = strings::connectorScanIssue,
         )
         val evidencePack = LocalModelGrounding.citedEvidencePack(
             EvidencePack(
@@ -655,7 +656,7 @@ class GrayinMemoryController(
     }
 
     private fun missingSourceRow(missingSource: MissingSource, strings: GrayinStrings): String {
-        val explanation = if (
+        val explanation = missingSource.issueCode?.let(strings::connectorScanIssue) ?: if (
             missingSource.explanation.startsWith("Required capability ") ||
             missingSource.explanation.startsWith("Optional capability ")
         ) {

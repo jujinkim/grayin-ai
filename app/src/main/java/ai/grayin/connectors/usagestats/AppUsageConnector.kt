@@ -18,6 +18,7 @@ import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.InvokableMemoryConnector
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.ConnectorCapability
+import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.model.ConnectorState
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.DerivedMemoryEventKind
@@ -90,10 +91,10 @@ class AppUsageConnector(
     override suspend fun scan(scope: ConnectorScanScope): ConnectorScanResult {
         val now = Instant.now()
         if (!hasUsageAccess()) {
-            return skipped(now, SourceAvailability.MISSING_PERMISSION, "Usage access was not granted.")
+            return skipped(now, SourceAvailability.MISSING_PERMISSION, ConnectorScanIssueCode.SOURCE_PERMISSION_NOT_GRANTED)
         }
         if (!isEnabled()) {
-            return skipped(now, SourceAvailability.DISABLED, "App Usage source has not been invoked.")
+            return skipped(now, SourceAvailability.DISABLED, ConnectorScanIssueCode.SOURCE_NOT_INVOKED)
         }
 
         val until = scope.until ?: now
@@ -106,7 +107,7 @@ class AppUsageConnector(
             derivedEvents = rows.map { it.derivedEvent },
             citations = rows.map { it.citation },
             missingSources = if (rows.isEmpty()) {
-                missingSources(SourceAvailability.NOT_INDEXED, "No app usage events found in the indexed time window.")
+                missingSources(SourceAvailability.NOT_INDEXED, ConnectorScanIssueCode.NO_APP_USAGE_IN_RANGE)
             } else {
                 emptyList()
             },
@@ -205,23 +206,27 @@ class AppUsageConnector(
     private fun skipped(
         scannedAt: Instant,
         availability: SourceAvailability,
-        explanation: String,
+        issueCode: ConnectorScanIssueCode,
     ): ConnectorScanResult {
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = ProcessingState.SKIPPED,
-            missingSources = missingSources(availability, explanation),
+            missingSources = missingSources(availability, issueCode),
             scannedAt = scannedAt,
         )
     }
 
-    private fun missingSources(availability: SourceAvailability, explanation: String): List<MissingSource> {
+    private fun missingSources(
+        availability: SourceAvailability,
+        issueCode: ConnectorScanIssueCode,
+    ): List<MissingSource> {
         return metadata.memoryCapabilities.map { capability ->
             MissingSource(
                 capability = capability,
                 availability = availability,
-                explanation = explanation,
+                explanation = issueCode.defaultEnglish,
                 connectorId = CONNECTOR_ID,
+                issueCode = issueCode,
             )
         }
     }

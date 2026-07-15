@@ -13,6 +13,7 @@ import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.InvokableMemoryConnector
 import ai.grayin.core.model.ConnectorCapability
+import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.model.ConnectorState
 import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MissingSource
@@ -82,22 +83,22 @@ class NotificationConnector(
             !isListenerEnabled(context) -> skipped(
                 now,
                 SourceAvailability.MISSING_PERMISSION,
-                "Notification listener access was not granted.",
+                ConnectorScanIssueCode.SOURCE_PERMISSION_NOT_GRANTED,
             )
 
             !isSourceEnabled(context) -> skipped(
                 now,
                 SourceAvailability.DISABLED,
-                "Notifications source has not been invoked.",
+                ConnectorScanIssueCode.SOURCE_NOT_INVOKED,
             )
 
             else -> skipped(
                 now,
                 SourceAvailability.NOT_INDEXED,
                 if (NotificationAppAllowlist(context).load().isEmpty()) {
-                    "Add at least one application package to the notification allowlist."
+                    ConnectorScanIssueCode.NOTIFICATION_ALLOWLIST_EMPTY
                 } else {
-                    "Notification source indexes allowlisted new notifications as they arrive; there is no historical notification scan."
+                    ConnectorScanIssueCode.NOTIFICATION_HISTORY_UNAVAILABLE
                 },
             )
         }
@@ -124,23 +125,27 @@ class NotificationConnector(
     private fun skipped(
         scannedAt: Instant,
         availability: SourceAvailability,
-        explanation: String,
+        issueCode: ConnectorScanIssueCode,
     ): ConnectorScanResult {
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = ProcessingState.SKIPPED,
-            missingSources = missingSources(availability, explanation),
+            missingSources = missingSources(availability, issueCode),
             scannedAt = scannedAt,
         )
     }
 
-    private fun missingSources(availability: SourceAvailability, explanation: String): List<MissingSource> {
+    private fun missingSources(
+        availability: SourceAvailability,
+        issueCode: ConnectorScanIssueCode,
+    ): List<MissingSource> {
         return metadata.memoryCapabilities.map { capability ->
             MissingSource(
                 capability = capability,
                 availability = availability,
-                explanation = explanation,
+                explanation = issueCode.defaultEnglish,
                 connectorId = CONNECTOR_ID,
+                issueCode = issueCode,
             )
         }
     }

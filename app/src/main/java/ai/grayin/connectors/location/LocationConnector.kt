@@ -25,6 +25,7 @@ import ai.grayin.core.enrichment.PlaceLookupResult
 import ai.grayin.core.enrichment.ReverseGeocodeRequest
 import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.ConnectorCapability
+import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.model.ConnectorState
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.DerivedMemoryEventKind
@@ -102,14 +103,14 @@ class LocationConnector(
     override suspend fun scan(scope: ConnectorScanScope): ConnectorScanResult {
         val now = Instant.now()
         if (!hasLocationPermission()) {
-            return skipped(now, SourceAvailability.MISSING_PERMISSION, "Location permission was not granted.")
+            return skipped(now, SourceAvailability.MISSING_PERMISSION, ConnectorScanIssueCode.SOURCE_PERMISSION_NOT_GRANTED)
         }
         if (!isEnabled()) {
-            return skipped(now, SourceAvailability.DISABLED, "Location source has not been invoked.")
+            return skipped(now, SourceAvailability.DISABLED, ConnectorScanIssueCode.SOURCE_NOT_INVOKED)
         }
 
         val location = lastKnownLocation()
-            ?: return skipped(now, SourceAvailability.NOT_INDEXED, "No last known location sample is available.")
+            ?: return skipped(now, SourceAvailability.NOT_INDEXED, ConnectorScanIssueCode.NO_LAST_KNOWN_LOCATION)
         val sampleAt = location.sampleAt(now)
         val coordinate = location.roundedCoordinate()
         val placeLookup = placeLookup(coordinate)
@@ -248,23 +249,27 @@ class LocationConnector(
     private fun skipped(
         scannedAt: Instant,
         availability: SourceAvailability,
-        explanation: String,
+        issueCode: ConnectorScanIssueCode,
     ): ConnectorScanResult {
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = ProcessingState.SKIPPED,
-            missingSources = missingSources(availability, explanation),
+            missingSources = missingSources(availability, issueCode),
             scannedAt = scannedAt,
         )
     }
 
-    private fun missingSources(availability: SourceAvailability, explanation: String): List<MissingSource> {
+    private fun missingSources(
+        availability: SourceAvailability,
+        issueCode: ConnectorScanIssueCode,
+    ): List<MissingSource> {
         return metadata.memoryCapabilities.map { capability ->
             MissingSource(
                 capability = capability,
                 availability = availability,
-                explanation = explanation,
+                explanation = issueCode.defaultEnglish,
                 connectorId = CONNECTOR_ID,
+                issueCode = issueCode,
             )
         }
     }

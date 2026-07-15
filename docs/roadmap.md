@@ -64,6 +64,7 @@ The current Open-Meteo public endpoint is suitable only for non-commercial proto
 ### 4. PDF and OCR Indexing
 
 - [x] Persist latest connector scan status and support atomic snapshot reconciliation for removed pages.
+- [x] Store bounded typed scan issue codes and localize them only after reading.
 - [ ] Accept user-selected PDF documents.
 - [ ] Extract text and page metadata transiently; render and OCR pages locally when embedded text is unavailable.
 - [ ] Persist only derived page summaries, keyword signals, citations, and source references.

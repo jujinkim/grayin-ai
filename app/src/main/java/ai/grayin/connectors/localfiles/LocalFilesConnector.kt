@@ -13,7 +13,9 @@ import ai.grayin.core.connector.ConnectorRevokeResult
 import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.MemoryConnector
+import ai.grayin.core.connector.missingSourceIdentity
 import ai.grayin.core.model.ConnectorCapability
+import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.model.ConnectorState
 import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MissingSource
@@ -86,7 +88,10 @@ class LocalFilesConnector(
             return ConnectorScanResult(
                 connectorId = metadata.connectorId,
                 processingState = ProcessingState.SKIPPED,
-                missingSources = missingSources(SourceAvailability.DISABLED, "No local text or Markdown files selected."),
+                missingSources = missingSources(
+                    SourceAvailability.DISABLED,
+                    ConnectorScanIssueCode.NO_LOCAL_DOCUMENTS_SELECTED,
+                ),
                 scannedAt = now,
             )
         }
@@ -95,16 +100,22 @@ class LocalFilesConnector(
         val missing = selected.flatMap { uri ->
             when {
                 !hasPersistedPermission(uri) -> {
-                    missingSources(SourceAvailability.DENIED, "Read access was revoked for selected file.")
+                    missingSources(
+                        SourceAvailability.DENIED,
+                        ConnectorScanIssueCode.LOCAL_DOCUMENT_PERMISSION_REVOKED,
+                    )
                 }
 
                 !isSupported(uri) -> {
-                    missingSources(SourceAvailability.UNSUPPORTED, "Only .txt and .md files are supported in this milestone.")
+                    missingSources(
+                        SourceAvailability.UNSUPPORTED,
+                        ConnectorScanIssueCode.LOCAL_DOCUMENT_TYPE_UNSUPPORTED,
+                    )
                 }
 
                 else -> emptyList()
             }
-        }
+        }.distinctBy(::missingSourceIdentity)
         val state = if (results.isEmpty()) ProcessingState.SKIPPED else ProcessingState.COMPLETED
         return ConnectorScanResult(
             connectorId = metadata.connectorId,
@@ -201,13 +212,17 @@ class LocalFilesConnector(
 
     private fun prefs() = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private fun missingSources(availability: SourceAvailability, explanation: String): List<MissingSource> {
+    private fun missingSources(
+        availability: SourceAvailability,
+        issueCode: ConnectorScanIssueCode,
+    ): List<MissingSource> {
         return metadata.memoryCapabilities.map { capability ->
             MissingSource(
                 capability = capability,
                 availability = availability,
-                explanation = explanation,
+                explanation = issueCode.defaultEnglish,
                 connectorId = metadata.connectorId,
+                issueCode = issueCode,
             )
         }
     }

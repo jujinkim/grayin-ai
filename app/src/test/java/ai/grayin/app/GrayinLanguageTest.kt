@@ -1,7 +1,9 @@
 package ai.grayin.app
 
 import ai.grayin.core.ai.ModelDownloadStatus
+import ai.grayin.core.model.ConnectorScanIssueCode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GrayinLanguageTest {
@@ -140,5 +142,20 @@ class GrayinLanguageTest {
         assertEquals("Notifications", GrayinText.forOption(GrayinLanguageOption.ENGLISH).connectorName("notification", "x"))
         assertEquals("앱 사용", GrayinText.forOption(GrayinLanguageOption.KOREAN).connectorName("app_usage", "x"))
         assertEquals("fallback", GrayinText.forOption(GrayinLanguageOption.JAPANESE).connectorName("unknown", "fallback"))
+    }
+
+    @Test
+    fun everyConnectorScanIssueHasEnglishKoreanAndJapaneseCopy() {
+        val strings = listOf(
+            GrayinText.forOption(GrayinLanguageOption.ENGLISH),
+            GrayinText.forOption(GrayinLanguageOption.KOREAN),
+            GrayinText.forOption(GrayinLanguageOption.JAPANESE),
+        )
+
+        ConnectorScanIssueCode.entries.forEach { issueCode ->
+            strings.forEach { localized ->
+                assertTrue(localized.connectorScanIssue(issueCode).isNotBlank())
+            }
+        }
     }
 }

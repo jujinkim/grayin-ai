@@ -1,5 +1,6 @@
 package ai.grayin.core.store
 
+import android.content.ContentValues
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -12,6 +13,7 @@ import ai.grayin.core.indexing.IndexingQueueState
 import ai.grayin.core.indexing.IndexingSkipReason
 import ai.grayin.core.indexing.IndexingTask
 import ai.grayin.core.indexing.IndexingTrigger
+import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.DerivedMemoryEventKind
 import ai.grayin.core.model.MemoryCapability
@@ -29,6 +31,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import net.zetetic.database.sqlcipher.SQLiteDatabase
+import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -637,8 +641,9 @@ class SqlCipherIndexingQueueInstrumentedTest {
         val missing = MissingSource(
             capability = MemoryCapability.HAS_TEXT,
             availability = SourceAvailability.UNSUPPORTED,
-            explanation = "local_document:no_extractable_content",
+            explanation = ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT.defaultEnglish,
             connectorId = TEST_CONNECTOR_ID,
+            issueCode = ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT,
         )
 
         val committed = queue.commitClaimedConnectorScan(
@@ -713,6 +718,70 @@ class SqlCipherIndexingQueueInstrumentedTest {
         assertEquals(setOf(TEST_CONNECTOR_ID, "other.connector"), statuses.keys)
         assertEquals(ProcessingState.SKIPPED, statuses.getValue(TEST_CONNECTOR_ID).processingState)
         assertEquals(scannedAt, statuses.getValue(TEST_CONNECTOR_ID).scannedAt)
+    }
+
+    @Test
+    fun v4ScanStatusMigrationDropsFreeFormTextAndPreservesKnownMeaning() = runBlocking {
+        val databaseName = newDatabaseName()
+        val memoryStore = store(databaseName)
+        memoryStore.loadSnapshot()
+        val databasePath = context.getDatabasePath(databaseName).absolutePath
+        val scannedAt = "2026-07-15T07:00:00Z"
+        val legacyRows = listOf(
+            "local_files" to "Only .txt and .md files are supported in this milestone.",
+            "unknown.connector" to "RAW_SENTINEL parser detail",
+        )
+        SQLiteDatabase.openOrCreateDatabase(databasePath, TEST_PASSPHRASE, null, null).use { database ->
+            legacyRows.forEach { (connectorId, explanation) ->
+                val encodedMissing = JSONArray().put(
+                    JSONArray()
+                        .put(MemoryCapability.HAS_TEXT.name)
+                        .put(SourceAvailability.UNSUPPORTED.name)
+                        .put(explanation)
+                        .put(connectorId)
+                        .toString(),
+                ).toString()
+                val values = ContentValues().apply {
+                    put("connector_id", connectorId)
+                    put("processing_state", ProcessingState.SKIPPED.name)
+                    put("missing_sources", encodedMissing)
+                    put("scanned_at", scannedAt)
+                }
+                database.insertWithOnConflict(
+                    "connector_scan_status",
+                    null,
+                    values,
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                )
+            }
+            database.execSQL("PRAGMA user_version = 4")
+        }
+
+        val statuses = store(databaseName).loadConnectorScanStatuses().associateBy { it.connectorId }
+
+        assertEquals(
+            ConnectorScanIssueCode.LOCAL_DOCUMENT_TYPE_UNSUPPORTED,
+            statuses.getValue("local_files").missingSources.single().issueCode,
+        )
+        assertEquals(
+            ConnectorScanIssueCode.SOURCE_UNAVAILABLE,
+            statuses.getValue("unknown.connector").missingSources.single().issueCode,
+        )
+        assertFalse(statuses.values.any { status ->
+            status.missingSources.any { missing -> missing.explanation.contains("RAW_SENTINEL") }
+        })
+        SQLiteDatabase.openOrCreateDatabase(databasePath, TEST_PASSPHRASE, null, null).use { database ->
+            val encodedStatuses = database.rawQuery(
+                "SELECT missing_sources FROM connector_scan_status",
+                null,
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) add(cursor.getString(0))
+                }
+            }
+            assertFalse(encodedStatuses.any { it.contains("RAW_SENTINEL") })
+            assertTrue(encodedStatuses.all { it.contains("connector-scan-issue-v1") })
+        }
     }
 
     private fun manualTask(

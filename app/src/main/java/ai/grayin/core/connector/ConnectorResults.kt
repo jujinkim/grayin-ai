@@ -46,7 +46,33 @@ data class ConnectorScanStatus(
         require(missingSources.all { it.connectorId == null || it.connectorId == connectorId }) {
             "Connector scan status cannot contain another connector's missing source."
         }
+        require(
+            missingSources.all { missing ->
+                missing.issueCode != null && missing.explanation == missing.issueCode.defaultEnglish
+            },
+        ) {
+            "Connector scan status must contain only stable issue codes."
+        }
+        require(missingSources.size <= MAX_MISSING_SOURCES) {
+            "Connector scan status contains too many missing-source records."
+        }
+        require(missingSources.distinctBy(::missingSourceIdentity).size == missingSources.size) {
+            "Connector scan status contains duplicate missing-source records."
+        }
     }
+
+    companion object {
+        const val MAX_MISSING_SOURCES = 64
+    }
+}
+
+internal fun missingSourceIdentity(missing: MissingSource): List<String> {
+    return listOf(
+        missing.capability.name,
+        missing.availability.name,
+        missing.issueCode?.storageKey.orEmpty(),
+        missing.connectorId.orEmpty(),
+    )
 }
 
 fun ConnectorScanResult.hasIndexableOutput(): Boolean {

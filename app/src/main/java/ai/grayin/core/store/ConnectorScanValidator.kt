@@ -1,6 +1,8 @@
 package ai.grayin.core.store
 
 import ai.grayin.core.connector.ConnectorScanResult
+import ai.grayin.core.connector.ConnectorScanStatus
+import ai.grayin.core.connector.missingSourceIdentity
 
 internal object ConnectorScanValidator {
     fun validate(scanResult: ConnectorScanResult) {
@@ -37,12 +39,22 @@ internal object ConnectorScanValidator {
         }
         require(
             scanResult.missingSources.all { missing ->
-                missing.explanation.isNotBlank() &&
+                missing.issueCode != null &&
+                    missing.explanation == missing.issueCode.defaultEnglish &&
+                    missing.explanation.isNotBlank() &&
                     missing.explanation.length <= MAX_MISSING_SOURCE_EXPLANATION_CHARS &&
                     missing.explanation.none(Char::isISOControl)
             },
         ) {
-            "A connector scan missing-source explanation must be bounded, non-blank, and single-line."
+            "A connector scan missing source must use its bounded stable issue code."
+        }
+        require(scanResult.missingSources.size <= ConnectorScanStatus.MAX_MISSING_SOURCES) {
+            "A connector scan contains too many missing-source records."
+        }
+        require(
+            scanResult.missingSources.distinctBy(::missingSourceIdentity).size == scanResult.missingSources.size,
+        ) {
+            "A connector scan contains duplicate missing-source records."
         }
 
         val sourceIds = scanResult.sourceReferences.mapTo(mutableSetOf()) { it.id }

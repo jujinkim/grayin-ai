@@ -2,6 +2,7 @@ package ai.grayin.core.store
 
 import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.model.ConfidenceLevel
+import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.DerivedMemoryEventKind
 import ai.grayin.core.model.MemoryCitation
@@ -89,8 +90,9 @@ class ConnectorScanValidatorTest {
                 MissingSource(
                     capability = MemoryCapability.HAS_TEXT,
                     availability = SourceAvailability.UNSUPPORTED,
-                    explanation = "stable-code",
+                    explanation = ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT.defaultEnglish,
                     connectorId = "other",
+                    issueCode = ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT,
                 ),
             ),
         )
@@ -109,12 +111,50 @@ class ConnectorScanValidatorTest {
                     availability = SourceAvailability.UNSUPPORTED,
                     explanation = "parser failed\nraw detail",
                     connectorId = "test",
+                    issueCode = ConnectorScanIssueCode.LOCAL_DOCUMENT_READ_FAILED,
                 ),
             ),
         )
 
         assertThrows(IllegalArgumentException::class.java) {
             ConnectorScanValidator.validate(scan)
+        }
+    }
+
+    @Test
+    fun `accepts an exact stable connector scan issue`() {
+        val issueCode = ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT
+        ConnectorScanValidator.validate(
+            validScan().copy(
+                missingSources = listOf(
+                    MissingSource(
+                        capability = MemoryCapability.HAS_TEXT,
+                        availability = SourceAvailability.NOT_INDEXED,
+                        explanation = issueCode.defaultEnglish,
+                        connectorId = "test",
+                        issueCode = issueCode,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `rejects code-less or code-mismatched scan explanations`() {
+        val codeLess = MissingSource(
+            capability = MemoryCapability.HAS_TEXT,
+            availability = SourceAvailability.UNSUPPORTED,
+            explanation = "RAW_SENTINEL",
+            connectorId = "test",
+        )
+        val mismatched = codeLess.copy(
+            issueCode = ConnectorScanIssueCode.LOCAL_DOCUMENT_READ_FAILED,
+        )
+
+        listOf(codeLess, mismatched).forEach { missing ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ConnectorScanValidator.validate(validScan().copy(missingSources = listOf(missing)))
+            }
         }
     }
 

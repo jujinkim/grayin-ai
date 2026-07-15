@@ -82,7 +82,7 @@ The MVP connector interface exposes only:
 - revoke result
 - derived-data deletion result
 
-`ConnectorScanResult` may contain only `SourceReference`, `DerivedMemoryEvent`, `MemoryCitation`, and missing-source explanations.
+`ConnectorScanResult` may contain only `SourceReference`, `DerivedMemoryEvent`, `MemoryCitation`, supported derived aggregates, and typed missing-source issue codes. Scan status rejects free-form explanations, runtime exception text, per-file identity, and duplicate issue tuples.
 
 Connectors must not expose raw/original content through return values, callbacks, store handoff objects, logs, caches, or errors.
 

@@ -2,6 +2,7 @@ package ai.grayin.app
 
 import android.content.Context
 import ai.grayin.core.ai.ModelDownloadStatus
+import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.indexing.AutomaticIndexingOutcome
 import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.IndexingSkipReason
@@ -204,6 +205,71 @@ data class GrayinStrings(
             "app_usage" -> appUsage
             "local_files" -> localFiles
             else -> fallback
+        }
+    }
+
+    fun connectorScanIssue(code: ConnectorScanIssueCode): String {
+        if (languageCode == GrayinLanguage.ENGLISH) return code.defaultEnglish
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> when (code) {
+                ConnectorScanIssueCode.SOURCE_PERMISSION_NOT_GRANTED -> "소스 권한이 허용되지 않았습니다."
+                ConnectorScanIssueCode.SOURCE_NOT_INVOKED -> "소스가 아직 연결되지 않았습니다."
+                ConnectorScanIssueCode.SOURCE_UNAVAILABLE -> "이번 인덱싱에서 소스를 사용할 수 없습니다."
+                ConnectorScanIssueCode.NO_CALENDAR_EVENTS_IN_RANGE -> "인덱싱한 기간에 일정이 없습니다."
+                ConnectorScanIssueCode.NO_PHOTOS_IN_RANGE -> "인덱싱한 기간에 사진이 없습니다."
+                ConnectorScanIssueCode.NO_APP_USAGE_IN_RANGE -> "인덱싱한 기간에 앱 사용 기록이 없습니다."
+                ConnectorScanIssueCode.NO_LAST_KNOWN_LOCATION -> "사용 가능한 최근 위치가 없습니다."
+                ConnectorScanIssueCode.NOTIFICATION_ALLOWLIST_EMPTY -> "알림 허용 목록에 앱을 하나 이상 추가하세요."
+                ConnectorScanIssueCode.NOTIFICATION_HISTORY_UNAVAILABLE -> "허용한 앱의 새 알림만 도착할 때 인덱싱됩니다."
+                ConnectorScanIssueCode.NO_LOCAL_DOCUMENTS_SELECTED -> "선택한 로컬 문서가 없습니다."
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_PERMISSION_REVOKED -> "선택한 문서의 읽기 권한이 취소되었습니다."
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_TYPE_UNSUPPORTED -> "지원하지 않는 문서 형식입니다."
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_READ_FAILED -> "선택한 문서를 읽을 수 없습니다."
+                ConnectorScanIssueCode.DOCUMENT_FILE_TOO_LARGE -> "문서가 크기 제한을 초과했습니다."
+                ConnectorScanIssueCode.DOCUMENT_SIZE_UNKNOWN -> "문서 크기를 안전하게 확인할 수 없습니다."
+                ConnectorScanIssueCode.DOCUMENT_NOT_SEEKABLE -> "문서가 안전한 임의 접근을 지원하지 않습니다."
+                ConnectorScanIssueCode.PDF_PAGE_LIMIT_EXCEEDED -> "PDF가 페이지 제한을 초과했습니다."
+                ConnectorScanIssueCode.PDF_PASSWORD_REQUIRED -> "PDF를 열려면 암호가 필요합니다."
+                ConnectorScanIssueCode.PDF_MALFORMED -> "PDF가 손상되었거나 지원하지 않는 형식입니다."
+                ConnectorScanIssueCode.PDF_PAGE_DIMENSIONS_UNSUPPORTED -> "지원하지 않는 크기의 PDF 페이지가 있습니다."
+                ConnectorScanIssueCode.OCR_MODEL_UNAVAILABLE -> "필요한 기기 내 OCR 언어 데이터가 설치되지 않았습니다."
+                ConnectorScanIssueCode.OCR_PAGE_LIMIT_REACHED -> "PDF가 문서별 OCR 페이지 제한을 초과했습니다."
+                ConnectorScanIssueCode.OCR_TIMED_OUT -> "기기 내 OCR이 시간 제한을 초과했습니다."
+                ConnectorScanIssueCode.DOCUMENT_PROCESS_CRASHED -> "격리된 문서 처리기가 예기치 않게 중단되었습니다."
+                ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT -> "문서에서 추출할 수 있는 텍스트를 찾지 못했습니다."
+                ConnectorScanIssueCode.PARTIAL_DOCUMENT_INDEX -> "문서 일부만 인덱싱했습니다."
+            }
+
+            GrayinLanguage.JAPANESE -> when (code) {
+                ConnectorScanIssueCode.SOURCE_PERMISSION_NOT_GRANTED -> "ソースの権限が許可されていません。"
+                ConnectorScanIssueCode.SOURCE_NOT_INVOKED -> "ソースはまだ接続されていません。"
+                ConnectorScanIssueCode.SOURCE_UNAVAILABLE -> "今回のインデックスではソースを利用できません。"
+                ConnectorScanIssueCode.NO_CALENDAR_EVENTS_IN_RANGE -> "対象期間に予定がありません。"
+                ConnectorScanIssueCode.NO_PHOTOS_IN_RANGE -> "対象期間に写真がありません。"
+                ConnectorScanIssueCode.NO_APP_USAGE_IN_RANGE -> "対象期間にアプリ使用履歴がありません。"
+                ConnectorScanIssueCode.NO_LAST_KNOWN_LOCATION -> "利用できる最終位置情報がありません。"
+                ConnectorScanIssueCode.NOTIFICATION_ALLOWLIST_EMPTY -> "通知の許可リストにアプリを1つ以上追加してください。"
+                ConnectorScanIssueCode.NOTIFICATION_HISTORY_UNAVAILABLE -> "許可したアプリの新しい通知のみ到着時にインデックスされます。"
+                ConnectorScanIssueCode.NO_LOCAL_DOCUMENTS_SELECTED -> "ローカル文書が選択されていません。"
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_PERMISSION_REVOKED -> "選択した文書の読み取り権限が取り消されました。"
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_TYPE_UNSUPPORTED -> "この文書形式はサポートされていません。"
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_READ_FAILED -> "選択した文書を読み取れません。"
+                ConnectorScanIssueCode.DOCUMENT_FILE_TOO_LARGE -> "文書がサイズ上限を超えています。"
+                ConnectorScanIssueCode.DOCUMENT_SIZE_UNKNOWN -> "文書サイズを安全に確認できません。"
+                ConnectorScanIssueCode.DOCUMENT_NOT_SEEKABLE -> "文書が安全なランダムアクセスに対応していません。"
+                ConnectorScanIssueCode.PDF_PAGE_LIMIT_EXCEEDED -> "PDFがページ上限を超えています。"
+                ConnectorScanIssueCode.PDF_PASSWORD_REQUIRED -> "PDFを開くにはパスワードが必要です。"
+                ConnectorScanIssueCode.PDF_MALFORMED -> "PDFが破損しているか、未対応の形式です。"
+                ConnectorScanIssueCode.PDF_PAGE_DIMENSIONS_UNSUPPORTED -> "未対応サイズのPDFページがあります。"
+                ConnectorScanIssueCode.OCR_MODEL_UNAVAILABLE -> "必要な端末内OCR言語データがインストールされていません。"
+                ConnectorScanIssueCode.OCR_PAGE_LIMIT_REACHED -> "PDFが文書ごとのOCRページ上限を超えています。"
+                ConnectorScanIssueCode.OCR_TIMED_OUT -> "端末内OCRが時間制限を超えました。"
+                ConnectorScanIssueCode.DOCUMENT_PROCESS_CRASHED -> "分離された文書処理プロセスが予期せず停止しました。"
+                ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT -> "文書から抽出可能なテキストが見つかりません。"
+                ConnectorScanIssueCode.PARTIAL_DOCUMENT_INDEX -> "文書の一部のみをインデックスしました。"
+            }
+
+            GrayinLanguage.ENGLISH -> code.defaultEnglish
         }
     }
 

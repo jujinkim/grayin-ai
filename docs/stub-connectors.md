@@ -2,7 +2,7 @@
 
 Grayin AI has real source paths for Local Files, Location, Calendar, Photos, Notifications, and App Usage.
 
-Every connector must report metadata, permission state, scan status, missing-source explanations, and revoke/delete-derived-data contracts.
+Every connector must report metadata, permission state, scan status, typed missing-source issue codes, and revoke/delete-derived-data contracts. Connector scan status never persists connector-authored explanation prose; localized copy is generated from the code after reading.
 
 ## Current Connectors
 

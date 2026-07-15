@@ -6,6 +6,7 @@ import android.database.Cursor
 import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.ConnectorScanStatus
 import ai.grayin.core.connector.hasIndexableOutput
+import ai.grayin.core.connector.missingSourceIdentity
 import ai.grayin.core.indexing.AutomaticIndexingControl
 import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.AutomaticIndexingOutcome
@@ -24,6 +25,7 @@ import ai.grayin.core.indexing.IndexingTrigger
 import ai.grayin.core.indexing.LeaseRecoveryResult
 import ai.grayin.core.model.AppUsageSummary
 import ai.grayin.core.model.ConfidenceLevel
+import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.model.DailyMemorySummary
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.MemoryCapability
@@ -878,6 +880,9 @@ class SqlCipherLocalMemoryStore(
         if (version < CONNECTOR_SCAN_STATUS_SCHEMA_VERSION) {
             runMigration(db, CONNECTOR_SCAN_STATUS_SCHEMA_VERSION, ::createConnectorScanStatusTable)
         }
+        if (version < CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION) {
+            runMigration(db, CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION, ::migrateConnectorScanIssueCodes)
+        }
     }
 
     private fun runMigration(
@@ -1100,6 +1105,36 @@ class SqlCipherLocalMemoryStore(
             )
             """.trimIndent(),
         )
+    }
+
+    private fun migrateConnectorScanIssueCodes(db: SQLiteDatabase) {
+        val rows = db.query(
+            TABLE_CONNECTOR_SCAN_STATUS,
+            arrayOf("connector_id", "missing_sources"),
+            null,
+            null,
+            null,
+            null,
+            null,
+        ).useRows { row -> row.string("connector_id") to row.string("missing_sources") }
+        rows.forEach { (connectorId, encodedMissingSources) ->
+            val migrated = decodeList(encodedMissingSources)
+                .map(::decodeConnectorScanMissingSource)
+                .distinctBy(::missingSourceIdentity)
+                .take(ConnectorScanStatus.MAX_MISSING_SOURCES)
+                .map { missing -> missing.toConnectorScanStorageString() }
+            val values = ContentValues().apply {
+                put("missing_sources", encodeList(migrated))
+            }
+            check(
+                db.update(
+                    TABLE_CONNECTOR_SCAN_STATUS,
+                    values,
+                    "connector_id = ?",
+                    arrayOf(connectorId),
+                ) == 1,
+            ) { "Could not migrate connector scan issue codes." }
+        }
     }
 
     private fun IndexingQueueItem.toValues(): ContentValues = ContentValues().apply {
@@ -1517,7 +1552,8 @@ class SqlCipherLocalMemoryStore(
                 ConnectorScanStatus(
                     connectorId = row.string("connector_id"),
                     processingState = enumValueOf(row.string("processing_state")),
-                    missingSources = decodeList(row.string("missing_sources")).map(::decodeMissingSource),
+                    missingSources = decodeList(row.string("missing_sources"))
+                        .map(::decodeConnectorScanMissingSource),
                     scopeFrom = row.nullableInstant("scope_from"),
                     scopeUntil = row.nullableInstant("scope_until"),
                     scannedAt = Instant.parse(row.string("scanned_at")),
@@ -1529,7 +1565,10 @@ class SqlCipherLocalMemoryStore(
         val values = ContentValues().apply {
             put("connector_id", scanResult.connectorId)
             put("processing_state", scanResult.processingState.name)
-            put("missing_sources", encodeList(scanResult.missingSources.map { it.toStorageString() }))
+            put(
+                "missing_sources",
+                encodeList(scanResult.missingSources.map { it.toConnectorScanStorageString() }),
+            )
             put("scope_from", scanResult.scopeFrom?.toString())
             put("scope_until", scanResult.scopeUntil?.toString())
             put("scanned_at", scanResult.scannedAt.toString())
@@ -1633,6 +1672,20 @@ class SqlCipherLocalMemoryStore(
             .put(availability.name)
             .put(explanation)
             .put(connectorId)
+            .put(issueCode?.storageKey)
+            .toString()
+    }
+
+    private fun MissingSource.toConnectorScanStorageString(): String {
+        val stableIssueCode = checkNotNull(issueCode) {
+            "Connector scan missing-source status requires a stable issue code."
+        }
+        return JSONArray()
+            .put(CONNECTOR_SCAN_ISSUE_STORAGE_VERSION)
+            .put(capability.name)
+            .put(availability.name)
+            .put(stableIssueCode.storageKey)
+            .put(connectorId)
             .toString()
     }
 
@@ -1644,6 +1697,12 @@ class SqlCipherLocalMemoryStore(
                 availability = enumValueOf<SourceAvailability>(array.getString(1)),
                 explanation = array.getString(2),
                 connectorId = if (array.isNull(3)) null else array.getString(3).takeIf(String::isNotBlank),
+                issueCode = if (array.length() <= 4 || array.isNull(4)) {
+                    null
+                } else {
+                    ConnectorScanIssueCode.fromStorageKey(array.getString(4))
+                        ?: runCatching { enumValueOf<ConnectorScanIssueCode>(array.getString(4)) }.getOrNull()
+                },
             )
         }
         val legacy = value.split('|', limit = 4)
@@ -1653,6 +1712,31 @@ class SqlCipherLocalMemoryStore(
             availability = enumValueOf(legacy[1]),
             explanation = legacy[2],
             connectorId = legacy[3].takeIf(String::isNotBlank),
+        )
+    }
+
+    private fun decodeConnectorScanMissingSource(value: String): MissingSource {
+        val array = value.takeIf { it.startsWith("[") }?.let(::JSONArray)
+        if (array?.optString(0) == CONNECTOR_SCAN_ISSUE_STORAGE_VERSION) {
+            val issueCode = ConnectorScanIssueCode.fromStorageKey(array.getString(3))
+                ?: ConnectorScanIssueCode.SOURCE_UNAVAILABLE
+            return MissingSource(
+                capability = enumValueOf<MemoryCapability>(array.getString(1)),
+                availability = enumValueOf<SourceAvailability>(array.getString(2)),
+                explanation = issueCode.defaultEnglish,
+                connectorId = if (array.isNull(4)) null else array.getString(4).takeIf(String::isNotBlank),
+                issueCode = issueCode,
+            )
+        }
+        val decoded = decodeMissingSource(value)
+        val issueCode = decoded.issueCode
+            ?: ConnectorScanIssueCode.fromStorageKey(decoded.explanation)
+            ?: runCatching { enumValueOf<ConnectorScanIssueCode>(decoded.explanation) }.getOrNull()
+            ?: ConnectorScanIssueCode.fromLegacyExplanation(decoded.explanation)
+            ?: ConnectorScanIssueCode.SOURCE_UNAVAILABLE
+        return decoded.copy(
+            explanation = issueCode.defaultEnglish,
+            issueCode = issueCode,
         )
     }
 
@@ -1731,12 +1815,14 @@ class SqlCipherLocalMemoryStore(
         const val TABLE_AUTOMATIC_INDEXING_RUNTIME = "automatic_indexing_runtime"
         const val TABLE_AUTOMATIC_INDEXING_CONTROL = "automatic_indexing_control"
         const val TABLE_CONNECTOR_SCAN_STATUS = "connector_scan_status"
+        const val CONNECTOR_SCAN_ISSUE_STORAGE_VERSION = "connector-scan-issue-v1"
         const val SQLITE_BIND_LIMIT = 900
         const val CORE_SCHEMA_VERSION = 1
         const val INDEXING_SCHEMA_VERSION = 2
         const val AUTOMATIC_CONTROL_SCHEMA_VERSION = 3
         const val CONNECTOR_SCAN_STATUS_SCHEMA_VERSION = 4
-        const val SCHEMA_VERSION = CONNECTOR_SCAN_STATUS_SCHEMA_VERSION
+        const val CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION = 5
+        const val SCHEMA_VERSION = CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION
         const val MAX_QUEUE_SNAPSHOT_ITEMS = 500
         const val UNINITIALIZED_AUTOMATIC_SETTINGS_KEY = "v1:uninitialized"
 

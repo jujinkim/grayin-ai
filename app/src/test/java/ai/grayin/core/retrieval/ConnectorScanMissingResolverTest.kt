@@ -1,6 +1,7 @@
 package ai.grayin.core.retrieval
 
 import ai.grayin.core.connector.ConnectorScanStatus
+import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.ProcessingState
@@ -12,8 +13,8 @@ import org.junit.Test
 class ConnectorScanMissingResolverTest {
     @Test
     fun mergeAddsOnlyRelevantScanIssuesAndDeduplicates() {
-        val relevant = missing(MemoryCapability.HAS_TEXT, "local_document:page_limit")
-        val irrelevant = missing(MemoryCapability.HAS_LOCATION, "location:no_sample")
+        val relevant = missing(MemoryCapability.HAS_TEXT, ConnectorScanIssueCode.PDF_PAGE_LIMIT_EXCEEDED)
+        val irrelevant = missing(MemoryCapability.HAS_LOCATION, ConnectorScanIssueCode.NO_LAST_KNOWN_LOCATION)
         val plan = QueryPlan(
             query = "what was in the document",
             intent = QueryIntent.GENERAL_MEMORY_RECALL,
@@ -27,7 +28,7 @@ class ConnectorScanMissingResolverTest {
         val status = ConnectorScanStatus(
             connectorId = "local_files",
             processingState = ProcessingState.COMPLETED,
-            missingSources = listOf(relevant, relevant, irrelevant),
+            missingSources = listOf(relevant, irrelevant),
             scannedAt = Instant.parse("2026-07-15T05:00:00Z"),
         )
 
@@ -42,7 +43,7 @@ class ConnectorScanMissingResolverTest {
 
     @Test
     fun mergeUsesScopedStatusOnlyWhenItContainsTheQueryRange() {
-        val missing = missing(MemoryCapability.HAS_TEXT, "local_document:no_text_in_range")
+        val missing = missing(MemoryCapability.HAS_TEXT, ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT)
         val queryStart = Instant.parse("2026-07-10T00:00:00Z")
         val queryEnd = Instant.parse("2026-07-11T00:00:00Z")
         val plan = QueryPlan(
@@ -67,7 +68,10 @@ class ConnectorScanMissingResolverTest {
             until = queryEnd.plusSeconds(60),
         )
         val unrelated = status(
-            missing = missing.copy(explanation = "unrelated"),
+            missing = missing(
+                MemoryCapability.HAS_TEXT,
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_READ_FAILED,
+            ),
             from = queryEnd.plusSeconds(60),
             until = queryEnd.plusSeconds(120),
         )
@@ -83,7 +87,7 @@ class ConnectorScanMissingResolverTest {
 
     @Test
     fun mergeDoesNotApplyScopedStatusToAnUnboundedQuery() {
-        val missing = missing(MemoryCapability.HAS_TEXT, "local_document:no_text_in_range")
+        val missing = missing(MemoryCapability.HAS_TEXT, ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT)
         val plan = QueryPlan(
             query = "what was in the document",
             intent = QueryIntent.GENERAL_MEMORY_RECALL,
@@ -110,6 +114,40 @@ class ConnectorScanMissingResolverTest {
         assertEquals(emptyList<MissingSource>(), merged)
     }
 
+    @Test
+    fun mergeLocalizesScanIssuesWithoutChangingTheirIdentity() {
+        val missing = missing(MemoryCapability.HAS_TEXT, ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT)
+        val plan = QueryPlan(
+            query = "document",
+            intent = QueryIntent.GENERAL_MEMORY_RECALL,
+            requiredCapabilities = setOf(MemoryCapability.HAS_TEXT),
+            optionalCapabilities = emptySet(),
+            availableCapabilities = emptySet(),
+            missingRequiredCapabilities = setOf(MemoryCapability.HAS_TEXT),
+            missingOptionalCapabilities = emptySet(),
+            missingSources = emptyList(),
+        )
+
+        val merged = ConnectorScanMissingResolver.merge(
+            plan = plan,
+            plannedMissingSources = emptyList(),
+            scanStatuses = listOf(
+                ConnectorScanStatus(
+                    connectorId = "local_files",
+                    processingState = ProcessingState.SKIPPED,
+                    missingSources = listOf(missing),
+                    scannedAt = Instant.parse("2026-07-15T05:00:00Z"),
+                ),
+            ),
+            issueExplanation = { code -> "localized:${code.storageKey}" },
+        )
+
+        assertEquals(
+            listOf(missing.copy(explanation = "localized:no_extractable_text")),
+            merged,
+        )
+    }
+
     private fun status(
         missing: MissingSource,
         from: Instant,
@@ -125,12 +163,16 @@ class ConnectorScanMissingResolverTest {
         )
     }
 
-    private fun missing(capability: MemoryCapability, explanation: String): MissingSource {
+    private fun missing(
+        capability: MemoryCapability,
+        issueCode: ConnectorScanIssueCode,
+    ): MissingSource {
         return MissingSource(
             capability = capability,
             availability = SourceAvailability.UNSUPPORTED,
-            explanation = explanation,
+            explanation = issueCode.defaultEnglish,
             connectorId = "local_files",
+            issueCode = issueCode,
         )
     }
 }

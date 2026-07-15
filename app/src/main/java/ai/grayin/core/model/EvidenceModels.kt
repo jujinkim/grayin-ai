@@ -44,6 +44,7 @@ data class MissingSource(
     val availability: SourceAvailability,
     val explanation: String,
     val connectorId: String? = null,
+    val issueCode: ConnectorScanIssueCode? = null,
 )
 
 data class GroundedAnswer(
@@ -55,4 +56,3 @@ data class GroundedAnswer(
     val missingData: List<MissingSource>,
     val citations: List<MemoryCitation>,
 )
-
