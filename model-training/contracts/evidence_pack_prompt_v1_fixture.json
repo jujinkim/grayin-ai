@@ -1,0 +1,40 @@
+{
+  "schema_version": "grayin-evidence-pack-v1",
+  "id": "pack:contract:v1",
+  "query": "어제 어디에 갔어?",
+  "generated_at": "2026-07-01T00:00:00Z",
+  "evidence_items": [
+    {
+      "id": "evidence:event:contract:1",
+      "derived_memory_event_id": "event:contract:1",
+      "summary": "19시에 서울 시청 근처에 머문 파생 위치 기록.",
+      "event_kind": "PLACE_VISIT",
+      "occurred_at": "2026-06-30T19:00:00Z",
+      "confidence": "HIGH",
+      "citation_ids": [
+        "citation:contract:1"
+      ],
+      "capabilities": [
+        "HAS_TIME",
+        "HAS_LOCATION"
+      ]
+    }
+  ],
+  "citations": [
+    {
+      "id": "citation:contract:1",
+      "source_reference_id": "source:synthetic:contract:1",
+      "derived_memory_event_id": "event:contract:1",
+      "label": "Synthetic location evidence",
+      "confidence": "HIGH"
+    }
+  ],
+  "missing_sources": [
+    {
+      "capability": "HAS_MEDIA",
+      "availability": "NOT_INDEXED",
+      "explanation": "해당 시간대의 사진은 인덱싱되지 않았다.",
+      "connector_id": "photos"
+    }
+  ]
+}

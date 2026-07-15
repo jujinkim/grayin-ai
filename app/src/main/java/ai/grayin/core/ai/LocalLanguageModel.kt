@@ -24,6 +24,7 @@ data class LocalModelAnswerDraft(
     val inferenceNotes: List<String>,
     val confidence: ConfidenceLevel,
     val missingSources: List<MissingSource>,
+    val groundingContractValid: Boolean,
 )
 
 interface LocalLanguageModel {
@@ -33,4 +34,3 @@ interface LocalLanguageModel {
 
     suspend fun generate(evidencePack: EvidencePack): LocalModelAnswerDraft
 }
-

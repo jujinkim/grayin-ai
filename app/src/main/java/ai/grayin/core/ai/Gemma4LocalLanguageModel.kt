@@ -47,13 +47,19 @@ class Gemma4LocalLanguageModel(
         val modelPath = modelPathResolver.resolveModelPath()
             ?: return unavailableDraft(evidencePack)
         val prompt = EvidencePackPromptBuilder.build(evidencePack)
-        val answer = generateResponse(modelPath, prompt)
+        val response = generateResponse(modelPath, prompt)
+        val parsed = LocalModelGrounding.parseAnswer(response)
+        val expectedMissingCapabilities = evidencePack.missingSources.map { it.capability }.toSet()
+        val contractValid = parsed != null &&
+            parsed.missingCapabilities.toSet() == expectedMissingCapabilities &&
+            parsed.missingCapabilities.distinct().size == parsed.missingCapabilities.size
         return LocalModelAnswerDraft(
-            answer = answer.ifBlank { "Local Gemma returned an empty answer." },
-            usedEvidenceItemIds = LocalModelGrounding.evidenceIdsFromAnswer(answer),
+            answer = parsed?.answer.orEmpty(),
+            usedEvidenceItemIds = parsed?.evidenceIds.orEmpty(),
             inferenceNotes = listOf("Generated locally by Gemma from derived EvidencePack only."),
             confidence = combineConfidence(evidencePack.evidenceItems, evidencePack.missingSources.isNotEmpty()),
-            missingSources = evidencePack.missingSources,
+            missingSources = if (contractValid) evidencePack.missingSources else emptyList(),
+            groundingContractValid = contractValid,
         )
     }
 
@@ -98,6 +104,7 @@ class Gemma4LocalLanguageModel(
             inferenceNotes = listOf("No model inference ran."),
             confidence = ConfidenceLevel.UNKNOWN,
             missingSources = evidencePack.missingSources,
+            groundingContractValid = true,
         )
     }
 

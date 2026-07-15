@@ -71,6 +71,20 @@ def main() -> None:
     )
 
     dataset = load_dataset("json", data_files=dataset_config["train_jsonl"], split="train")
+    text_field = dataset_config["text_field"]
+
+    def render_training_messages(record: dict) -> dict[str, str]:
+        messages = record.get("messages")
+        if not isinstance(messages, list) or not messages:
+            raise ValueError("Training record messages are missing.")
+        rendered = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=False,
+        )
+        return {text_field: rendered}
+
+    dataset = dataset.map(render_training_messages, desc="Apply pinned Gemma chat template")
 
     peft_config = LoraConfig(
         r=lora_config["r"],
@@ -87,7 +101,7 @@ def main() -> None:
         processing_class=tokenizer,
         args=SFTConfig(
             output_dir=training_config["output_dir"],
-            dataset_text_field=dataset_config["text_field"],
+            dataset_text_field=text_field,
             max_length=dataset_config["max_seq_length"],
             per_device_train_batch_size=training_config["per_device_train_batch_size"],
             gradient_accumulation_steps=training_config["gradient_accumulation_steps"],

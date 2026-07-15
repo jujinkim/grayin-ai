@@ -31,7 +31,9 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
 ## Directory Layout
 
 - `configs/`: tracked training configs.
+- `contracts/`: cross-language golden fixtures for the app/runtime prompt contract.
 - `scripts/`: tracked preparation, training, export-manifest, and artifact-policy checks.
+- `tests/`: dependency-free corpus, prompt-contract, leakage, and scorer tests.
 - `data/synthetic/`: tracked or generated synthetic JSONL examples.
 - `data/private/`: ignored. Local-only experiments; do not commit.
 - `reference-models/`: ignored Gemma reference model cache.
@@ -46,7 +48,19 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
    python3 model-training/scripts/build_training_corpus.py
    ```
 
-2. Put Gemma reference weights under ignored local path:
+   The generator writes 30 training and 30 held-out evaluation records: ten benchmark families in English, Korean, and Japanese. `--check` verifies that the committed JSONL still matches the deterministic generator without rewriting it.
+
+2. Validate the local-only contract and reference answers:
+
+   ```bash
+   python3 -m unittest discover -s model-training/tests -p 'test_*.py' -v
+   python3 model-training/scripts/validate_training_setup.py
+   python3 model-training/scripts/run_grounded_eval.py
+   ```
+
+   Validation rejects duplicate IDs, duplicate normalized queries or prompts, train/eval query or prompt leakage, incomplete family/language coverage, citation mismatches, malformed four-line answers, unknown evidence IDs, missing-source mismatches, and confidence mismatches.
+
+3. Put Gemma reference weights under ignored local path:
 
    ```text
    model-training/reference-models/gemma-4-e2b-it/
@@ -59,7 +73,7 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
    python3 model-training/scripts/download_reference_model.py
    ```
 
-3. Install training dependencies in separate environment:
+4. Install training dependencies in separate environment:
 
    ```bash
    python3 -m venv .venv-model-training
@@ -67,7 +81,7 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
    pip install -r model-training/requirements.txt
    ```
 
-4. Run LoRA/QLoRA training:
+5. Run LoRA/QLoRA training:
 
    ```bash
    python3 model-training/scripts/train_lora.py \
@@ -81,7 +95,7 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
      --config model-training/configs/grayin_gemma_lora_smoke.yaml
    ```
 
-5. Validate setup and ignored artifact paths:
+6. Validate reference weights and ignored artifact paths:
 
    ```bash
    python3 model-training/scripts/validate_training_setup.py
@@ -93,22 +107,36 @@ Allowed examples may include synthetic `EvidencePack`-shaped records that use fa
    python3 model-training/scripts/validate_training_setup.py --require-reference-model
    ```
 
-6. Export or convert artifacts outside git. Generated files remain under ignored `outputs/`.
+7. Export or convert artifacts outside git. Generated files remain under ignored `outputs/`.
 
-7. Check git artifact policy before commit:
+8. Check git artifact policy before commit:
 
    ```bash
    python3 model-training/scripts/check_artifact_policy.py
    ```
 
-## Evaluation Seed
+## Prompt and Answer Contract
 
-`data/synthetic/grayin_eval.jsonl` contains synthetic evaluation prompts for:
+`scripts/prompt_contract.py` mirrors `EvidencePackPromptBuilder`. The fixture and golden prompt under `contracts/` are checked from both Python and Kotlin tests. Training records contain the exact runtime prompt as the user message; `train_lora.py` then applies the pinned Gemma tokenizer chat template instead of training on a hand-written `SYSTEM/USER/ASSISTANT` wrapper.
 
-- missing source honesty
-- cited grounded answers
-- non-agentic refusals
-- no-evidence answers
+Every reference or predicted answer must use exactly four lines:
+
+```text
+Answer: <concise answer in the query language>
+Evidence: <exact evidence IDs, comma-separated; or none>
+Missing: <CAPABILITY: explanation entries, semicolon-separated; or none>
+Confidence: LOW, MEDIUM, HIGH, or UNKNOWN
+```
+
+The deterministic scorer does not call a model or network service. Without `--predictions`, it verifies the held-out fixtures and their reference answers. A later host or device model runner can provide JSONL predictions containing `id` and `answer`:
+
+```bash
+python3 model-training/scripts/run_grounded_eval.py \
+  --predictions model-training/outputs/eval/predictions.jsonl \
+  --json-out model-training/outputs/eval/summary.json
+```
+
+The scorer validates format, exact cited evidence, exact missing capabilities, confidence, and fixture-specific required/forbidden answer terms. It is a deterministic policy gate, not a semantic or device-runtime quality benchmark; final `.litertlm` latency, memory, and answer quality still require the release artifact and representative Android devices.
 
 ## Run Records
 
@@ -120,6 +148,9 @@ From repository root:
 
 ```bash
 make -f model-training/Makefile corpus
+make -f model-training/Makefile corpus-check
+make -f model-training/Makefile test
+make -f model-training/Makefile eval
 make -f model-training/Makefile validate
 make -f model-training/Makefile download-reference-dry-run
 make -f model-training/Makefile validate-strict

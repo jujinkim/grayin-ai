@@ -114,7 +114,8 @@ Location clusters accumulate user-triggered last-known observations by stable 0.
 - [ ] Configure a reviewed production P-256 public key and fixed manifest endpoint, then verify a real signed release manifest end to end.
 - [x] Validate imported LiteRT-LM container structure, version, size/space bounds, exact copy, and atomic publication beyond extension alone.
 - [ ] Verify an imported model's exact family/variant and successful engine initialization if the pinned LiteRT-LM API exposes an authenticated identity probe; until then the UI must disclose structural compatibility only.
-- [ ] Expand synthetic training/evaluation data and run grounded-answer benchmarks.
+- [x] Expand held-out synthetic training/evaluation coverage across 10 behavior families and English/Korean/Japanese, then run the deterministic grounded-answer contract benchmark.
+- [ ] Run the same grounded-answer benchmark against predictions from the trained/exported release model and record device quality, latency, and memory results.
 - [ ] Merge/export the release adapter to `.litertlm` outside git.
 - [ ] Publish the Grayin model to an immutable external artifact URL and configure catalog metadata.
 

@@ -2,7 +2,30 @@
 
 Each benchmark answer must be grounded in indexed evidence, include confidence, list missing data, and avoid claims that are not supported by citations.
 
-Current usable local MVP can satisfy text-backed parts of these benchmarks from user-selected `.txt` and `.md` files. Benchmarks requiring location, calendar, photos, payments, app usage, or person/call evidence must report those sources as missing until their connectors are implemented.
+The current app can index derived evidence from Local Files, Location, Photos, Calendar, Notifications, and App Usage when the relevant permission, platform capability, selected input, and date range are available. Direct call-log/person identity evidence remains unsupported. Every answer must reflect the actual `EvidencePack`; connector presence alone never permits a claim when the requested range is missing or sparse.
+
+## Executable Synthetic Gate
+
+`model-training/data/synthetic/grayin_eval.jsonl` provides held-out synthetic fixtures for all eight query families below plus non-agentic action refusal and the original-data privacy boundary. Each family has separate English, Korean, and Japanese training/evaluation cases. Exact query, rendered prompt, record ID, and evidence ID reuse across train/eval is rejected.
+
+The app and training pipeline share the versioned `evidence-pack-prompt-v1` contract. A candidate must return exactly:
+
+```text
+Answer: <concise answer>
+Evidence: <exact evidence IDs, comma-separated; or none>
+Missing: <CAPABILITY: explanation entries, semicolon-separated; or none>
+Confidence: LOW, MEDIUM, HIGH, or UNKNOWN
+```
+
+Run the dependency-free reference gate locally:
+
+```bash
+python3 model-training/scripts/build_training_corpus.py --check
+python3 model-training/scripts/validate_training_setup.py
+python3 model-training/scripts/run_grounded_eval.py
+```
+
+`run_grounded_eval.py --predictions <jsonl>` accepts synthetic prediction rows with `id` and `answer`. It fails on malformed output, duplicate or unknown citations, an unexpected evidence set, missing-capability mismatch, confidence mismatch, and fixture-specific required/forbidden expressions. It deliberately uses no remote or model-based grader. Passing the reference gate proves fixture and policy consistency only; final model quality, latency, memory, and LiteRT-LM compatibility require the exported `.litertlm` and representative Android-device runs.
 
 ## 1. Where did I go yesterday?
 

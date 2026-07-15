@@ -23,6 +23,7 @@ class FakeLocalLanguageModel : LocalLanguageModel {
                 inferenceNotes = listOf("No evidence items were supplied."),
                 confidence = ConfidenceLevel.UNKNOWN,
                 missingSources = evidencePack.missingSources,
+                groundingContractValid = true,
             )
         }
 
@@ -32,6 +33,7 @@ class FakeLocalLanguageModel : LocalLanguageModel {
             inferenceNotes = evidence.map { "Used evidence item ${it.id}." },
             confidence = combineConfidence(evidence.map { it.confidence }),
             missingSources = evidencePack.missingSources,
+            groundingContractValid = true,
         )
     }
 
@@ -43,4 +45,3 @@ class FakeLocalLanguageModel : LocalLanguageModel {
         return ConfidenceLevel.UNKNOWN
     }
 }
-
