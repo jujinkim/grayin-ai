@@ -3,13 +3,22 @@ package ai.grayin.core.store
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.indexing.AutomaticIndexingOutcome
 import ai.grayin.core.indexing.AutomaticIndexingRuntimeStatus
+import ai.grayin.core.indexing.ConnectorScanCommitResult
 import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.IndexingQueueState
 import ai.grayin.core.indexing.IndexingTask
 import ai.grayin.core.indexing.IndexingTrigger
+import ai.grayin.core.model.DerivedMemoryEvent
+import ai.grayin.core.model.DerivedMemoryEventKind
+import ai.grayin.core.model.ProcessingState
+import ai.grayin.core.model.SourceKind
+import ai.grayin.core.model.SourceReference
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +92,95 @@ class SqlCipherIndexingQueueInstrumentedTest {
             )
         }
         assertEquals(IndexingQueueState.RUNNING, store(databaseName).snapshot().items.single().state)
+    }
+
+    @Test
+    fun triggerFilteredClaimLeavesOtherTriggerPending() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T01:30:00Z")
+        val queue = store(databaseName)
+        val manual = manualTask(id = "manual-first", requestedAt = requestedAt)
+        val automatic = automaticTask(
+            id = "automatic-second",
+            requestedAt = requestedAt.plusSeconds(1),
+            windowKey = "2026-07-15:02-05",
+        )
+        queue.enqueue(listOf(manual, automatic))
+
+        val claimedAt = requestedAt.plusSeconds(2)
+        val claimed = queue.claimNextAtomically(
+            leaseOwner = "automatic-worker",
+            claimedAt = claimedAt,
+            leaseUntil = claimedAt.plusSeconds(60),
+            trigger = IndexingTrigger.AUTOMATIC,
+        )
+
+        assertEquals(automatic.id, checkNotNull(claimed).id)
+        val snapshot = queue.snapshot()
+        assertEquals(IndexingQueueState.PENDING, snapshot.items.single { it.id == manual.id }.state)
+        assertEquals(IndexingQueueState.RUNNING, snapshot.items.single { it.id == automatic.id }.state)
+    }
+
+    @Test
+    fun staleLeaseCannotCommitDerivedRows() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T01:45:00Z")
+        val queue = store(
+            databaseName = databaseName,
+            clock = Clock.fixed(requestedAt.plusSeconds(15), ZoneOffset.UTC),
+        )
+        queue.enqueue(listOf(manualTask(id = "fenced-commit", requestedAt = requestedAt)))
+
+        val firstClaimAt = requestedAt.plusSeconds(1)
+        val first = checkNotNull(
+            queue.claimNextAtomically(
+                leaseOwner = "stale-worker",
+                claimedAt = firstClaimAt,
+                leaseUntil = firstClaimAt.plusSeconds(10),
+                trigger = IndexingTrigger.MANUAL,
+            ),
+        )
+        queue.recoverExpiredLeases(now = firstClaimAt.plusSeconds(11), maxAttempts = 3)
+        val secondClaimAt = firstClaimAt.plusSeconds(12)
+        val second = checkNotNull(
+            queue.claimNextAtomically(
+                leaseOwner = "current-worker",
+                claimedAt = secondClaimAt,
+                leaseUntil = secondClaimAt.plusSeconds(10),
+                trigger = IndexingTrigger.MANUAL,
+            ),
+        )
+
+        val staleCommit = queue.commitClaimedConnectorScan(
+            scanResult = scanResult("stale"),
+            itemId = first.id,
+            leaseOwner = checkNotNull(first.leaseOwner),
+            attemptCount = first.attemptCount,
+        )
+
+        assertEquals(ConnectorScanCommitResult.LeaseLost, staleCommit)
+        assertEquals(emptyList<DerivedMemoryEvent>(), queue.loadDerivedMemoryEvents())
+
+        expectIllegalArgument {
+            queue.commitClaimedConnectorScan(
+                scanResult = scanResult("mismatch", connectorId = "different.connector"),
+                itemId = second.id,
+                leaseOwner = checkNotNull(second.leaseOwner),
+                attemptCount = second.attemptCount,
+            )
+        }
+        assertEquals(emptyList<DerivedMemoryEvent>(), queue.loadDerivedMemoryEvents())
+        assertEquals(IndexingQueueState.RUNNING, queue.snapshot().items.single().state)
+
+        val liveCommit = queue.commitClaimedConnectorScan(
+            scanResult = scanResult("current"),
+            itemId = second.id,
+            leaseOwner = checkNotNull(second.leaseOwner),
+            attemptCount = second.attemptCount,
+        )
+
+        assertEquals(IndexingQueueState.COMPLETED, (liveCommit as ConnectorScanCommitResult.Committed).item.state)
+        assertEquals(listOf("event:$TEST_CONNECTOR_ID:current"), queue.loadDerivedMemoryEvents().map { it.id })
     }
 
     @Test
@@ -207,6 +305,34 @@ class SqlCipherIndexingQueueInstrumentedTest {
         )
     }
 
+    private fun scanResult(
+        suffix: String,
+        connectorId: String = TEST_CONNECTOR_ID,
+    ): ConnectorScanResult {
+        val sourceId = "source:$connectorId:$suffix"
+        return ConnectorScanResult(
+            connectorId = connectorId,
+            processingState = ProcessingState.COMPLETED,
+            sourceReferences = listOf(
+                SourceReference(
+                    id = sourceId,
+                    connectorId = connectorId,
+                    sourceKind = SourceKind.LOCAL_FILE,
+                ),
+            ),
+            derivedEvents = listOf(
+                DerivedMemoryEvent(
+                    id = "event:$connectorId:$suffix",
+                    kind = DerivedMemoryEventKind.LOCAL_FILE_INDEX,
+                    sourceReferenceIds = listOf(sourceId),
+                    summary = "Derived instrumented event",
+                    createdAt = Instant.parse("2026-07-15T01:45:00Z"),
+                ),
+            ),
+            scannedAt = Instant.parse("2026-07-15T01:45:00Z"),
+        )
+    }
+
     private fun newDatabaseName(): String {
         return "grayin-indexing-test-${UUID.randomUUID()}.db".also { databaseName ->
             context.deleteDatabase(databaseName)
@@ -214,11 +340,15 @@ class SqlCipherIndexingQueueInstrumentedTest {
         }
     }
 
-    private fun store(databaseName: String): SqlCipherLocalMemoryStore {
+    private fun store(
+        databaseName: String,
+        clock: Clock = Clock.systemUTC(),
+    ): SqlCipherLocalMemoryStore {
         return SqlCipherLocalMemoryStore(
             context = context,
             passphraseProvider = FixedPassphraseProvider,
             databaseName = databaseName,
+            clock = clock,
         )
     }
 

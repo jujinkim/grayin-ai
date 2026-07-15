@@ -8,6 +8,8 @@ import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.AutomaticIndexingOutcome
 import ai.grayin.core.indexing.AutomaticIndexingRuntimeStatus
 import ai.grayin.core.indexing.AutomaticIndexingRuntimeStore
+import ai.grayin.core.indexing.ConnectorScanCommitResult
+import ai.grayin.core.indexing.ConnectorScanWriter
 import ai.grayin.core.indexing.IndexingQueue
 import ai.grayin.core.indexing.IndexingQueueItem
 import ai.grayin.core.indexing.IndexingQueueSnapshot
@@ -27,6 +29,7 @@ import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.PlaceCluster
 import ai.grayin.core.model.SourceAvailability
 import ai.grayin.core.model.SourceReference
+import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import net.zetetic.database.sqlcipher.SQLiteDatabase
@@ -36,94 +39,67 @@ class SqlCipherLocalMemoryStore(
     private val context: Context,
     private val passphraseProvider: StorePassphraseProvider = AndroidKeystorePassphraseProvider(),
     private val databaseName: String = DB_NAME,
-) : LocalMemoryStore, IndexingQueue, AutomaticIndexingRuntimeStore {
+    private val clock: Clock = Clock.systemUTC(),
+) : LocalMemoryStore, IndexingQueue, AutomaticIndexingRuntimeStore, ConnectorScanWriter {
     override suspend fun saveConnectorScan(scanResult: ConnectorScanResult): StoreWriteResult = withDatabase { db ->
         db.beginTransaction()
         try {
-            ConnectorScanValidator.validate(scanResult)
-            val existingCount = existingIds(
-                db,
-                TABLE_SOURCE_REFERENCES,
-                scanResult.sourceReferences.map { it.id },
-            ).size + existingIds(
-                db,
-                TABLE_DERIVED_EVENTS,
-                scanResult.derivedEvents.map { it.id },
-            ).size + existingIds(
-                db,
-                TABLE_CITATIONS,
-                scanResult.citations.map { it.id },
-            ).size + existingIds(
-                db,
-                TABLE_PLACE_CLUSTERS,
-                scanResult.placeClusters.map { it.id },
-            ).size + existingIds(
-                db,
-                TABLE_APP_USAGE_SUMMARIES,
-                scanResult.appUsageSummaries.map { it.id },
-            ).size
-
-            scanResult.sourceReferences.forEach { source ->
-                check(
-                    db.insertWithOnConflict(
-                        TABLE_SOURCE_REFERENCES,
-                        null,
-                        source.toValues(),
-                        SQLiteDatabase.CONFLICT_REPLACE,
-                    ) >= 0L,
-                ) { "Could not persist connector source reference." }
-            }
-            scanResult.derivedEvents.forEach { event ->
-                check(
-                    db.insertWithOnConflict(
-                        TABLE_DERIVED_EVENTS,
-                        null,
-                        event.toValues(),
-                        SQLiteDatabase.CONFLICT_REPLACE,
-                    ) >= 0L,
-                ) { "Could not persist connector derived event." }
-            }
-            scanResult.citations.forEach { citation ->
-                check(
-                    db.insertWithOnConflict(
-                        TABLE_CITATIONS,
-                        null,
-                        citation.toValues(),
-                        SQLiteDatabase.CONFLICT_REPLACE,
-                    ) >= 0L,
-                ) { "Could not persist connector citation." }
-            }
-            scanResult.placeClusters.forEach { cluster ->
-                check(
-                    db.insertWithOnConflict(
-                        TABLE_PLACE_CLUSTERS,
-                        null,
-                        cluster.toValues(),
-                        SQLiteDatabase.CONFLICT_REPLACE,
-                    ) >= 0L,
-                ) { "Could not persist connector place cluster." }
-            }
-            scanResult.appUsageSummaries.forEach { summary ->
-                check(
-                    db.insertWithOnConflict(
-                        TABLE_APP_USAGE_SUMMARIES,
-                        null,
-                        summary.toValues(),
-                        SQLiteDatabase.CONFLICT_REPLACE,
-                    ) >= 0L,
-                ) { "Could not persist connector app-usage summary." }
-            }
+            val result = writeConnectorScanRows(db, scanResult, completedAt = clock.instant())
             db.setTransactionSuccessful()
-            val totalCount = scanResult.sourceReferences.size +
-                scanResult.derivedEvents.size +
-                scanResult.citations.size +
-                scanResult.placeClusters.size +
-                scanResult.appUsageSummaries.size
-            StoreWriteResult(
-                insertedCount = totalCount - existingCount,
-                updatedCount = existingCount,
-                completedAt = Instant.now(),
+            result
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    override suspend fun commitClaimedConnectorScan(
+        scanResult: ConnectorScanResult,
+        itemId: String,
+        leaseOwner: String,
+        attemptCount: Int,
+    ): ConnectorScanCommitResult = withDatabase { db ->
+        require(itemId.isNotBlank()) { "Indexing item ID must not be blank." }
+        require(leaseOwner.isNotBlank()) { "Lease owner must not be blank." }
+        require(attemptCount > 0) { "Attempt count must be positive." }
+        db.beginTransaction()
+        try {
+            val completedAt = clock.instant()
+            val current = readQueueItem(db, itemId)
+            val ownsLiveLease = current?.state == IndexingQueueState.RUNNING &&
+                current.leaseOwner == leaseOwner &&
+                current.attemptCount == attemptCount &&
+                current.leaseUntil?.isAfter(completedAt) == true
+            if (!ownsLiveLease) {
+                db.setTransactionSuccessful()
+                return@withDatabase ConnectorScanCommitResult.LeaseLost
+            }
+
+            require(scanResult.connectorId == current.connectorId) {
+                "Connector scan does not belong to the claimed indexing task."
+            }
+            writeConnectorScanRows(db, scanResult, completedAt)
+            val updated = checkNotNull(current).copy(
+                state = IndexingQueueState.COMPLETED,
+                indexedEventCount = scanResult.derivedEvents.size,
+                completedAt = completedAt,
+                leaseOwner = null,
+                leaseUntil = null,
             )
+            val count = db.update(
+                TABLE_INDEXING_QUEUE,
+                updated.toValues(),
+                "id = ? AND state = ? AND lease_owner = ? AND attempt_count = ? AND lease_until_ms > ?",
+                arrayOf(
+                    itemId,
+                    IndexingQueueState.RUNNING.name,
+                    leaseOwner,
+                    attemptCount.toString(),
+                    completedAt.toEpochMilli().toString(),
+                ),
+            )
+            check(count == 1) { "Indexing lease changed before the derived scan committed." }
+            db.setTransactionSuccessful()
+            ConnectorScanCommitResult.Committed(updated)
         } finally {
             db.endTransaction()
         }
@@ -301,6 +277,7 @@ class SqlCipherLocalMemoryStore(
         leaseOwner: String,
         claimedAt: Instant,
         leaseUntil: Instant,
+        trigger: IndexingTrigger?,
     ): IndexingQueueItem? = withDatabase { db ->
         require(leaseOwner.isNotBlank()) { "Lease owner must not be blank." }
         require(leaseUntil.isAfter(claimedAt)) { "Lease expiry must be after claim time." }
@@ -308,8 +285,12 @@ class SqlCipherLocalMemoryStore(
         try {
             val pending = readQueueItems(
                 db = db,
-                selection = "state = ?",
-                selectionArgs = arrayOf(IndexingQueueState.PENDING.name),
+                selection = if (trigger == null) "state = ?" else "state = ? AND trigger = ?",
+                selectionArgs = if (trigger == null) {
+                    arrayOf(IndexingQueueState.PENDING.name)
+                } else {
+                    arrayOf(IndexingQueueState.PENDING.name, trigger.name)
+                },
                 orderBy = "requested_at_ms ASC, id ASC",
                 limit = 1,
             ).firstOrNull()
@@ -554,6 +535,96 @@ class SqlCipherLocalMemoryStore(
                 ) >= 0L,
             ) { "Could not persist automatic indexing status." }
         }
+    }
+
+    private fun writeConnectorScanRows(
+        db: SQLiteDatabase,
+        scanResult: ConnectorScanResult,
+        completedAt: Instant,
+    ): StoreWriteResult {
+        ConnectorScanValidator.validate(scanResult)
+        val existingCount = existingIds(
+            db,
+            TABLE_SOURCE_REFERENCES,
+            scanResult.sourceReferences.map { it.id },
+        ).size + existingIds(
+            db,
+            TABLE_DERIVED_EVENTS,
+            scanResult.derivedEvents.map { it.id },
+        ).size + existingIds(
+            db,
+            TABLE_CITATIONS,
+            scanResult.citations.map { it.id },
+        ).size + existingIds(
+            db,
+            TABLE_PLACE_CLUSTERS,
+            scanResult.placeClusters.map { it.id },
+        ).size + existingIds(
+            db,
+            TABLE_APP_USAGE_SUMMARIES,
+            scanResult.appUsageSummaries.map { it.id },
+        ).size
+
+        scanResult.sourceReferences.forEach { source ->
+            check(
+                db.insertWithOnConflict(
+                    TABLE_SOURCE_REFERENCES,
+                    null,
+                    source.toValues(),
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                ) >= 0L,
+            ) { "Could not persist connector source reference." }
+        }
+        scanResult.derivedEvents.forEach { event ->
+            check(
+                db.insertWithOnConflict(
+                    TABLE_DERIVED_EVENTS,
+                    null,
+                    event.toValues(),
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                ) >= 0L,
+            ) { "Could not persist connector derived event." }
+        }
+        scanResult.citations.forEach { citation ->
+            check(
+                db.insertWithOnConflict(
+                    TABLE_CITATIONS,
+                    null,
+                    citation.toValues(),
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                ) >= 0L,
+            ) { "Could not persist connector citation." }
+        }
+        scanResult.placeClusters.forEach { cluster ->
+            check(
+                db.insertWithOnConflict(
+                    TABLE_PLACE_CLUSTERS,
+                    null,
+                    cluster.toValues(),
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                ) >= 0L,
+            ) { "Could not persist connector place cluster." }
+        }
+        scanResult.appUsageSummaries.forEach { summary ->
+            check(
+                db.insertWithOnConflict(
+                    TABLE_APP_USAGE_SUMMARIES,
+                    null,
+                    summary.toValues(),
+                    SQLiteDatabase.CONFLICT_REPLACE,
+                ) >= 0L,
+            ) { "Could not persist connector app-usage summary." }
+        }
+        val totalCount = scanResult.sourceReferences.size +
+            scanResult.derivedEvents.size +
+            scanResult.citations.size +
+            scanResult.placeClusters.size +
+            scanResult.appUsageSummaries.size
+        return StoreWriteResult(
+            insertedCount = totalCount - existingCount,
+            updatedCount = existingCount,
+            completedAt = completedAt,
+        )
     }
 
     private fun transitionTerminal(

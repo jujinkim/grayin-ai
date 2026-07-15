@@ -68,6 +68,8 @@ Notifications supports explicit notification-listener settings access plus app-l
 
 Automatic indexing plans only background-scannable connectors. Foreground-only connectors remain available through explicit user actions, and event-driven connectors do not show a misleading manual historical-index action.
 
+All Android entry points use the same validated connector registry. Registry construction rejects blank or duplicate connector IDs, preventing controller and background execution from resolving the same ID to different implementations. Manual and automatic scans share the durable indexing command executor; notification arrivals remain on their event-driven listener path.
+
 ## MVP API Boundary
 
 The MVP connector interface exposes only:

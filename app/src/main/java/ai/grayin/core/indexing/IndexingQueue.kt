@@ -216,6 +216,7 @@ interface IndexingQueue {
         leaseOwner: String,
         claimedAt: Instant,
         leaseUntil: Instant,
+        trigger: IndexingTrigger? = null,
     ): IndexingQueueItem?
 
     suspend fun complete(

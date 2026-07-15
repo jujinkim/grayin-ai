@@ -2,14 +2,12 @@ package ai.grayin.app
 
 import android.content.Context
 import android.net.Uri
-import ai.grayin.connectors.calendar.CalendarConnector
+import ai.grayin.connectors.AndroidConnectorRegistry
 import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFilesConnector
 import ai.grayin.connectors.location.LocationConnector
 import ai.grayin.connectors.notification.NotificationAppAllowlist
 import ai.grayin.connectors.notification.NotificationConnector
-import ai.grayin.connectors.photos.PhotosConnector
-import ai.grayin.connectors.usagestats.AppUsageConnector
 import ai.grayin.core.ai.Gemma4LocalLanguageModel
 import ai.grayin.core.ai.Gemma4ModelPathResolver
 import ai.grayin.core.ai.LocalLanguageModel
@@ -24,10 +22,9 @@ import ai.grayin.core.ai.ModelInstallRecord
 import ai.grayin.core.ai.ModelInstallStore
 import ai.grayin.core.connector.ConnectorPermissionState
 import ai.grayin.core.connector.ConnectorIndexingMode
-import ai.grayin.core.connector.ConnectorScanScope
-import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.InvokableMemoryConnector
 import ai.grayin.core.connector.MemoryConnector
+import ai.grayin.core.connector.MemoryConnectorRegistry
 import ai.grayin.core.grounding.GroundedAnswerRequest
 import ai.grayin.core.grounding.GroundedAnswerGenerator
 import ai.grayin.core.grounding.TemplateGroundedAnswerGenerator
@@ -42,6 +39,17 @@ import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceReference
 import ai.grayin.core.enrichment.OnlineEnrichmentPreferences
+import ai.grayin.core.indexing.ConnectorScanWriter
+import ai.grayin.core.indexing.IndexConnector
+import ai.grayin.core.indexing.IndexNow
+import ai.grayin.core.indexing.IndexingCommand
+import ai.grayin.core.indexing.IndexingCommandExecutor
+import ai.grayin.core.indexing.IndexingFailureCode
+import ai.grayin.core.indexing.IndexingQueue
+import ai.grayin.core.indexing.IndexingQueueItem
+import ai.grayin.core.indexing.IndexingQueueState
+import ai.grayin.core.indexing.IndexingSkipReason
+import ai.grayin.core.indexing.IndexingTrigger
 import ai.grayin.core.retrieval.DefaultQueryPlanner
 import ai.grayin.core.retrieval.EvidenceEventSelector
 import ai.grayin.core.retrieval.MissingEvidenceResolver
@@ -102,14 +110,17 @@ data class GrayinSnapshot(
 class GrayinMemoryController(
     context: Context,
     private val store: LocalMemoryStore = SqlCipherLocalMemoryStore(context.applicationContext),
-    val localFilesConnector: LocalFilesConnector = LocalFilesConnector(context.applicationContext),
-    private val sourceConnectors: List<MemoryConnector> = listOf(
-        LocationConnector(context.applicationContext),
-        PhotosConnector(context.applicationContext),
-        CalendarConnector(context.applicationContext),
-        NotificationConnector(context.applicationContext),
-        AppUsageConnector(context.applicationContext),
-        localFilesConnector,
+    private val indexingQueue: IndexingQueue = store as? IndexingQueue
+        ?: error("The local memory store must also provide the encrypted indexing queue."),
+    private val connectorScanWriter: ConnectorScanWriter = store as? ConnectorScanWriter
+        ?: error("The local memory store must provide fenced connector scan commits."),
+    private val androidConnectors: AndroidConnectorRegistry = AndroidConnectorRegistry(context.applicationContext),
+    val localFilesConnector: LocalFilesConnector = androidConnectors.localFilesConnector,
+    private val connectorRegistry: MemoryConnectorRegistry = androidConnectors.registry,
+    private val indexingExecutor: IndexingCommandExecutor = IndexingCommandExecutor(
+        connectorRegistry = connectorRegistry,
+        queue = indexingQueue,
+        scanWriter = connectorScanWriter,
     ),
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
     private val notificationAllowlist: NotificationAppAllowlist = NotificationAppAllowlist(context.applicationContext),
@@ -135,7 +146,7 @@ class GrayinMemoryController(
         val localModelStatus = runCatching { localLanguageModel.status() }
             .getOrDefault(LocalModelStatus.UNAVAILABLE)
         GrayinSnapshot(
-            sourceRows = sourceConnectors.map { connector -> sourceRow(connector, sourceReferences, strings) },
+            sourceRows = connectorRegistry.all.map { connector -> sourceRow(connector, sourceReferences, strings) },
             timelineRows = timelineRows(events, strings),
             placesRows = listOf(strings.noPlaceClusters),
             settingsRows = listOf(
@@ -223,59 +234,41 @@ class GrayinMemoryController(
     }
 
     suspend fun indexLocalFiles(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
-        val scanResult = localFilesConnector.scan(ConnectorScanScope(forceRefresh = true))
-        store.saveConnectorScan(scanResult)
-        localFilesConnector.onScanStored(scanResult)
-        when {
-            scanResult.derivedEvents.isNotEmpty() -> {
-                strings.indexedLocalFileEvents(scanResult.derivedEvents.size)
-            }
-
-            scanResult.missingSources.isNotEmpty() -> {
-                scanResult.missingSources.first().explanation
-            }
-
-            else -> strings.noLocalFilesIndexed
-        }
+        val result = enqueueAndDrain(IndexConnector(LocalFileMemoryExtractor.CONNECTOR_ID)).singleOrNull()
+        singleIndexResult(
+            connector = localFilesConnector,
+            result = result,
+            strings = strings,
+            localFiles = true,
+        )
     }
 
     suspend fun indexConnector(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
-        if (connectorId == LocalFileMemoryExtractor.CONNECTOR_ID) return@withContext indexLocalFiles(strings)
         val connector = connectorFor(connectorId)
-        val scanResult = scanAndStore(connector)
-        when {
-            scanResult.derivedEvents.isNotEmpty() -> {
-                strings.indexedConnectorEvents(
-                    connectorName = strings.connectorName(connectorId, connector.metadata.displayName),
-                    count = scanResult.derivedEvents.size,
-                )
-            }
-
-            scanResult.missingSources.isNotEmpty() -> scanResult.missingSources.first().explanation
-            else -> strings.noLocalFilesIndexed
-        }
+        val result = enqueueAndDrain(IndexConnector(connectorId)).singleOrNull()
+        singleIndexResult(
+            connector = connector,
+            result = result,
+            strings = strings,
+            localFiles = connectorId == LocalFileMemoryExtractor.CONNECTOR_ID,
+        )
     }
 
     suspend fun indexAllEnabledSources(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
-        var scannedSources = 0
-        var indexedEvents = 0
-        var skippedSources = 0
-
-        sourceConnectors.forEach { connector ->
-            val state = connector.currentState()
-            if (state.enabled) {
-                scannedSources += 1
-                val scanResult = scanAndStore(connector)
-                indexedEvents += scanResult.derivedEvents.size
-                if (scanResult.derivedEvents.isEmpty() && scanResult.missingSources.isNotEmpty()) {
-                    skippedSources += 1
-                }
-            }
+        val results = enqueueAndDrain(IndexNow)
+        val scanned = results.filter { result ->
+            result.state == IndexingQueueState.COMPLETED ||
+                result.skipReason == IndexingSkipReason.NO_INDEXABLE_DATA ||
+                result.state == IndexingQueueState.FAILED
         }
-
         when {
-            scannedSources == 0 -> strings.noSourcesReadyToIndex
-            else -> strings.indexedAllSources(indexedEvents, scannedSources, skippedSources)
+            results.isEmpty() || scanned.isEmpty() -> strings.noSourcesReadyToIndex
+            scanned.all { result -> result.state == IndexingQueueState.FAILED } -> strings.indexingFailed
+            else -> strings.indexedAllSources(
+                eventCount = scanned.sumOf { result -> result.indexedEventCount },
+                sourceCount = scanned.size,
+                skippedCount = scanned.count { result -> result.state == IndexingQueueState.SKIPPED },
+            )
         }
     }
 
@@ -397,14 +390,58 @@ class GrayinMemoryController(
     }
 
     private fun connectorFor(connectorId: String): MemoryConnector {
-        return sourceConnectors.first { it.metadata.connectorId == connectorId }
+        return connectorRegistry.require(connectorId)
     }
 
-    private suspend fun scanAndStore(connector: MemoryConnector): ConnectorScanResult {
-        val scanResult = connector.scan(ConnectorScanScope(forceRefresh = true))
-        store.saveConnectorScan(scanResult)
-        connector.onScanStored(scanResult)
-        return scanResult
+    private suspend fun enqueueAndDrain(command: IndexingCommand): List<IndexingQueueItem> {
+        val enqueued = indexingExecutor.enqueue(command = command, trigger = IndexingTrigger.MANUAL)
+        if (enqueued.isEmpty()) return emptyList()
+        val requestedIds = enqueued.mapTo(mutableSetOf()) { item -> item.id }
+        return indexingExecutor.drain(
+            trigger = IndexingTrigger.MANUAL,
+            leaseOwner = MANUAL_INDEXING_LEASE_OWNER,
+            maxTasks = MAX_MANUAL_DRAIN_TASKS,
+        ).filter { item -> item.id in requestedIds }
+    }
+
+    private fun singleIndexResult(
+        connector: MemoryConnector,
+        result: IndexingQueueItem?,
+        strings: GrayinStrings,
+        localFiles: Boolean,
+    ): String {
+        if (result == null) return strings.indexing
+        return when (result.state) {
+            IndexingQueueState.COMPLETED -> if (localFiles) {
+                strings.indexedLocalFileEvents(result.indexedEventCount)
+            } else {
+                strings.indexedConnectorEvents(
+                    connectorName = strings.connectorName(
+                        connector.metadata.connectorId,
+                        connector.metadata.displayName,
+                    ),
+                    count = result.indexedEventCount,
+                )
+            }
+
+            IndexingQueueState.SKIPPED -> when (result.skipReason) {
+                IndexingSkipReason.MISSING_PERMISSION -> strings.sourcePermissionDenied
+                IndexingSkipReason.SOURCE_DISABLED,
+                IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE,
+                -> strings.connectorConnectionUnavailable
+
+                else -> strings.noLocalFilesIndexed
+            }
+
+            IndexingQueueState.FAILED -> when (result.failureCode) {
+                IndexingFailureCode.CONNECTOR_NOT_FOUND -> strings.connectorConnectionUnavailable
+                else -> strings.indexingFailed
+            }
+
+            IndexingQueueState.PENDING,
+            IndexingQueueState.RUNNING,
+            -> strings.indexing
+        }
     }
 
     suspend fun ask(query: String, strings: GrayinStrings): AnswerUiState = withContext(Dispatchers.IO) {
@@ -601,5 +638,7 @@ class GrayinMemoryController(
     private companion object {
         const val MAX_EVIDENCE_ITEMS = 8
         const val MAX_TIMELINE_ROWS = 30
+        const val MAX_MANUAL_DRAIN_TASKS = 64
+        const val MANUAL_INDEXING_LEASE_OWNER = "manual-ui"
     }
 }

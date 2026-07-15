@@ -21,6 +21,8 @@ A connector scan is accepted as one derived-only `ConnectorScanResult`. Source r
 
 The store contract must not accept original file bytes, notification originals, message originals, raw calendar records, raw usage logs, raw local-file content, or raw source payloads.
 
+The v2 indexing queue is also SQLCipher-backed. Manual and automatic claims are filtered inside the same transaction that installs the worker lease. A successful connector execution validates the scan connector ID, claimed item ID, lease owner, attempt number, and unexpired lease in the same SQLCipher transaction that writes derived rows and marks the task complete. A mismatched connector rolls back, and a stale worker returns a lease-lost result before any derived row is written. Other terminal writes require the claimed item ID, lease owner, and attempt number, and expired leases are requeued or failed by a bounded attempt policy.
+
 ## Read APIs
 
 Read APIs cover all six allowed derived sections. `loadSnapshot()` reads source references, events, citations, daily summaries, place clusters, and app-usage summaries in one database transaction so Ask and future encrypted export cannot mix generations.

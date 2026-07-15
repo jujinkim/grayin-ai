@@ -82,3 +82,5 @@ Core model types must not add fields for original file bytes, raw notification t
 It must never add a method that accepts original file bytes, raw notification text, raw message text, raw local-file content, raw calendar records, raw usage event dumps, or raw source payloads.
 
 The SQLCipher indexing queue may persist only connector/command metadata, date-range bounds, timestamps, leases, attempt/count fields, and stable skip/failure codes. It must never persist connector output, exception messages, source URIs, or source-derived text.
+
+The shared command executor catches connector/store failures only to select those stable codes. It does not persist exception messages, scan results, missing-source prose, or provider response bodies in the queue. The derived scan itself is written only by the SQLCipher store after an atomic live-lease check; it is never serialized into the queue. Cancellation is propagated and recovered through lease metadata rather than serialized error details.
