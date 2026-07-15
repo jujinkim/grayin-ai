@@ -1,6 +1,6 @@
 # Roadmap
 
-Current phase status: the repository-local implementation plan is complete through Step 9. External release inputs and physical-device acceptance remain separate below so unavailable credentials, model artifacts, providers, or hardware are never presented as code placeholders.
+Current phase status: the repository-local implementation plan is complete through Step 9. `docs/remaining-work.md` is the single source of truth for external release inputs, physical-device acceptance, release quality, and explicitly deferred scope.
 
 ## Current Capability
 
@@ -94,7 +94,7 @@ The implemented installer boundary and document-runtime limits are specified in 
 - [x] Relock on process start and non-configuration background, and fence stale authentication callbacks without a bypass.
 - [x] Add JVM and Android lifecycle coverage for secure-window, lock, unlock, failure, rotation, and background transitions.
 
-The lifecycle instrumentation covers persisted secure-window startup, Activity recreation, unlocked-session configuration continuity, ordinary background relock, and protected-content gating. Its source compiles on the host; biometric/PIN system-UI execution, screenshots/recording, process death, and API 26/29/30 device behavior remain in the physical-device acceptance section because no device or emulator is connected.
+The lifecycle instrumentation covers persisted secure-window startup, Activity recreation, unlocked-session configuration continuity, ordinary background relock, and protected-content gating. Its source compiles on the host; biometric/PIN system-UI execution, screenshots/recording, process death, and API 26/29/30 device behavior remain in the physical-device acceptance queue in `docs/remaining-work.md` because no device or emulator is connected.
 
 ### 7. Source and UI Completion
 
@@ -117,7 +117,7 @@ Location clusters accumulate user-triggered last-known observations by stable 0.
 - [x] Expand held-out synthetic training/evaluation coverage across 10 behavior families and English/Korean/Japanese, then run the deterministic grounded-answer contract benchmark.
 - [x] Implement fail-closed local LoRA merge, explicit `dynamic_wi8_afp32` LiteRT export, exact 30-fixture CLI output gate, and provenance/local-manifest tooling without committing artifacts.
 
-Repository tooling prepares and validates a release without committing weights, private keys, credentials, or generated provenance. Actual release execution remains an external gate below.
+Repository tooling prepares and validates a release without committing weights, private keys, credentials, or generated provenance. Actual release execution is tracked in `docs/remaining-work.md`.
 
 ### 9. Final Verification
 
@@ -126,32 +126,8 @@ Repository tooling prepares and validates a release without committing weights, 
 - [x] Run Android lint, debug/release builds, APK boundary inspections, model-training policy gates, and repository diff checks.
 - [x] Remove stale roadmap/status text and confirm every repository-enforceable hard constraint.
 
-Host verification completed on 2026-07-15. A clean rerun executed 119 Gradle tasks: all 377 JVM tests passed with zero failures; Android instrumentation sources compiled; debug and unsigned release APKs assembled; lint completed with no errors (76 warnings and 3 hints remain); and the OCR-data, PDF/OCR notice, document-runtime, and debug/release model-artifact APK boundaries passed. The model tooling checked 30 training and 30 held-out records across 10 families and 3 languages, passed all 30 deterministic grounded-answer fixtures and all 46 Python tests, and passed configuration, artifact-policy, release-plan, smoke-plan, bytecode-compilation, and diff checks. An independent final diff review found no remaining high- or medium-severity repository issue. Instrumentation execution and real model/provider release acceptance remain in the explicit gates below.
+Host verification completed on 2026-07-15. A clean rerun executed 119 Gradle tasks: all 377 JVM tests passed with zero failures; Android instrumentation sources compiled; debug and unsigned release APKs assembled; lint completed with no errors (76 warnings and 3 hints remain); and the OCR-data, PDF/OCR notice, document-runtime, and debug/release model-artifact APK boundaries passed. The model tooling checked 30 training and 30 held-out records across 10 families and 3 languages, passed all 30 deterministic grounded-answer fixtures and all 46 Python tests, and passed configuration, artifact-policy, release-plan, smoke-plan, bytecode-compilation, and diff checks. An independent final diff review found no remaining high- or medium-severity repository issue.
 
-## External Operational Release Gates
+## Remaining Work
 
-These require release artifacts, contracts, credentials, or key custody that do not belong in git:
-
-- select a commercial-compatible map/weather provider or paid contract and update its fixed typed adapter/disclosure
-- independently approve the base model, training adapter, licenses, exact input digests, and hermetic release environment
-- run the real LoRA merge and explicit WI8/AFP32 export, then pass all 30 CLI fixtures with the resulting `.litertlm`
-- publish the accepted model at an immutable HTTPS URL with final license/terms, exact byte count, and SHA-256
-- configure production P-256 signing-key custody and the fixed manifest endpoint, then verify a real signed release end to end
-
-## Physical-Device Acceptance Gates
-
-No device or emulator is connected in the current environment. The following must run on representative Android API levels and hardware:
-
-- connector permission/settings flows, Android 14 selected-photo reselection, usage access, and notification-listener delivery
-- persisted SAF grant/revoke, embedded PDF text, installed-pack OCR, cancellation, timeout, and `:document` process-death recovery
-- WorkManager charging/battery/thermal/window behavior and restart recovery
-- biometric/device-credential system UI, process death, rotation/background relock, screenshots/recording, and `FLAG_SECURE`
-- real LiteRT-LM engine initialization plus grounded quality, latency, and memory measurement for the accepted model
-- authenticated imported-model family/variant identity if the pinned runtime later exposes such a probe; current UI deliberately claims structural compatibility only
-
-## Explicit Future Scope
-
-- photo pixel understanding, visual captions, and visual-content clusters
-- a reviewed historical-location source beyond last-known observations seen by Grayin scans
-- calls, messages, browser history, audio, and video connectors
-- cloud sync, accounts, application backend, analytics, ads, crash reporting, remote LLMs, or agentic actions unless the product and security boundaries are explicitly revised
+All open work, blockers, ordering, completion criteria, and next-session commands live in `docs/remaining-work.md`. Keep this roadmap as completed implementation and verification history; do not duplicate open checklists here.

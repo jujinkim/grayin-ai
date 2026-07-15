@@ -493,7 +493,7 @@ Import validates and authenticates the complete graph before mutation, requires 
 After each coherent step:
 
 1. update affected documentation
-2. update `docs/roadmap.md` when scope or future work changes
+2. update `docs/remaining-work.md` for open scope, blockers, order, and completion criteria; update `docs/roadmap.md` only with durable completed behavior and verification
 3. run available checks/builds
 4. commit the changes with a clear git commit message
 

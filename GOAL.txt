@@ -3,15 +3,16 @@ Build Grayin AI by following the repository documentation.
 Always read and follow:
 - docs/product-spec.md
 - docs/roadmap.md
+- docs/remaining-work.md
 - docs/network-policy.md
 - docs/zero-raw-retention.md
 - docs/non-agentic-boundary.md
 - docs/privacy-model.md
 - docs/security-policy.md
 
-The repository-local MVP includes the real Android connectors, Text/Markdown/PDF plus on-device OCR indexing, typed external enrichment, persistent automatic indexing, encrypted export/import, optional app security, and the local Gemma runtime adapter. External release artifacts, production credentials/keys, commercial provider selection, and physical-device acceptance remain explicit roadmap gates rather than hidden code placeholders.
+The repository-local MVP includes the real Android connectors, Text/Markdown/PDF plus on-device OCR indexing, typed external enrichment, persistent automatic indexing, encrypted export/import, optional app security, and the local Gemma runtime adapter. `docs/remaining-work.md` tracks external release artifacts, production credentials/keys, commercial provider selection, physical-device acceptance, release quality, and deferred scope rather than hiding them behind code placeholders.
 
-For new work, choose the next coherent roadmap item from docs/roadmap.md and keep the implementation scoped.
+For new work, choose the first unblocked coherent item from `docs/remaining-work.md` unless the user changes priority. Keep `docs/roadmap.md` as completed implementation and verification history.
 
 After each coherent step:
 1. update affected documentation,

@@ -46,20 +46,9 @@
 - an Android historical-location archive beyond samples explicitly observed by Grayin scans
 - calls, messages, browser history, audio, or video connectors
 
-## External Release Gates
+## Remaining Work
 
-- select a commercial-compatible enrichment provider or contract for production use
-- train, independently review, merge, and export the actual model in a hermetic release environment
-- pass all 30 model-output fixtures plus representative-device quality, latency, and memory acceptance
-- publish the reviewed artifact at an immutable HTTPS URL with final license, exact size, and SHA-256
-- configure production P-256 signing-key custody and the fixed signed-manifest endpoint
-
-## Physical-Device Acceptance Gates
-
-- Android permission/settings and partial-photo reselection flows
-- SAF persistence/revocation, PDF embedded-text/OCR, cancellation, timeout, and document-process death
-- WorkManager constraints, notification-listener delivery, biometric/device credential, and `FLAG_SECURE` across the supported API matrix
-- real LiteRT-LM engine initialization and inference on representative devices
+`docs/remaining-work.md` is the single source of truth for external release blockers, physical-device acceptance, release quality, and deferred product scope. This file defines MVP inclusion and exclusion only; do not duplicate the open queue here.
 
 ## MVP Connectors
 

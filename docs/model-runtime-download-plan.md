@@ -28,6 +28,8 @@ Model downloads use the fixed-artifact network boundary in `docs/network-policy.
 
 ## External Activation Requirements
 
+This section defines model-activation invariants. Execution order, current blockers, completion criteria, and session handoff status live only in `docs/remaining-work.md`.
+
 - Set up Grayin dedicated model hosting outside git, preferably object storage/CDN rather than GitHub Pages, with immutable release URLs and no arbitrary user-entered endpoints.
 - Publish a release manifest for the Grayin dedicated model with model id, version, file name, byte size, SHA-256 checksum, license/terms URL, minimum app/runtime version, container major version, bounded validity, monotonic sequence, and replacement/deprecation metadata. Sign the exact canonical payload with an external ECDSA P-256 private key and verify it with the reviewed public key bundled in the app. The mutable manifest uses one fixed bounded endpoint rather than pretending that future manifest bytes can have an APK-pinned digest.
 - Keep Grayin dedicated model catalog entry disabled until server URL/checksum are configured.

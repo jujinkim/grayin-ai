@@ -74,7 +74,7 @@ Examples:
 
 The private bounded Pdfium/Tesseract document runtime, language-data installer, and Local Files PDF integration are implemented. Selected document identities are stored only as Android Keystore HMACs; PDF/page originals, names, URIs, text, and images are not stored. Installing a language pack remains a separate Settings action and indexing never starts a download.
 
-See `docs/pdf-ocr.md` for the fixed catalog, privacy boundary, resource limits, and remaining device acceptance checks.
+See `docs/pdf-ocr.md` for the fixed catalog, privacy boundary, and resource limits. Open device acceptance work is tracked in `docs/remaining-work.md`.
 
 With the corresponding source indexed, current bounded questions include:
 
@@ -136,6 +136,6 @@ ANDROID_HOME=/home/jujin/workspace/android-sdk ANDROID_SDK_ROOT=/home/jujin/work
 
 The manifest includes `android.permission.INTERNET` for typed external enrichment and verified fixed-catalog artifact downloads.
 
-## Roadmap
+## Roadmap and Remaining Work
 
-The validated baseline and remaining completion steps are tracked separately in `docs/roadmap.md`.
+`docs/roadmap.md` records the completed implementation and verified baseline. `docs/remaining-work.md` is the single source of truth for open work and next-session handoff.

@@ -25,10 +25,10 @@ Git history uses short imperative commits such as `Add MVP 8 grounded answer for
 
 ## Agent Workflow
 
-Before implementation work, read `docs/product-spec.md`, `docs/roadmap.md`, `docs/network-policy.md`, `docs/zero-raw-retention.md`, and `docs/non-agentic-boundary.md`. Use `docs/roadmap.md` for future work because the completed MVP task list has been removed.
+Before implementation work, read `docs/product-spec.md`, `docs/roadmap.md`, `docs/remaining-work.md`, `docs/network-policy.md`, `docs/zero-raw-retention.md`, and `docs/non-agentic-boundary.md`. Use `docs/remaining-work.md` as the single source of truth for open work. Keep `docs/roadmap.md` as completed implementation and verification history.
 
 Implement one coherent step at a time. Update affected docs, run available checks or builds, and commit with a clear message.
 
 ## Security & Configuration Tips
 
-MVP constraints are hard requirements: network use is limited to typed map/place/reverse-geocode/weather enrichment and fixed-catalog model, authenticated manifest, or OCR language-data downloads defined by `docs/network-policy.md`. No arbitrary or user-supplied URL/endpoint, remote LLM, application backend, cloud sync, account SDK, analytics, ads, telemetry, crash SDK, or raw/original data storage, logging, caching, export, sync, or transmission. Derived memory storage must stay SQLCipher-backed with Android Keystore passphrase protection. When changing behavior, update affected files in `docs/` and keep `docs/roadmap.md` aligned if scope changes.
+MVP constraints are hard requirements: network use is limited to typed map/place/reverse-geocode/weather enrichment and fixed-catalog model, authenticated manifest, or OCR language-data downloads defined by `docs/network-policy.md`. No arbitrary or user-supplied URL/endpoint, remote LLM, application backend, cloud sync, account SDK, analytics, ads, telemetry, crash SDK, or raw/original data storage, logging, caching, export, sync, or transmission. Derived memory storage must stay SQLCipher-backed with Android Keystore passphrase protection. When changing behavior, update affected files in `docs/`, record durable completed behavior in `docs/roadmap.md`, and keep only open work in `docs/remaining-work.md`.
