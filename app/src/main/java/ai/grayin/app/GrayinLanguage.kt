@@ -10,6 +10,8 @@ import ai.grayin.core.indexing.AutomaticIndexingOutcome
 import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.IndexingSkipReason
 import ai.grayin.core.indexing.IndexingTrigger
+import ai.grayin.core.security.AppLockState
+import ai.grayin.core.security.AppSecurityFailure
 import ai.grayin.core.transfer.TransferFailureCode
 import java.time.Instant
 import java.time.ZoneId
@@ -191,6 +193,139 @@ data class GrayinStrings(
     val indexedSourceReferencesPrefix: String,
     val derivedMemoryEventsPrefix: String,
 ) {
+    fun appSecurityTitle(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "앱 보안"
+        GrayinLanguage.JAPANESE -> "アプリのセキュリティ"
+        GrayinLanguage.ENGLISH -> "App security"
+    }
+
+    fun appSecurityDisclosure(): String = when (languageCode) {
+        GrayinLanguage.KOREAN ->
+            "스크린샷 차단과 시스템 생체 인증 또는 기기 잠금 인증으로 화면을 보호합니다. 앱 잠금이 켜져 있으면 스크린샷도 항상 차단됩니다. Grayin은 생체 정보, PIN, 패턴, 비밀번호를 저장하지 않습니다."
+        GrayinLanguage.JAPANESE ->
+            "スクリーンショットのブロックと、システムの生体認証または端末の画面ロック認証で画面を保護します。アプリロックがオンの間はスクリーンショットも常にブロックされます。Grayinは生体情報、PIN、パターン、パスワードを保存しません。"
+        GrayinLanguage.ENGLISH ->
+            "Protect the screen with screenshot blocking and system biometric or device-lock authentication. App lock always blocks screenshots while enabled. Grayin does not store biometrics, PINs, patterns, or passwords."
+    }
+
+    fun screenshotBlocking(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "스크린샷 차단"
+        GrayinLanguage.JAPANESE -> "スクリーンショットをブロック"
+        GrayinLanguage.ENGLISH -> "Block screenshots"
+    }
+
+    fun appLock(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "앱 잠금"
+        GrayinLanguage.JAPANESE -> "アプリロック"
+        GrayinLanguage.ENGLISH -> "App lock"
+    }
+
+    fun appLockScreenTitle(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "Grayin 잠금"
+        GrayinLanguage.JAPANESE -> "Grayinはロックされています"
+        GrayinLanguage.ENGLISH -> "Grayin is locked"
+    }
+
+    fun appLockScreenBody(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "기기의 생체 인증, PIN, 패턴 또는 비밀번호로 잠금을 해제하세요."
+        GrayinLanguage.JAPANESE -> "端末の生体認証、PIN、パターン、またはパスワードでロックを解除してください。"
+        GrayinLanguage.ENGLISH -> "Unlock with your device biometrics, PIN, pattern, or password."
+    }
+
+    fun unlockApp(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "잠금 해제"
+        GrayinLanguage.JAPANESE -> "ロック解除"
+        GrayinLanguage.ENGLISH -> "Unlock"
+    }
+
+    fun retryAuthentication(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "다시 인증"
+        GrayinLanguage.JAPANESE -> "認証を再試行"
+        GrayinLanguage.ENGLISH -> "Try authentication again"
+    }
+
+    fun useDeviceCredential(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "기기 PIN, 패턴 또는 비밀번호 사용"
+        GrayinLanguage.JAPANESE -> "端末のPIN、パターン、またはパスワードを使用"
+        GrayinLanguage.ENGLISH -> "Use device PIN, pattern, or password"
+    }
+
+    fun openDeviceSecuritySettings(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "기기 보안 설정 열기"
+        GrayinLanguage.JAPANESE -> "端末のセキュリティ設定を開く"
+        GrayinLanguage.ENGLISH -> "Open device security settings"
+    }
+
+    fun appSecurityFailure(failure: AppSecurityFailure): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> when (failure) {
+            AppSecurityFailure.AUTHENTICATION_FAILED -> "인증이 일치하지 않습니다. 다시 시도하세요."
+            AppSecurityFailure.AUTHENTICATION_CANCELLED -> "인증을 취소했습니다. 보안 설정은 변경되지 않았습니다."
+            AppSecurityFailure.AUTHENTICATION_LOCKED_OUT -> "인증 시도가 잠겼습니다. 기기 잠금 인증을 사용하거나 잠시 후 다시 시도하세요."
+            AppSecurityFailure.AUTHENTICATION_NOT_CONFIGURED -> "기기에 생체 인증 또는 화면 잠금이 설정되어 있지 않습니다."
+            AppSecurityFailure.AUTHENTICATION_TEMPORARILY_UNAVAILABLE -> "기기 인증을 지금 사용할 수 없습니다. 잠시 후 다시 시도하세요."
+            AppSecurityFailure.AUTHENTICATION_UNSUPPORTED -> "이 기기는 지원되는 시스템 인증을 제공하지 않습니다."
+            AppSecurityFailure.AUTHENTICATION_SECURITY_UPDATE_REQUIRED -> "기기 인증을 사용하려면 보안 업데이트가 필요합니다."
+            AppSecurityFailure.PREFERENCE_WRITE_FAILED -> "앱 보안 설정을 안전하게 저장하지 못했습니다. 기존 설정을 유지합니다."
+        }
+
+        GrayinLanguage.JAPANESE -> when (failure) {
+            AppSecurityFailure.AUTHENTICATION_FAILED -> "認証が一致しません。もう一度お試しください。"
+            AppSecurityFailure.AUTHENTICATION_CANCELLED -> "認証をキャンセルしました。セキュリティ設定は変更されていません。"
+            AppSecurityFailure.AUTHENTICATION_LOCKED_OUT -> "認証がロックされています。端末の画面ロック認証を使うか、しばらくしてから再試行してください。"
+            AppSecurityFailure.AUTHENTICATION_NOT_CONFIGURED -> "端末に生体認証または画面ロックが設定されていません。"
+            AppSecurityFailure.AUTHENTICATION_TEMPORARILY_UNAVAILABLE -> "端末認証は現在利用できません。しばらくしてから再試行してください。"
+            AppSecurityFailure.AUTHENTICATION_UNSUPPORTED -> "この端末には対応するシステム認証がありません。"
+            AppSecurityFailure.AUTHENTICATION_SECURITY_UPDATE_REQUIRED -> "端末認証を使用するにはセキュリティ更新が必要です。"
+            AppSecurityFailure.PREFERENCE_WRITE_FAILED -> "アプリのセキュリティ設定を安全に保存できませんでした。以前の設定を維持します。"
+        }
+
+        GrayinLanguage.ENGLISH -> when (failure) {
+            AppSecurityFailure.AUTHENTICATION_FAILED -> "Authentication did not match. Try again."
+            AppSecurityFailure.AUTHENTICATION_CANCELLED -> "Authentication canceled. No security setting was changed."
+            AppSecurityFailure.AUTHENTICATION_LOCKED_OUT -> "Authentication is locked out. Use your device credential or try again later."
+            AppSecurityFailure.AUTHENTICATION_NOT_CONFIGURED -> "No biometric or device screen lock is configured."
+            AppSecurityFailure.AUTHENTICATION_TEMPORARILY_UNAVAILABLE -> "Device authentication is temporarily unavailable. Try again later."
+            AppSecurityFailure.AUTHENTICATION_UNSUPPORTED -> "This device has no supported system authentication."
+            AppSecurityFailure.AUTHENTICATION_SECURITY_UPDATE_REQUIRED -> "A security update is required before device authentication can be used."
+            AppSecurityFailure.PREFERENCE_WRITE_FAILED -> "Could not save the app-security setting safely. The previous setting is unchanged."
+        }
+    }
+
+    fun appLockStatus(state: AppLockState): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> when (state) {
+            AppLockState.DISABLED -> "앱 잠금 꺼짐"
+            AppLockState.LOCKED -> "앱 잠김"
+            AppLockState.AUTHENTICATING -> "기기에서 인증 중"
+            AppLockState.UNLOCKED -> "앱 잠금 해제됨"
+        }
+
+        GrayinLanguage.JAPANESE -> when (state) {
+            AppLockState.DISABLED -> "アプリロック: オフ"
+            AppLockState.LOCKED -> "アプリはロック中"
+            AppLockState.AUTHENTICATING -> "端末で認証中"
+            AppLockState.UNLOCKED -> "アプリのロックを解除済み"
+        }
+
+        GrayinLanguage.ENGLISH -> when (state) {
+            AppLockState.DISABLED -> "App lock off"
+            AppLockState.LOCKED -> "App locked"
+            AppLockState.AUTHENTICATING -> "Authenticating on device"
+            AppLockState.UNLOCKED -> "App unlocked"
+        }
+    }
+
+    fun screenshotBlockingSaved(enabled: Boolean): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> if (enabled) "스크린샷 차단을 켰습니다." else "스크린샷 차단을 껐습니다."
+        GrayinLanguage.JAPANESE -> if (enabled) "スクリーンショットのブロックをオンにしました。" else "スクリーンショットのブロックをオフにしました。"
+        GrayinLanguage.ENGLISH -> if (enabled) "Screenshot blocking enabled." else "Screenshot blocking disabled."
+    }
+
+    fun appLockSaved(enabled: Boolean): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> if (enabled) "앱 잠금을 켰습니다." else "앱 잠금을 껐습니다."
+        GrayinLanguage.JAPANESE -> if (enabled) "アプリロックをオンにしました。" else "アプリロックをオフにしました。"
+        GrayinLanguage.ENGLISH -> if (enabled) "App lock enabled." else "App lock disabled."
+    }
+
     fun backupTitle(): String = when (languageCode) {
         GrayinLanguage.KOREAN -> "암호화 백업"
         GrayinLanguage.JAPANESE -> "暗号化バックアップ"

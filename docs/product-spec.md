@@ -433,8 +433,14 @@ The security baseline includes:
 - no ad SDK
 - no telemetry
 - no raw logs
-- optional screenshot blocking
-- optional biometric app lock
+- persisted, default-OFF screenshot blocking through Android `FLAG_SECURE`
+- persisted, default-OFF system biometric/device-credential app lock
+
+The persistent secure-window rule is screenshot blocking OR app lock, so enabling app lock always protects the Activity with `FLAG_SECURE`. A current explicit API 26–29 device-credential handoff also forces the flag transiently, including after Activity recreation before an enable operation is persisted. App lock uses Android system authentication with device-credential fallback: API 30+ requests strong biometric or credential through one `BiometricPrompt`, while API 26–29 uses a weak-biometric prompt plus an explicit system PIN/pattern/password Activity. Grayin stores no biometric template, PIN, pattern, password, or authentication secret.
+
+An enabled lock starts locked after process start and relocks after every ordinary non-configuration background transition. An ordinary biometric attempt is invalidated and canceled before a late callback can be accepted. Authentication callbacks are accepted only for the current attempt, so cancel, background error, rotation handoff, or a superseded prompt cannot unlock the UI. On API 26–29, only an explicitly recorded current device-credential Activity handoff survives `onStop`: the Grayin window stays secure, only current `RESULT_OK` may complete it, and cancellation or another non-success result returns to the purpose-specific prior stable state. The transition is one-way; duplicate transitions and biometric callbacks after handoff are ignored. Biometric-only terminal sensor failures may transfer to configured device credentials, while explicit user or app/background cancellation never does. Authentication and preference failures are fail-closed. Missing enrollment or unavailable authentication provides a system security-settings recovery action, not an app PIN or bypass; returning from settings only refreshes capability and never silently enables the lock.
+
+App lock protects foreground access to indexed memory. It does not replace SQLCipher/Keystore encryption, change connector consent, prevent authorized background indexing, or promise protection against a rooted device or physical observation.
 
 MVP uses INTERNET permission for typed external enrichment and fixed-catalog model, authenticated manifest, or OCR language-data downloads.
 

@@ -25,6 +25,8 @@
 - OS backup leakage
 - Export file leakage
 - Screenshots/screen recordings
+- Lock-screen bypass through a canceled, stale, or post-background authentication callback
+- Silent weakening after a security-preference persistence failure or removed device credential
 - Connector over-collection
 - Accidental raw data persistence
 - Online enrichment metadata leakage
@@ -54,8 +56,15 @@
 - No ads
 - No crash SDK
 - No raw logs
-- Optional screenshot blocking
-- Optional biometric app lock
+- Persisted optional screenshot blocking through `FLAG_SECURE`
+- Persisted optional system biometric/device-credential app lock
+- Effective secure-window policy whenever either screenshot blocking or app lock is enabled, plus every current explicit device-credential handoff
+- API 30+ strong-biometric-or-device-credential policy and API 26–29 weak-biometric prompt with explicit system device-credential fallback
+- Fail-closed process start and non-configuration background relock, with configuration-change continuity and ordinary prompt cancellation
+- Monotonic attempt-ID fencing that rejects canceled, superseded, background-error, and stale authentication callbacks while allowing only the explicitly recorded current system credential handoff
+- Synchronous preference persistence with rollback to the previous effective policy on failure
+- System security-settings recovery for missing enrollment or unavailable credentials, without an app-owned PIN or bypass
+- No biometric template, device credential, authentication secret, or raw platform error storage or logging
 - Connector-level deletion
 - Private `:document` process for PDFium/Tesseract crash and memory-pressure containment
 - Seekability/signature/size/page/render/text/OCR/time checks before derived output is accepted
@@ -66,6 +75,8 @@
 - Strict seven-section payload schema, closed-graph validation, detached local pointers, and a replace-only SQLCipher import transaction
 - Ciphertext-only no-backup staging and local-only Android document contracts without persisted backup URI grants
 - Per-connector SQLCipher re-consent barriers checked before source reads and again in scan-write transactions
+
+`FLAG_SECURE` and the foreground app lock reduce casual local disclosure but do not defend against root compromise, physical observation, or every older vendor screenshot implementation. SQLCipher/Keystore storage protection, connector consent, and zero-raw-retention remain independent controls.
 
 ## Network Metadata Risk
 

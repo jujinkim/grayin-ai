@@ -26,6 +26,7 @@ Current phase status: local-first MVP foundation and basic Android source connec
 - Local Files passes explicitly selected PDF descriptors to a private `:document` Pdfium/Tesseract runtime, which enforces descriptor, signature, page, bitmap, text, OCR, and time limits and returns only bounded derived AIDL results.
 - Local document selection stores only Keystore HMAC markers. SQLCipher schema v6 removes legacy URI/name-based Local Files graphs before HMAC-only reindexing.
 - Settings provides explicit local-only encrypted export/import of the validated seven-section derived snapshot. Version 1 uses password-derived AES-256-GCM, replace-only SQLCipher import, and mandatory connector re-consent.
+- Settings provides independent persisted screenshot blocking and system biometric/device-credential app lock. App lock forces `FLAG_SECURE`, starts locked in a new process, and relocks after a non-configuration background transition.
 - INTERNET permission bounded by `docs/network-policy.md`: typed map/place/reverse-geocode/weather enrichment plus fixed-catalog model, authenticated manifest, or OCR language-data downloads.
 
 ## Completion Plan
@@ -89,9 +90,12 @@ The installer boundary and planned document-runtime limits are specified in `doc
 
 ### 6. Optional App Security
 
-- [ ] Add persisted screenshot-blocking preference and apply `FLAG_SECURE` when enabled.
-- [ ] Add biometric/device-credential app lock with explicit fallback and recovery behavior.
-- [ ] Add lifecycle tests for lock and unlock transitions.
+- [x] Add persisted screenshot-blocking preference and apply `FLAG_SECURE` when enabled.
+- [x] Add system biometric/device-credential app lock with API-compatible fallback and security-settings recovery.
+- [x] Relock on process start and non-configuration background, and fence stale authentication callbacks without a bypass.
+- [x] Add JVM and Android lifecycle coverage for secure-window, lock, unlock, failure, rotation, and background transitions.
+
+The lifecycle instrumentation covers persisted secure-window startup, Activity recreation, unlocked-session configuration continuity, ordinary background relock, and protected-content gating. Its source compiles on the host; biometric/PIN system-UI execution, screenshots/recording, process death, and API 26/29/30 device behavior remain part of Step 9 device acceptance because no device or emulator is connected.
 
 ### 7. Source and UI Completion
 

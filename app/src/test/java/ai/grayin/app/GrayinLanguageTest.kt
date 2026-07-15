@@ -5,6 +5,8 @@ import ai.grayin.core.model.ConnectorScanIssueCode
 import ai.grayin.core.ocr.OcrLanguagePack
 import ai.grayin.core.ocr.OcrLanguagePackFailureCode
 import ai.grayin.core.ocr.OcrLanguagePackStatus
+import ai.grayin.core.security.AppLockState
+import ai.grayin.core.security.AppSecurityFailure
 import ai.grayin.core.transfer.TransferFailureCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,6 +14,56 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GrayinLanguageTest {
+    @Test
+    fun `app security controls states and every stable failure are localized`() {
+        val strings = GrayinLanguageOption.entries.map(GrayinText::forOption)
+
+        strings.forEach { localized ->
+            val controls = listOf(
+                localized.appSecurityTitle(),
+                localized.appSecurityDisclosure(),
+                localized.screenshotBlocking(),
+                localized.appLock(),
+                localized.appLockScreenTitle(),
+                localized.appLockScreenBody(),
+                localized.unlockApp(),
+                localized.retryAuthentication(),
+                localized.useDeviceCredential(),
+                localized.openDeviceSecuritySettings(),
+                localized.screenshotBlockingSaved(enabled = true),
+                localized.screenshotBlockingSaved(enabled = false),
+                localized.appLockSaved(enabled = true),
+                localized.appLockSaved(enabled = false),
+            )
+            controls.forEach { copy -> assertTrue(copy.isNotBlank()) }
+            AppLockState.entries.forEach { state ->
+                assertTrue(localized.appLockStatus(state).isNotBlank())
+            }
+            AppSecurityFailure.entries.forEach { failure ->
+                val copy = localized.appSecurityFailure(failure)
+                assertTrue(copy.isNotBlank())
+                assertFalse(copy.contains(failure.name))
+            }
+        }
+    }
+
+    @Test
+    fun appSecurityEnglishCopyExplainsFailClosedAndRecoveryActions() {
+        val english = GrayinText.forOption(GrayinLanguageOption.ENGLISH)
+
+        assertEquals("Grayin is locked", english.appLockScreenTitle())
+        assertTrue(english.appSecurityDisclosure().contains("does not store"))
+        assertTrue(
+            english.appSecurityFailure(AppSecurityFailure.AUTHENTICATION_CANCELLED)
+                .contains("No security setting was changed"),
+        )
+        assertEquals(
+            "Use device PIN, pattern, or password",
+            english.useDeviceCredential(),
+        )
+        assertEquals("Open device security settings", english.openDeviceSecuritySettings())
+    }
+
     @Test
     fun `backup actions and every stable transfer failure are localized`() {
         GrayinLanguageOption.entries.map(GrayinText::forOption).forEach { strings ->

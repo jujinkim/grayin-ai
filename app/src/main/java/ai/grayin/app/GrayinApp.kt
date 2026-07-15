@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,8 +64,13 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import ai.grayin.core.security.AppLockState
+import ai.grayin.core.security.AppSecurityAuthCapability
+import ai.grayin.core.security.AppSecurityFailure
+import ai.grayin.core.security.AppSecurityState
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -108,7 +114,13 @@ class SourceIntroPreferenceStore(context: Context) {
 }
 
 @Composable
-fun GrayinApp() {
+fun GrayinApp(
+    appSecurityState: AppSecurityState,
+    onUnlockApp: () -> Unit,
+    onScreenshotBlockingChanged: (Boolean) -> Unit,
+    onAppLockChanged: (Boolean) -> Unit,
+    onOpenDeviceSecuritySettings: () -> Unit,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val controller = remember(context) { GrayinMemoryController(context) }
@@ -139,6 +151,24 @@ fun GrayinApp() {
     val selectedScreen = GrayinScreen.valueOf(selectedScreenName)
     val backupDialogMode = BackupDialogMode.valueOf(backupDialogModeName)
     val screens = GrayinScreen.entries
+
+    LaunchedEffect(appSecurityState.protectedContentVisible) {
+        if (!appSecurityState.protectedContentVisible) {
+            backupPassword = ""
+            backupPasswordConfirmation = ""
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                backupPassword = ""
+                backupPasswordConfirmation = ""
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     suspend fun refreshSnapshotSafely() {
         try {
@@ -445,35 +475,43 @@ fun GrayinApp() {
             background = Color(0xFFF7F8F4),
         ),
     ) {
-        Scaffold(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding(),
-            bottomBar = {
-                NavigationBar {
-                    screens.forEach { screen ->
-                        NavigationBarItem(
-                            selected = screen == selectedScreen,
-                            onClick = { selectedScreenName = screen.name },
-                            icon = {
-                                Icon(
-                                    imageVector = screen.icon(),
-                                    contentDescription = strings.screenLabel(screen),
-                                )
-                            },
-                            label = { Text(strings.screenLabel(screen)) },
-                        )
-                    }
-                }
-            },
-        ) { innerPadding ->
-            Surface(
+        if (!appSecurityState.protectedContentVisible) {
+            AppLockScreen(
+                state = appSecurityState,
+                strings = strings,
+                onUnlock = onUnlockApp,
+                onOpenDeviceSecuritySettings = onOpenDeviceSecuritySettings,
+            )
+        } else {
+            Scaffold(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
-                color = MaterialTheme.colorScheme.background,
-            ) {
-                when (selectedScreen) {
+                    .safeDrawingPadding(),
+                bottomBar = {
+                    NavigationBar {
+                        screens.forEach { screen ->
+                            NavigationBarItem(
+                                selected = screen == selectedScreen,
+                                onClick = { selectedScreenName = screen.name },
+                                icon = {
+                                    Icon(
+                                        imageVector = screen.icon(),
+                                        contentDescription = strings.screenLabel(screen),
+                                    )
+                                },
+                                label = { Text(strings.screenLabel(screen)) },
+                            )
+                        }
+                    }
+                },
+            ) { innerPadding ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    when (selectedScreen) {
                     GrayinScreen.Ask -> AskScreen(
                         answerState = answerState,
                         strings = strings,
@@ -635,6 +673,7 @@ fun GrayinApp() {
                         },
                     )
                     GrayinScreen.Settings -> SettingsScreen(
+                        appSecurityState = appSecurityState,
                         rows = snapshot.settingsRows,
                         modelOptions = snapshot.modelOptions,
                         ocrLanguagePacks = snapshot.ocrLanguagePacks,
@@ -642,6 +681,9 @@ fun GrayinApp() {
                         languageOption = languageOption,
                         strings = strings,
                         working = working,
+                        onScreenshotBlockingChanged = onScreenshotBlockingChanged,
+                        onAppLockChanged = onAppLockChanged,
+                        onOpenDeviceSecuritySettings = onOpenDeviceSecuritySettings,
                         onExportBackup = {
                             backupPassword = ""
                             backupPasswordConfirmation = ""
@@ -774,14 +816,16 @@ fun GrayinApp() {
                             }
                         },
                     )
+                    }
                 }
             }
         }
     }
 
-    when (backupDialogMode) {
-        BackupDialogMode.NONE -> Unit
-        BackupDialogMode.EXPORT_PASSWORD -> BackupPasswordDialog(
+    if (appSecurityState.protectedContentVisible) {
+        when (backupDialogMode) {
+            BackupDialogMode.NONE -> Unit
+            BackupDialogMode.EXPORT_PASSWORD -> BackupPasswordDialog(
             title = strings.exportEncryptedBackup(),
             body = strings.backupExportPasswordBody(),
             password = backupPassword,
@@ -828,7 +872,7 @@ fun GrayinApp() {
             },
         )
 
-        BackupDialogMode.IMPORT_CONFIRMATION -> BackupImportConfirmationDialog(
+            BackupDialogMode.IMPORT_CONFIRMATION -> BackupImportConfirmationDialog(
             strings = strings,
             working = working,
             onDismiss = {
@@ -841,7 +885,7 @@ fun GrayinApp() {
             },
         )
 
-        BackupDialogMode.IMPORT_PASSWORD -> BackupPasswordDialog(
+            BackupDialogMode.IMPORT_PASSWORD -> BackupPasswordDialog(
             title = strings.importEncryptedBackup(),
             body = strings.backupImportPasswordBody(),
             password = backupPassword,
@@ -904,7 +948,73 @@ fun GrayinApp() {
                     }
                 }
             },
-        )
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppLockScreen(
+    state: AppSecurityState,
+    strings: GrayinStrings,
+    onUnlock: () -> Unit,
+    onOpenDeviceSecuritySettings: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(strings.appLockScreenTitle(), style = MaterialTheme.typography.headlineMedium)
+            Text(
+                strings.appLockScreenBody(),
+                modifier = Modifier.padding(top = 12.dp),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                strings.appLockStatus(state.lockState),
+                modifier = Modifier.padding(top = 12.dp),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            state.failure?.let { failure ->
+                Text(
+                    strings.appSecurityFailure(failure),
+                    modifier = Modifier.padding(top = 12.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Button(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 20.dp),
+                enabled = state.activeAttempt == null,
+                onClick = onUnlock,
+            ) {
+                Text(
+                    if (state.failure == null) strings.unlockApp() else strings.retryAuthentication(),
+                )
+            }
+            if (state.failure.requiresDeviceSecuritySettings()) {
+                OutlinedButton(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    enabled = state.activeAttempt == null,
+                    onClick = onOpenDeviceSecuritySettings,
+                ) {
+                    Text(strings.openDeviceSecuritySettings())
+                }
+            }
+        }
     }
 }
 
@@ -1011,7 +1121,7 @@ private fun AskScreen(
     working: Boolean,
     onAsk: (String) -> Unit,
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
 
     LazyColumn(
         modifier = Modifier
@@ -1594,6 +1704,7 @@ private fun SourceRow(
 
 @Composable
 private fun SettingsScreen(
+    appSecurityState: AppSecurityState,
     rows: List<String>,
     modelOptions: List<ModelOptionUiState>,
     ocrLanguagePacks: List<OcrLanguagePackUiState>,
@@ -1601,6 +1712,9 @@ private fun SettingsScreen(
     languageOption: GrayinLanguageOption,
     strings: GrayinStrings,
     working: Boolean,
+    onScreenshotBlockingChanged: (Boolean) -> Unit,
+    onAppLockChanged: (Boolean) -> Unit,
+    onOpenDeviceSecuritySettings: () -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     onLanguageSelected: (GrayinLanguageOption) -> Unit,
@@ -1630,6 +1744,16 @@ private fun SettingsScreen(
                 languageOption = languageOption,
                 strings = strings,
                 onLanguageSelected = onLanguageSelected,
+            )
+        }
+        item {
+            AppSecuritySettings(
+                state = appSecurityState,
+                strings = strings,
+                working = working,
+                onScreenshotBlockingChanged = onScreenshotBlockingChanged,
+                onAppLockChanged = onAppLockChanged,
+                onOpenDeviceSecuritySettings = onOpenDeviceSecuritySettings,
             )
         }
         item {
@@ -1710,6 +1834,100 @@ private fun SettingsScreen(
             StatusRow(row)
         }
     }
+}
+
+@Composable
+private fun AppSecuritySettings(
+    state: AppSecurityState,
+    strings: GrayinStrings,
+    working: Boolean,
+    onScreenshotBlockingChanged: (Boolean) -> Unit,
+    onAppLockChanged: (Boolean) -> Unit,
+    onOpenDeviceSecuritySettings: () -> Unit,
+) {
+    val controlsEnabled = !working && state.activeAttempt == null
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(strings.appSecurityTitle(), style = MaterialTheme.typography.titleMedium)
+            Text(strings.appSecurityDisclosure(), style = MaterialTheme.typography.bodySmall)
+            SecurityToggleRow(
+                label = strings.screenshotBlocking(),
+                checked = state.preferences.screenshotBlockingEnabled,
+                enabled = controlsEnabled,
+                onCheckedChange = onScreenshotBlockingChanged,
+            )
+            SecurityToggleRow(
+                label = strings.appLock(),
+                checked = state.preferences.appLockEnabled,
+                enabled = controlsEnabled,
+                onCheckedChange = onAppLockChanged,
+            )
+            Text(strings.appLockStatus(state.lockState), style = MaterialTheme.typography.bodySmall)
+            state.failure?.let { failure ->
+                Text(
+                    strings.appSecurityFailure(failure),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (failure.requiresDeviceSecuritySettings()) {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = controlsEnabled,
+                        onClick = onOpenDeviceSecuritySettings,
+                    ) {
+                        Text(strings.openDeviceSecuritySettings())
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SecurityToggleRow(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = null,
+        )
+    }
+}
+
+private fun AppSecurityFailure?.requiresDeviceSecuritySettings(): Boolean {
+    return this == AppSecurityFailure.AUTHENTICATION_LOCKED_OUT ||
+        this == AppSecurityFailure.AUTHENTICATION_NOT_CONFIGURED ||
+        this == AppSecurityFailure.AUTHENTICATION_TEMPORARILY_UNAVAILABLE ||
+        this == AppSecurityFailure.AUTHENTICATION_UNSUPPORTED ||
+        this == AppSecurityFailure.AUTHENTICATION_SECURITY_UPDATE_REQUIRED
 }
 
 @Composable
