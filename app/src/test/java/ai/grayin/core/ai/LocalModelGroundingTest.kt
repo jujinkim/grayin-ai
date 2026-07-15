@@ -47,6 +47,22 @@ class LocalModelGroundingTest {
     }
 
     @Test
+    fun citedEvidencePackRejectsCitationLinkedToAnotherEvent() {
+        val mismatchedCitation = citation.copy(id = "citation:other", derivedMemoryEventId = "event:other")
+        val mismatchedEvidence = citedEvidence.copy(citationIds = listOf(mismatchedCitation.id))
+
+        val filtered = LocalModelGrounding.citedEvidencePack(
+            evidencePack.copy(
+                evidenceItems = listOf(mismatchedEvidence),
+                citations = listOf(mismatchedCitation),
+            ),
+        )
+
+        assertEquals(emptyList<EvidenceItem>(), filtered.evidenceItems)
+        assertEquals(emptyList<MemoryCitation>(), filtered.citations)
+    }
+
+    @Test
     fun parsesOnlyExactEvidenceIdsFromEvidenceLine() {
         val ids = LocalModelGrounding.evidenceIdsFromAnswer(
             answer = "Answer: Meeting.\nEvidence: evidence:event:1\nMissing: none",

@@ -25,7 +25,6 @@ object MemoryCapabilityResolver {
             -> setOf(
                 MemoryCapability.HAS_TIME,
                 MemoryCapability.HAS_MEDIA,
-                MemoryCapability.HAS_VISUAL_LABEL,
             )
 
             DerivedMemoryEventKind.PAYMENT -> setOf(

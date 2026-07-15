@@ -302,7 +302,6 @@ class PhotosConnector(
             memoryCapabilities = setOf(
                 MemoryCapability.HAS_TIME,
                 MemoryCapability.HAS_MEDIA,
-                MemoryCapability.HAS_VISUAL_LABEL,
             ),
             defaultEnabled = false,
             sensitivity = SensitivityLevel.HIGH,

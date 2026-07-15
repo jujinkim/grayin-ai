@@ -52,7 +52,7 @@ Local Files supports explicit user-selected `.txt` and `.md` documents through t
 
 Calendar supports explicit runtime calendar read permission plus app-level connection before indexing. It reads Android calendar instances transiently, emits derived calendar events/citations/source references, and does not store raw calendar records.
 
-Photos supports explicit runtime media read permission plus app-level connection before indexing. It reads Android MediaStore image metadata transiently, emits derived photo index events/citations/source references, and never reads or stores original image bytes.
+Photos supports explicit runtime media read permission plus app-level connection before indexing. It reads Android MediaStore image metadata transiently, emits derived photo index events/citations/source references, and never reads or stores original image bytes. Metadata-only events provide media capability but do not claim visual-label capability.
 
 Location supports explicit runtime location permission plus app-level connection before indexing. It reads last-known provider location transiently, emits rounded derived place-visit events/citations/source references, and does not store raw location provider dumps.
 

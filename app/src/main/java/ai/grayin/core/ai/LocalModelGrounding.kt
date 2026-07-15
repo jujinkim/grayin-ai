@@ -4,9 +4,11 @@ import ai.grayin.core.model.EvidencePack
 
 object LocalModelGrounding {
     fun citedEvidencePack(evidencePack: EvidencePack): EvidencePack {
-        val validCitationIds = evidencePack.citations.mapTo(hashSetOf()) { citation -> citation.id }
+        val citationsById = evidencePack.citations.associateBy { citation -> citation.id }
         val citedEvidence = evidencePack.evidenceItems.mapNotNull { evidence ->
-            val citationIds = evidence.citationIds.filter { citationId -> citationId in validCitationIds }
+            val citationIds = evidence.citationIds.filter { citationId ->
+                citationsById[citationId]?.derivedMemoryEventId == evidence.derivedMemoryEventId
+            }
             evidence.copy(citationIds = citationIds).takeIf { citationIds.isNotEmpty() }
         }
         val usedCitationIds = citedEvidence.flatMapTo(hashSetOf()) { evidence -> evidence.citationIds }

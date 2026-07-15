@@ -36,15 +36,16 @@ import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.EvidenceItem
 import ai.grayin.core.model.EvidencePack
 import ai.grayin.core.model.MemoryCitation
-import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceReference
 import ai.grayin.core.retrieval.DefaultQueryPlanner
+import ai.grayin.core.retrieval.EvidenceEventSelector
 import ai.grayin.core.retrieval.MissingEvidenceResolver
 import ai.grayin.core.retrieval.MemoryCapabilityResolver
 import ai.grayin.core.retrieval.QueryPlan
+import ai.grayin.core.retrieval.ScopedQueryPlanning
 import ai.grayin.core.store.LocalMemoryStore
 import ai.grayin.core.store.SqlCipherLocalMemoryStore
 import java.time.Instant
@@ -400,9 +401,13 @@ class GrayinMemoryController(
         val trimmedQuery = query.trim()
         if (trimmedQuery.isEmpty()) return@withContext emptyAnswer(strings.enterMemoryQuestion, strings)
 
-        val availableCapabilities = availableCapabilities()
-        val plan = queryPlanner.plan(trimmedQuery, availableCapabilities)
-        val evidenceItems = evidenceFor(trimmedQuery, plan)
+        val planning = ScopedQueryPlanning.resolve(
+            query = trimmedQuery,
+            events = store.loadDerivedMemoryEvents(),
+            planner = queryPlanner,
+        )
+        val plan = planning.plan
+        val evidenceItems = evidenceFor(trimmedQuery, plan, planning.events)
         val usedCitationIds = evidenceItems.flatMap { it.citationIds }.toSet()
         val citations = store.loadCitations().filter { it.id in usedCitationIds }
         val missingSources = MissingEvidenceResolver.resolve(
@@ -479,29 +484,12 @@ class GrayinMemoryController(
         )
     }
 
-    private suspend fun availableCapabilities(): Set<MemoryCapability> {
-        return MemoryCapabilityResolver.forEvents(store.loadDerivedMemoryEvents())
-    }
-
-    private suspend fun evidenceFor(query: String, plan: QueryPlan): List<EvidenceItem> {
-        val queryTokens = tokenize(query)
-        val events = store.loadDerivedMemoryEvents().filter { event ->
-            val timeRange = plan.timeRange
-            val occurredAt = event.startedAt ?: event.createdAt
-            timeRange == null ||
-                (occurredAt >= timeRange.startInclusive && occurredAt < timeRange.endExclusive)
-        }
-        val scored = events.map { event -> event to score(event, queryTokens) }
-        val selected = if (scored.any { it.second > 0 }) {
-            scored.filter { it.second > 0 }
-                .sortedByDescending { it.second }
-                .map { it.first }
-                .take(MAX_EVIDENCE_ITEMS)
-        } else {
-            events.sortedByDescending { it.createdAt }.take(MAX_EVIDENCE_ITEMS)
-        }
-
-        return selected.map { event ->
+    private fun evidenceFor(
+        query: String,
+        plan: QueryPlan,
+        events: List<DerivedMemoryEvent>,
+    ): List<EvidenceItem> {
+        return EvidenceEventSelector.select(query, plan, events, MAX_EVIDENCE_ITEMS).map { event ->
             EvidenceItem(
                 id = "evidence:${event.id}",
                 derivedMemoryEventId = event.id,
@@ -513,15 +501,6 @@ class GrayinMemoryController(
                 capabilities = MemoryCapabilityResolver.forEvent(event),
             )
         }
-    }
-
-    private fun score(event: DerivedMemoryEvent, queryTokens: Set<String>): Int {
-        if (queryTokens.isEmpty()) return 0
-        val keywordScore = event.keywords.count { it in queryTokens } * 3
-        val labelScore = event.labels.count { it.lowercase() in queryTokens }
-        val summary = event.summary.lowercase()
-        val summaryScore = queryTokens.count { summary.contains(it) }
-        return keywordScore + labelScore + summaryScore
     }
 
     private suspend fun sourceRow(
@@ -603,16 +582,8 @@ class GrayinMemoryController(
         return "${missingSource.capability.name}: $explanation"
     }
 
-    private fun tokenize(value: String): Set<String> {
-        return Regex("[\\p{L}\\p{Nd}]+").findAll(value.lowercase())
-            .map { it.value }
-            .filter { it.length >= MIN_QUERY_TOKEN_LENGTH }
-            .toSet()
-    }
-
     private companion object {
         const val MAX_EVIDENCE_ITEMS = 8
         const val MAX_TIMELINE_ROWS = 30
-        const val MIN_QUERY_TOKEN_LENGTH = 3
     }
 }

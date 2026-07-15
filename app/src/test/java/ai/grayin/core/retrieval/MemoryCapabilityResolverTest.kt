@@ -30,6 +30,7 @@ class MemoryCapabilityResolverTest {
         assertTrue(MemoryCapability.HAS_APP_USAGE in capabilities)
         assertTrue(MemoryCapability.HAS_TEXT in capabilities)
         assertTrue(MemoryCapability.HAS_TIME in capabilities)
+        assertTrue(MemoryCapability.HAS_VISUAL_LABEL !in capabilities)
     }
 
     @Test

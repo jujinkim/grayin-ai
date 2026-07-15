@@ -40,6 +40,8 @@ Each step updates affected docs, runs available checks, and produces one coheren
 - [x] Preserve per-event capabilities through retrieval and missing-data calculation.
 - [x] Validate local-model evidence IDs and citations before displaying a generated answer.
 - [x] Add and enforce the notification application allowlist required by the product spec.
+- [x] Scope capability planning to the requested time range and prevent unrelated-event fallback.
+- [x] Parse Korean/Japanese intent and approximate-time expressions used by the localized Ask UI.
 
 ### 2. Typed External Enrichment
 

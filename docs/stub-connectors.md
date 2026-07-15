@@ -52,6 +52,7 @@ The Photos connector:
 - requires user connection before indexing
 - reads MediaStore image metadata only inside connector-owned scan scopes
 - never reads or copies original image bytes
+- exposes media capability only; metadata orientation/type labels are not treated as visual-content labels
 - emits source references, derived photo index events, and citations
 - supports app-level revoke by disabling the connector and deleting derived data
 

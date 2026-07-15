@@ -21,55 +21,84 @@ class ApproximateTimeParser(
         val today = now.atZone(zoneId).toLocalDate()
 
         return when {
-            normalized.contains("around this time last year") ||
-                normalized.contains("this time last year") -> {
+            normalized.containsAny(
+                "around this time last year",
+                "this time last year",
+                "작년 이맘때",
+                "지난해 이맘때",
+                "去年の今頃",
+                "昨年の今頃",
+            ) -> {
                 val center = today.minusYears(1)
                 range("around this time last year", center.minusDays(7), center.plusDays(8), today)
             }
 
-            normalized.contains("yesterday") -> {
+            normalized.containsAny("yesterday", "어제", "昨日") -> {
                 val day = today.minusDays(1)
-                range("yesterday", day, day.plusDays(1), today)
+                range(normalized.matchedLabel("yesterday", "어제", "昨日"), day, day.plusDays(1), today)
             }
 
-            normalized.contains("today") -> {
-                range("today", today, today.plusDays(1), today)
+            normalized.containsAny("today", "오늘", "今日") -> {
+                range(normalized.matchedLabel("today", "오늘", "今日"), today, today.plusDays(1), today)
             }
 
-            normalized.contains("tomorrow") -> {
-                range("tomorrow", today.plusDays(1), today.plusDays(2), today)
+            normalized.containsAny("tomorrow", "내일", "明日") -> {
+                range(normalized.matchedLabel("tomorrow", "내일", "明日"), today.plusDays(1), today.plusDays(2), today)
             }
 
-            normalized.contains("next week") -> {
+            normalized.containsAny("next week", "다음 주", "다음주", "来週") -> {
                 val thisWeek = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
                 val nextWeek = thisWeek.plusWeeks(1)
-                range("next week", nextWeek, nextWeek.plusWeeks(1), today)
+                range(
+                    normalized.matchedLabel("next week", "다음 주", "다음주", "来週"),
+                    nextWeek,
+                    nextWeek.plusWeeks(1),
+                    today,
+                )
             }
 
-            normalized.contains("last week") -> {
+            normalized.containsAny("last week", "지난 주", "지난주", "先週") -> {
                 val thisWeek = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
                 val lastWeek = thisWeek.minusWeeks(1)
-                range("last week", lastWeek, thisWeek, today)
+                range(normalized.matchedLabel("last week", "지난 주", "지난주", "先週"), lastWeek, thisWeek, today)
             }
 
-            normalized.contains("this week") -> {
+            normalized.containsAny("this week", "이번 주", "이번주", "今週") -> {
                 val thisWeek = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-                range("this week", thisWeek, thisWeek.plusWeeks(1), today)
+                range(
+                    normalized.matchedLabel("this week", "이번 주", "이번주", "今週"),
+                    thisWeek,
+                    thisWeek.plusWeeks(1),
+                    today,
+                )
             }
 
-            normalized.contains("next month") -> {
+            normalized.containsAny("next month", "다음 달", "다음달", "来月") -> {
                 val nextMonth = today.withDayOfMonth(1).plusMonths(1)
-                range("next month", nextMonth, nextMonth.plusMonths(1), today)
+                range(
+                    normalized.matchedLabel("next month", "다음 달", "다음달", "来月"),
+                    nextMonth,
+                    nextMonth.plusMonths(1),
+                    today,
+                )
             }
 
-            normalized.contains("last month") -> {
+            normalized.containsAny("last month", "지난 달", "지난달", "先月") -> {
                 val thisMonth = today.withDayOfMonth(1)
                 val lastMonth = thisMonth.minusMonths(1)
-                range("last month", lastMonth, thisMonth, today)
+                range(normalized.matchedLabel("last month", "지난 달", "지난달", "先月"), lastMonth, thisMonth, today)
             }
 
             else -> null
         }
+    }
+
+    private fun String.containsAny(vararg candidates: String): Boolean {
+        return candidates.any(::contains)
+    }
+
+    private fun String.matchedLabel(vararg candidates: String): String {
+        return candidates.firstOrNull(::contains) ?: candidates.first()
     }
 
     private fun range(
@@ -86,4 +115,3 @@ class ApproximateTimeParser(
         )
     }
 }
-
