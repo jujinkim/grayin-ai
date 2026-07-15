@@ -51,6 +51,7 @@ import ai.grayin.core.indexing.IndexingQueueItem
 import ai.grayin.core.indexing.IndexingQueueState
 import ai.grayin.core.indexing.IndexingSkipReason
 import ai.grayin.core.indexing.IndexingTrigger
+import ai.grayin.core.retrieval.ConnectorScanMissingResolver
 import ai.grayin.core.retrieval.DefaultQueryPlanner
 import ai.grayin.core.retrieval.EvidenceEventSelector
 import ai.grayin.core.retrieval.MissingEvidenceResolver
@@ -483,10 +484,15 @@ class GrayinMemoryController(
         val evidenceItems = evidenceFor(trimmedQuery, plan, planning.events)
         val usedCitationIds = evidenceItems.flatMap { it.citationIds }.toSet()
         val citations = stored.citations.filter { it.id in usedCitationIds }
-        val missingSources = MissingEvidenceResolver.resolve(
+        val plannedMissingSources = MissingEvidenceResolver.resolve(
             plan = plan,
             hasEvidence = evidenceItems.isNotEmpty(),
             noMatchingEvidenceExplanation = strings.noAnswerAvailable,
+        )
+        val missingSources = ConnectorScanMissingResolver.merge(
+            plan = plan,
+            plannedMissingSources = plannedMissingSources,
+            scanStatuses = stored.connectorScanStatuses,
         )
         val evidencePack = LocalModelGrounding.citedEvidencePack(
             EvidencePack(

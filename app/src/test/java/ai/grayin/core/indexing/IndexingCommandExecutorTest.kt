@@ -10,6 +10,7 @@ import ai.grayin.core.connector.ConnectorScanResult
 import ai.grayin.core.connector.ConnectorScanScope
 import ai.grayin.core.connector.MemoryConnector
 import ai.grayin.core.connector.MemoryConnectorRegistry
+import ai.grayin.core.connector.hasIndexableOutput
 import ai.grayin.core.model.ConnectorState
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.DerivedMemoryEventKind
@@ -108,12 +109,52 @@ class IndexingCommandExecutorTest {
         assertEquals(from, connector.lastScope?.from)
         assertEquals(until, connector.lastScope?.until)
         assertEquals(true, connector.lastScope?.forceRefresh)
+        assertEquals(from, written?.scopeFrom)
+        assertEquals(until, written?.scopeUntil)
         assertEquals(
             listOf("recover", "claim:MANUAL", "state", "permission", "scan", "write", "complete", "hook"),
             operations,
         )
         assertEquals("manual-ui", queue.lastTerminalLeaseOwner)
         assertEquals(1, queue.lastTerminalAttemptCount)
+    }
+
+    @Test
+    fun `connector default scan scope is retained when the task is unbounded`() = runBlocking {
+        val from = NOW.minusSeconds(86_400)
+        val until = NOW
+        val connector = FakeConnector(
+            id = "calendar",
+            mode = ConnectorIndexingMode.BACKGROUND_SCANNABLE,
+            scanResult = successfulScan("calendar").copy(
+                scopeFrom = from,
+                scopeUntil = until,
+            ),
+        )
+        val queue = RecordingQueue()
+        var written: ConnectorScanResult? = null
+        val executor = executor(
+            connectors = listOf(connector),
+            queue = queue,
+            writer = ConnectorScanWriter { result, itemId, leaseOwner, attemptCount ->
+                written = result
+                ConnectorScanCommitResult.Committed(
+                    queue.complete(
+                        itemId = itemId,
+                        leaseOwner = leaseOwner,
+                        attemptCount = attemptCount,
+                        completedAt = NOW,
+                        indexedEventCount = result.derivedEvents.size,
+                    ),
+                )
+            },
+        )
+        executor.enqueue(IndexConnector(connector.id), IndexingTrigger.MANUAL)
+
+        executor.executeNext(IndexingTrigger.MANUAL, leaseOwner = "manual-ui")
+
+        assertEquals(from, written?.scopeFrom)
+        assertEquals(until, written?.scopeUntil)
     }
 
     @Test
@@ -382,13 +423,23 @@ class IndexingCommandExecutorTest {
             queue = queue,
             scanWriter = writer ?: ConnectorScanWriter { result, itemId, leaseOwner, attemptCount ->
                 ConnectorScanCommitResult.Committed(
-                    queue.complete(
-                        itemId = itemId,
-                        leaseOwner = leaseOwner,
-                        attemptCount = attemptCount,
-                        completedAt = NOW,
-                        indexedEventCount = result.derivedEvents.size,
-                    ),
+                    if (result.hasIndexableOutput()) {
+                        queue.complete(
+                            itemId = itemId,
+                            leaseOwner = leaseOwner,
+                            attemptCount = attemptCount,
+                            completedAt = NOW,
+                            indexedEventCount = result.derivedEvents.size,
+                        )
+                    } else {
+                        queue.skip(
+                            itemId = itemId,
+                            leaseOwner = leaseOwner,
+                            attemptCount = attemptCount,
+                            completedAt = NOW,
+                            reason = IndexingSkipReason.NO_INDEXABLE_DATA,
+                        )
+                    },
                 )
             },
             clock = Clock.fixed(NOW, ZoneOffset.UTC),

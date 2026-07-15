@@ -28,6 +28,22 @@ internal object ConnectorScanValidator {
         require(scanResult.appUsageSummaries.all { it.id.startsWith("app-usage:${scanResult.connectorId}:") }) {
             "Every app-usage summary ID must be connector-scoped."
         }
+        require(
+            scanResult.missingSources.all { missing ->
+                missing.connectorId == null || missing.connectorId == scanResult.connectorId
+            },
+        ) {
+            "Every connector-scoped missing source must belong to the scan connector."
+        }
+        require(
+            scanResult.missingSources.all { missing ->
+                missing.explanation.isNotBlank() &&
+                    missing.explanation.length <= MAX_MISSING_SOURCE_EXPLANATION_CHARS &&
+                    missing.explanation.none(Char::isISOControl)
+            },
+        ) {
+            "A connector scan missing-source explanation must be bounded, non-blank, and single-line."
+        }
 
         val sourceIds = scanResult.sourceReferences.mapTo(mutableSetOf()) { it.id }
         val referencedSourceIds = scanResult.derivedEvents.flatMap { it.sourceReferenceIds } +
@@ -76,4 +92,6 @@ internal object ConnectorScanValidator {
         require(ids.all { it.isNotBlank() }) { "Every $label ID must be non-blank." }
         require(ids.distinct().size == ids.size) { "A connector scan contains duplicate $label IDs." }
     }
+
+    private const val MAX_MISSING_SOURCE_EXPLANATION_CHARS = 240
 }

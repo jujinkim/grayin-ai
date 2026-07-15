@@ -108,6 +108,8 @@ class CalendarConnector(
             } else {
                 emptyList()
             },
+            scopeFrom = from,
+            scopeUntil = until,
             scannedAt = now,
         )
     }

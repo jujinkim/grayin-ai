@@ -14,7 +14,10 @@ import ai.grayin.core.indexing.IndexingTask
 import ai.grayin.core.indexing.IndexingTrigger
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.DerivedMemoryEventKind
+import ai.grayin.core.model.MemoryCapability
+import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.ProcessingState
+import ai.grayin.core.model.SourceAvailability
 import ai.grayin.core.model.SourceKind
 import ai.grayin.core.model.SourceReference
 import java.time.Clock
@@ -98,6 +101,62 @@ class SqlCipherIndexingQueueInstrumentedTest {
     }
 
     @Test
+    fun claimsSerializeLiveWorkForTheSameConnector() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T01:10:00Z")
+        val queue = store(databaseName)
+        val firstTask = manualTask(id = "same-first", requestedAt = requestedAt)
+        val secondTask = manualTask(id = "same-second", requestedAt = requestedAt.plusSeconds(1))
+        val otherTask = manualTask(
+            id = "other",
+            requestedAt = requestedAt.plusSeconds(2),
+            connectorId = "other.connector",
+        )
+        queue.enqueue(listOf(firstTask, secondTask, otherTask))
+
+        val first = checkNotNull(
+            queue.claimNextAtomically(
+                leaseOwner = "worker-a",
+                claimedAt = requestedAt.plusSeconds(3),
+                leaseUntil = requestedAt.plusSeconds(60),
+            ),
+        )
+        val other = checkNotNull(
+            queue.claimNextAtomically(
+                leaseOwner = "worker-b",
+                claimedAt = requestedAt.plusSeconds(4),
+                leaseUntil = requestedAt.plusSeconds(60),
+            ),
+        )
+
+        assertEquals(firstTask.id, first.id)
+        assertEquals(otherTask.id, other.id)
+        assertNull(
+            queue.claimNextAtomically(
+                leaseOwner = "worker-c",
+                claimedAt = requestedAt.plusSeconds(5),
+                leaseUntil = requestedAt.plusSeconds(60),
+            ),
+        )
+
+        queue.complete(
+            itemId = first.id,
+            leaseOwner = checkNotNull(first.leaseOwner),
+            attemptCount = first.attemptCount,
+            completedAt = requestedAt.plusSeconds(6),
+            indexedEventCount = 1,
+        )
+        val second = checkNotNull(
+            queue.claimNextAtomically(
+                leaseOwner = "worker-c",
+                claimedAt = requestedAt.plusSeconds(7),
+                leaseUntil = requestedAt.plusSeconds(60),
+            ),
+        )
+        assertEquals(secondTask.id, second.id)
+    }
+
+    @Test
     fun triggerFilteredClaimLeavesOtherTriggerPending() = runBlocking {
         val databaseName = newDatabaseName()
         val requestedAt = Instant.parse("2026-07-15T01:30:00Z")
@@ -166,6 +225,7 @@ class SqlCipherIndexingQueueInstrumentedTest {
 
         assertEquals(ConnectorScanCommitResult.LeaseLost, staleCommit)
         assertEquals(emptyList<DerivedMemoryEvent>(), queue.loadDerivedMemoryEvents())
+        assertTrue(queue.loadConnectorScanStatuses().isEmpty())
 
         expectIllegalArgument {
             queue.commitClaimedConnectorScan(
@@ -554,10 +614,115 @@ class SqlCipherIndexingQueueInstrumentedTest {
         assertEquals(status, store(databaseName).loadAutomaticIndexingRuntime())
     }
 
-    private fun manualTask(id: String, requestedAt: Instant): IndexingTask {
+    @Test
+    fun emptyClaimedScanPersistsMissingStatusAndSkipsAtomically() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T05:00:00Z")
+        val completedAt = requestedAt.plusSeconds(5)
+        val scopeFrom = requestedAt.minusSeconds(86_400)
+        val scopeUntil = requestedAt
+        val queue = store(
+            databaseName = databaseName,
+            clock = Clock.fixed(completedAt, ZoneOffset.UTC),
+        )
+        queue.enqueue(listOf(manualTask(id = "empty-status", requestedAt = requestedAt)))
+        val claimed = checkNotNull(
+            queue.claimNextAtomically(
+                leaseOwner = "status-worker",
+                claimedAt = requestedAt.plusSeconds(1),
+                leaseUntil = requestedAt.plusSeconds(60),
+                trigger = IndexingTrigger.MANUAL,
+            ),
+        )
+        val missing = MissingSource(
+            capability = MemoryCapability.HAS_TEXT,
+            availability = SourceAvailability.UNSUPPORTED,
+            explanation = "local_document:no_extractable_content",
+            connectorId = TEST_CONNECTOR_ID,
+        )
+
+        val committed = queue.commitClaimedConnectorScan(
+            scanResult = ConnectorScanResult(
+                connectorId = TEST_CONNECTOR_ID,
+                processingState = ProcessingState.SKIPPED,
+                missingSources = listOf(missing),
+                scopeFrom = scopeFrom,
+                scopeUntil = scopeUntil,
+                scannedAt = completedAt,
+            ),
+            itemId = claimed.id,
+            leaseOwner = checkNotNull(claimed.leaseOwner),
+            attemptCount = claimed.attemptCount,
+        ) as ConnectorScanCommitResult.Committed
+
+        assertEquals(IndexingQueueState.SKIPPED, committed.item.state)
+        assertEquals(IndexingSkipReason.NO_INDEXABLE_DATA, committed.item.skipReason)
+        val status = queue.loadSnapshot().connectorScanStatuses.single()
+        assertEquals(ProcessingState.SKIPPED, status.processingState)
+        assertEquals(listOf(missing), status.missingSources)
+        assertEquals(scopeFrom, status.scopeFrom)
+        assertEquals(scopeUntil, status.scopeUntil)
+        assertEquals(completedAt, status.scannedAt)
+    }
+
+    @Test
+    fun replacementScanRemovesStaleRowsAndDeleteClearsStatus() = runBlocking {
+        val databaseName = newDatabaseName()
+        val memoryStore = store(databaseName)
+        memoryStore.saveConnectorScan(scanResult("old"))
+        memoryStore.saveConnectorScan(scanResult("other", connectorId = "other.connector"))
+
+        memoryStore.saveConnectorScan(
+            scanResult("new").copy(replaceExistingConnectorData = true),
+        )
+
+        assertEquals(
+            setOf("event:$TEST_CONNECTOR_ID:new", "event:other.connector:other"),
+            memoryStore.loadDerivedMemoryEvents().mapTo(mutableSetOf()) { it.id },
+        )
+        assertEquals(
+            setOf(TEST_CONNECTOR_ID, "other.connector"),
+            memoryStore.loadConnectorScanStatuses().mapTo(mutableSetOf()) { it.connectorId },
+        )
+
+        memoryStore.deleteConnectorData(TEST_CONNECTOR_ID)
+
+        assertEquals(listOf("event:other.connector:other"), memoryStore.loadDerivedMemoryEvents().map { it.id })
+        assertEquals(listOf("other.connector"), memoryStore.loadConnectorScanStatuses().map { it.connectorId })
+    }
+
+    @Test
+    fun emptyReplacementScanRemovesOnlyTheTargetConnectorSnapshot() = runBlocking {
+        val databaseName = newDatabaseName()
+        val memoryStore = store(databaseName)
+        memoryStore.saveConnectorScan(scanResult("old"))
+        memoryStore.saveConnectorScan(scanResult("other", connectorId = "other.connector"))
+        val scannedAt = Instant.parse("2026-07-15T06:00:00Z")
+
+        memoryStore.saveConnectorScan(
+            ConnectorScanResult(
+                connectorId = TEST_CONNECTOR_ID,
+                processingState = ProcessingState.SKIPPED,
+                replaceExistingConnectorData = true,
+                scannedAt = scannedAt,
+            ),
+        )
+
+        assertEquals(listOf("event:other.connector:other"), memoryStore.loadDerivedMemoryEvents().map { it.id })
+        val statuses = memoryStore.loadConnectorScanStatuses().associateBy { it.connectorId }
+        assertEquals(setOf(TEST_CONNECTOR_ID, "other.connector"), statuses.keys)
+        assertEquals(ProcessingState.SKIPPED, statuses.getValue(TEST_CONNECTOR_ID).processingState)
+        assertEquals(scannedAt, statuses.getValue(TEST_CONNECTOR_ID).scannedAt)
+    }
+
+    private fun manualTask(
+        id: String,
+        requestedAt: Instant,
+        connectorId: String = TEST_CONNECTOR_ID,
+    ): IndexingTask {
         return IndexingTask(
             id = id,
-            connectorId = TEST_CONNECTOR_ID,
+            connectorId = connectorId,
             trigger = IndexingTrigger.MANUAL,
             requestedAt = requestedAt,
             forceRefresh = true,

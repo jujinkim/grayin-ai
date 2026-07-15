@@ -5,9 +5,12 @@ import ai.grayin.core.model.ConfidenceLevel
 import ai.grayin.core.model.DerivedMemoryEvent
 import ai.grayin.core.model.DerivedMemoryEventKind
 import ai.grayin.core.model.MemoryCitation
+import ai.grayin.core.model.MemoryCapability
+import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.model.SensitivityLevel
 import ai.grayin.core.model.SourceKind
+import ai.grayin.core.model.SourceAvailability
 import ai.grayin.core.model.SourceReference
 import java.time.Instant
 import org.junit.Assert.assertThrows
@@ -72,6 +75,42 @@ class ConnectorScanValidatorTest {
             citations = valid.citations.map { citation ->
                 citation.copy(derivedMemoryEventId = secondEventId)
             },
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ConnectorScanValidator.validate(scan)
+        }
+    }
+
+    @Test
+    fun `rejects a missing-source status owned by another connector`() {
+        val scan = validScan().copy(
+            missingSources = listOf(
+                MissingSource(
+                    capability = MemoryCapability.HAS_TEXT,
+                    availability = SourceAvailability.UNSUPPORTED,
+                    explanation = "stable-code",
+                    connectorId = "other",
+                ),
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ConnectorScanValidator.validate(scan)
+        }
+    }
+
+    @Test
+    fun `rejects runtime-like multiline missing-source detail`() {
+        val scan = validScan().copy(
+            missingSources = listOf(
+                MissingSource(
+                    capability = MemoryCapability.HAS_TEXT,
+                    availability = SourceAvailability.UNSUPPORTED,
+                    explanation = "parser failed\nraw detail",
+                    connectorId = "test",
+                ),
+            ),
         )
 
         assertThrows(IllegalArgumentException::class.java) {

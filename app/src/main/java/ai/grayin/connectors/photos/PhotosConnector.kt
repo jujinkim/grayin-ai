@@ -109,6 +109,8 @@ class PhotosConnector(
             } else {
                 emptyList()
             },
+            scopeFrom = from,
+            scopeUntil = until,
             scannedAt = now,
         )
     }

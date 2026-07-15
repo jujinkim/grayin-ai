@@ -1,5 +1,6 @@
 package ai.grayin.core.store
 
+import ai.grayin.core.connector.ConnectorScanStatus
 import ai.grayin.core.model.AppUsageSummary
 import ai.grayin.core.model.DailyMemorySummary
 import ai.grayin.core.model.DerivedMemoryEvent
@@ -33,6 +34,7 @@ data class LocalMemorySnapshot(
     val dailySummaries: List<DailyMemorySummary>,
     val placeClusters: List<PlaceCluster>,
     val appUsageSummaries: List<AppUsageSummary>,
+    val connectorScanStatuses: List<ConnectorScanStatus>,
 )
 
 data class IndexInvalidationRequest(

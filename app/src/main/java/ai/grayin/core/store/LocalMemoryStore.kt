@@ -1,6 +1,7 @@
 package ai.grayin.core.store
 
 import ai.grayin.core.connector.ConnectorScanResult
+import ai.grayin.core.connector.ConnectorScanStatus
 import ai.grayin.core.model.AppUsageSummary
 import ai.grayin.core.model.DailyMemorySummary
 import ai.grayin.core.model.DerivedMemoryEvent
@@ -33,6 +34,8 @@ interface LocalMemoryStore {
     suspend fun loadPlaceClusters(): List<PlaceCluster>
 
     suspend fun loadAppUsageSummaries(): List<AppUsageSummary>
+
+    suspend fun loadConnectorScanStatuses(): List<ConnectorScanStatus>
 
     /** Reads every derived-memory section from one consistent database snapshot. */
     suspend fun loadSnapshot(): LocalMemorySnapshot

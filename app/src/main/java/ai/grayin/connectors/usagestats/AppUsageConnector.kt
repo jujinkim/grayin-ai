@@ -110,6 +110,8 @@ class AppUsageConnector(
             } else {
                 emptyList()
             },
+            scopeFrom = from,
+            scopeUntil = until,
             scannedAt = now,
         )
     }

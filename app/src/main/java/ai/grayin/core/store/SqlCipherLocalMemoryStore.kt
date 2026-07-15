@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import ai.grayin.core.connector.ConnectorScanResult
+import ai.grayin.core.connector.ConnectorScanStatus
+import ai.grayin.core.connector.hasIndexableOutput
 import ai.grayin.core.indexing.AutomaticIndexingControl
 import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.AutomaticIndexingOutcome
@@ -85,12 +87,14 @@ class SqlCipherLocalMemoryStore(
                 "Connector scan does not belong to the claimed indexing task."
             }
             writeConnectorScanRows(db, scanResult, completedAt)
+            val hasIndexableOutput = scanResult.hasIndexableOutput()
             val updated = checkNotNull(current).copy(
-                state = IndexingQueueState.COMPLETED,
-                indexedEventCount = scanResult.derivedEvents.size,
+                state = if (hasIndexableOutput) IndexingQueueState.COMPLETED else IndexingQueueState.SKIPPED,
+                indexedEventCount = if (hasIndexableOutput) scanResult.derivedEvents.size else 0,
                 completedAt = completedAt,
                 leaseOwner = null,
                 leaseUntil = null,
+                skipReason = if (hasIndexableOutput) null else IndexingSkipReason.NO_INDEXABLE_DATA,
             )
             val count = db.update(
                 TABLE_INDEXING_QUEUE,
@@ -133,60 +137,9 @@ class SqlCipherLocalMemoryStore(
     override suspend fun deleteConnectorData(connectorId: String): StoreDeleteResult = withDatabase { db ->
         db.beginTransaction()
         try {
-            val sourceIds = readSourceReferences(db, connectorId).map { it.id }.toSet()
-            val eventIds = readDerivedMemoryEvents(db)
-                .filter { event ->
-                    event.id.startsWith("event:$connectorId:") ||
-                        event.sourceReferenceIds.any { it in sourceIds }
-                }
-                .map { it.id }
-                .toSet()
-            val citationIds = readCitations(db)
-                .filter { citation ->
-                    citation.id.startsWith("citation:$connectorId:") ||
-                        citation.sourceReferenceId in sourceIds ||
-                        citation.derivedMemoryEventId in eventIds
-                }
-                .map { it.id }
-            val placeClusterIds = readPlaceClusters(db)
-                .filter { cluster ->
-                    cluster.id.startsWith("place-cluster:$connectorId:") ||
-                        cluster.sourceReferenceIds.any { it in sourceIds }
-                }
-                .map { it.id }
-                .toSet()
-            val appUsageSummaryIds = readAppUsageSummaries(db)
-                .filter { summary ->
-                    summary.id.startsWith("app-usage:$connectorId:") ||
-                        summary.sourceReferenceIds.any { it in sourceIds }
-                }
-                .map { it.id }
-                .toSet()
-            val dailySummaryIds = readDailySummaries(db)
-                .filter { summary ->
-                    summary.derivedMemoryEventIds.any { it in eventIds } ||
-                        summary.placeClusterIds.any { it in placeClusterIds } ||
-                        summary.appUsageSummaryIds.any { it in appUsageSummaryIds }
-                }
-                .map { it.id }
-
-            deleteIn(db, TABLE_DAILY_SUMMARIES, "id", dailySummaryIds)
-            deleteIn(db, TABLE_PLACE_CLUSTERS, "id", placeClusterIds.toList())
-            deleteIn(db, TABLE_APP_USAGE_SUMMARIES, "id", appUsageSummaryIds.toList())
-            deleteIn(db, TABLE_CITATIONS, "id", citationIds)
-            deleteIn(db, TABLE_DERIVED_EVENTS, "id", eventIds.toList())
-            deleteIn(db, TABLE_SOURCE_REFERENCES, "id", sourceIds.toList())
+            val result = deleteConnectorRows(db, connectorId, completedAt = clock.instant())
             db.setTransactionSuccessful()
-            StoreDeleteResult(
-                connectorId = connectorId,
-                deletedSourceReferenceIds = sourceIds.toList(),
-                deletedDerivedMemoryEventIds = eventIds.toList(),
-                deletedCitationIds = citationIds,
-                deletedSummaryIds = dailySummaryIds,
-                deletedPlaceClusterIds = placeClusterIds.toList(),
-                deletedAppUsageSummaryIds = appUsageSummaryIds.toList(),
-                completedAt = Instant.now(),
-            )
+            result
         } finally {
             db.endTransaction()
         }
@@ -226,6 +179,10 @@ class SqlCipherLocalMemoryStore(
         readAppUsageSummaries(db)
     }
 
+    override suspend fun loadConnectorScanStatuses(): List<ConnectorScanStatus> = withDatabase { db ->
+        readConnectorScanStatuses(db)
+    }
+
     override suspend fun loadSnapshot(): LocalMemorySnapshot = withDatabase { db ->
         db.beginTransaction()
         try {
@@ -236,6 +193,7 @@ class SqlCipherLocalMemoryStore(
                 dailySummaries = readDailySummaries(db),
                 placeClusters = readPlaceClusters(db),
                 appUsageSummaries = readAppUsageSummaries(db),
+                connectorScanStatuses = readConnectorScanStatuses(db),
             )
             db.setTransactionSuccessful()
             snapshot
@@ -347,10 +305,18 @@ class SqlCipherLocalMemoryStore(
                     )
                 }
             }
+            val serializedSelection = "($selection) AND NOT EXISTS (" +
+                "SELECT 1 FROM $TABLE_INDEXING_QUEUE AS active " +
+                "WHERE active.connector_id = $TABLE_INDEXING_QUEUE.connector_id " +
+                "AND active.state = ? AND active.lease_until_ms > ?)"
+            val serializedSelectionArgs = selectionArgs + arrayOf(
+                IndexingQueueState.RUNNING.name,
+                claimedAt.toEpochMilli().toString(),
+            )
             val pending = readQueueItems(
                 db = db,
-                selection = selection,
-                selectionArgs = selectionArgs,
+                selection = serializedSelection,
+                selectionArgs = serializedSelectionArgs,
                 orderBy = "requested_at_ms ASC, id ASC",
                 limit = 1,
             ).firstOrNull()
@@ -678,6 +644,10 @@ class SqlCipherLocalMemoryStore(
             TABLE_APP_USAGE_SUMMARIES,
             scanResult.appUsageSummaries.map { it.id },
         ).size
+        if (scanResult.replaceExistingConnectorData) {
+            deleteConnectorRows(db, scanResult.connectorId, completedAt)
+        }
+        writeConnectorScanStatus(db, scanResult)
 
         scanResult.sourceReferences.forEach { source ->
             check(
@@ -737,6 +707,67 @@ class SqlCipherLocalMemoryStore(
         return StoreWriteResult(
             insertedCount = totalCount - existingCount,
             updatedCount = existingCount,
+            completedAt = completedAt,
+        )
+    }
+
+    private fun deleteConnectorRows(
+        db: SQLiteDatabase,
+        connectorId: String,
+        completedAt: Instant,
+    ): StoreDeleteResult {
+        val sourceIds = readSourceReferences(db, connectorId).map { it.id }.toSet()
+        val eventIds = readDerivedMemoryEvents(db)
+            .filter { event ->
+                event.id.startsWith("event:$connectorId:") ||
+                    event.sourceReferenceIds.any { it in sourceIds }
+            }
+            .map { it.id }
+            .toSet()
+        val citationIds = readCitations(db)
+            .filter { citation ->
+                citation.id.startsWith("citation:$connectorId:") ||
+                    citation.sourceReferenceId in sourceIds ||
+                    citation.derivedMemoryEventId in eventIds
+            }
+            .map { it.id }
+        val placeClusterIds = readPlaceClusters(db)
+            .filter { cluster ->
+                cluster.id.startsWith("place-cluster:$connectorId:") ||
+                    cluster.sourceReferenceIds.any { it in sourceIds }
+            }
+            .map { it.id }
+            .toSet()
+        val appUsageSummaryIds = readAppUsageSummaries(db)
+            .filter { summary ->
+                summary.id.startsWith("app-usage:$connectorId:") ||
+                    summary.sourceReferenceIds.any { it in sourceIds }
+            }
+            .map { it.id }
+            .toSet()
+        val dailySummaryIds = readDailySummaries(db)
+            .filter { summary ->
+                summary.derivedMemoryEventIds.any { it in eventIds } ||
+                    summary.placeClusterIds.any { it in placeClusterIds } ||
+                    summary.appUsageSummaryIds.any { it in appUsageSummaryIds }
+            }
+            .map { it.id }
+
+        deleteIn(db, TABLE_DAILY_SUMMARIES, "id", dailySummaryIds)
+        deleteIn(db, TABLE_PLACE_CLUSTERS, "id", placeClusterIds.toList())
+        deleteIn(db, TABLE_APP_USAGE_SUMMARIES, "id", appUsageSummaryIds.toList())
+        deleteIn(db, TABLE_CITATIONS, "id", citationIds)
+        deleteIn(db, TABLE_DERIVED_EVENTS, "id", eventIds.toList())
+        deleteIn(db, TABLE_SOURCE_REFERENCES, "id", sourceIds.toList())
+        db.delete(TABLE_CONNECTOR_SCAN_STATUS, "connector_id = ?", arrayOf(connectorId))
+        return StoreDeleteResult(
+            connectorId = connectorId,
+            deletedSourceReferenceIds = sourceIds.toList(),
+            deletedDerivedMemoryEventIds = eventIds.toList(),
+            deletedCitationIds = citationIds,
+            deletedSummaryIds = dailySummaryIds,
+            deletedPlaceClusterIds = placeClusterIds.toList(),
+            deletedAppUsageSummaryIds = appUsageSummaryIds.toList(),
             completedAt = completedAt,
         )
     }
@@ -843,6 +874,9 @@ class SqlCipherLocalMemoryStore(
         }
         if (version < AUTOMATIC_CONTROL_SCHEMA_VERSION) {
             runMigration(db, AUTOMATIC_CONTROL_SCHEMA_VERSION, ::addAutomaticIndexingControl)
+        }
+        if (version < CONNECTOR_SCAN_STATUS_SCHEMA_VERSION) {
+            runMigration(db, CONNECTOR_SCAN_STATUS_SCHEMA_VERSION, ::createConnectorScanStatusTable)
         }
     }
 
@@ -1050,6 +1084,21 @@ class SqlCipherLocalMemoryStore(
                 generation = 0L,
                 settingsKey = UNINITIALIZED_AUTOMATIC_SETTINGS_KEY,
             ),
+        )
+    }
+
+    private fun createConnectorScanStatusTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_CONNECTOR_SCAN_STATUS (
+                connector_id TEXT PRIMARY KEY NOT NULL,
+                processing_state TEXT NOT NULL,
+                missing_sources TEXT NOT NULL,
+                scope_from TEXT,
+                scope_until TEXT,
+                scanned_at TEXT NOT NULL
+            )
+            """.trimIndent(),
         )
     }
 
@@ -1462,6 +1511,39 @@ class SqlCipherLocalMemoryStore(
             }
     }
 
+    private fun readConnectorScanStatuses(db: SQLiteDatabase): List<ConnectorScanStatus> {
+        return db.query(TABLE_CONNECTOR_SCAN_STATUS, null, null, null, null, null, "scanned_at DESC")
+            .useRows { row ->
+                ConnectorScanStatus(
+                    connectorId = row.string("connector_id"),
+                    processingState = enumValueOf(row.string("processing_state")),
+                    missingSources = decodeList(row.string("missing_sources")).map(::decodeMissingSource),
+                    scopeFrom = row.nullableInstant("scope_from"),
+                    scopeUntil = row.nullableInstant("scope_until"),
+                    scannedAt = Instant.parse(row.string("scanned_at")),
+                )
+            }
+    }
+
+    private fun writeConnectorScanStatus(db: SQLiteDatabase, scanResult: ConnectorScanResult) {
+        val values = ContentValues().apply {
+            put("connector_id", scanResult.connectorId)
+            put("processing_state", scanResult.processingState.name)
+            put("missing_sources", encodeList(scanResult.missingSources.map { it.toStorageString() }))
+            put("scope_from", scanResult.scopeFrom?.toString())
+            put("scope_until", scanResult.scopeUntil?.toString())
+            put("scanned_at", scanResult.scannedAt.toString())
+        }
+        check(
+            db.insertWithOnConflict(
+                TABLE_CONNECTOR_SCAN_STATUS,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_REPLACE,
+            ) >= 0L,
+        ) { "Could not persist connector scan status." }
+    }
+
     private fun deleteIn(db: SQLiteDatabase, table: String, column: String, ids: List<String>) {
         ids.chunked(SQLITE_BIND_LIMIT).forEach { chunk ->
             val placeholders = chunk.joinToString(",") { "?" }
@@ -1648,11 +1730,13 @@ class SqlCipherLocalMemoryStore(
         const val TABLE_INDEXING_QUEUE = "indexing_queue"
         const val TABLE_AUTOMATIC_INDEXING_RUNTIME = "automatic_indexing_runtime"
         const val TABLE_AUTOMATIC_INDEXING_CONTROL = "automatic_indexing_control"
+        const val TABLE_CONNECTOR_SCAN_STATUS = "connector_scan_status"
         const val SQLITE_BIND_LIMIT = 900
         const val CORE_SCHEMA_VERSION = 1
         const val INDEXING_SCHEMA_VERSION = 2
         const val AUTOMATIC_CONTROL_SCHEMA_VERSION = 3
-        const val SCHEMA_VERSION = AUTOMATIC_CONTROL_SCHEMA_VERSION
+        const val CONNECTOR_SCAN_STATUS_SCHEMA_VERSION = 4
+        const val SCHEMA_VERSION = CONNECTOR_SCAN_STATUS_SCHEMA_VERSION
         const val MAX_QUEUE_SNAPSHOT_ITEMS = 500
         const val UNINITIALIZED_AUTOMATIC_SETTINGS_KEY = "v1:uninitialized"
 

@@ -148,14 +148,15 @@ class IndexingCommandExecutor(
             return fail(item, IndexingFailureCode.CONNECTOR_SCAN_FAILED)
         }
 
-        if (!scanResult.hasIndexableOutput()) {
-            return skip(item, IndexingSkipReason.NO_INDEXABLE_DATA)
-        }
         currentCoroutineContext().ensureActive()
 
+        val scopedScanResult = scanResult.copy(
+            scopeFrom = item.task.from ?: scanResult.scopeFrom,
+            scopeUntil = item.task.until ?: scanResult.scopeUntil,
+        )
         val commitResult = try {
             scanWriter.commitClaimedConnectorScan(
-                scanResult = scanResult,
+                scanResult = scopedScanResult,
                 itemId = item.id,
                 leaseOwner = checkNotNull(item.leaseOwner),
                 attemptCount = item.attemptCount,
@@ -303,14 +304,6 @@ class IndexingCommandExecutor(
         val now = clock.instant()
         val startedAt = checkNotNull(item.startedAt)
         return if (now.isBefore(startedAt)) startedAt else now
-    }
-
-    private fun ConnectorScanResult.hasIndexableOutput(): Boolean {
-        return sourceReferences.isNotEmpty() ||
-            derivedEvents.isNotEmpty() ||
-            citations.isNotEmpty() ||
-            placeClusters.isNotEmpty() ||
-            appUsageSummaries.isNotEmpty()
     }
 
     private companion object {

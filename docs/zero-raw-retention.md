@@ -90,3 +90,5 @@ WorkManager input and progress data contain no source data. The automatic worker
 The encrypted automatic-control metadata contains only an enabled flag, monotonic generation, and a deterministic key for indexing preferences. Queue/runtime generations are coordination numbers; they contain no source content, URI, provider response, location, or user query.
 
 The Sources status card reads only bounded queue/runtime metadata: connector display name, trigger/state, timestamps, counts, and stable reason codes. It never renders task IDs, lease owners, exception text, source pointers, or derived/source content.
+
+The encrypted latest connector scan status may contain only connector ID, processing enum, scan timestamp, optional scan-range timestamps, capability/availability enums, connector ID, and a stable non-source reason code or fixed connector-authored explanation. The explanation must never be assembled from source data or runtime exception text. Status must not contain a file name, URI, extracted text, OCR transcript, provider body, or raw source detail.
