@@ -43,6 +43,16 @@ training:
 
 export:
   merged_output_dir: model-training/outputs/merged/grayin-gemma-4-e2b-smoke
-  litert_output_file: model-training/outputs/litert/grayin-gemma-4-e2b-smoke.litertlm
-  model_id: grayin-gemma-4-E2B-it-q4-smoke
+  merge_provenance_file: model-training/outputs/provenance/grayin-gemma-4-e2b-smoke-merge.json
+  litert_output_file: model-training/outputs/litert/grayin-gemma-4-E2B-it-wi8-afp32-smoke.litertlm
+  export_provenance_file: model-training/outputs/provenance/grayin-gemma-4-e2b-wi8-afp32-smoke-export.json
+  local_release_manifest_file: model-training/outputs/provenance/grayin-gemma-4-e2b-wi8-afp32-smoke-local-release.json
+  chat_template_override_path: model-training/reference-models/litert-community-gemma-4-e2b/chat_template.jinja
+  eval_fixtures: model-training/data/synthetic/grayin_eval.jsonl
+  eval_fixture_count: 30
+  eval_fixture_sha256: b8dcce7aeb2f569027c85dc6c024491883c536517a3b2534b5d355edcdf58b4d
+  eval_predictions_file: model-training/outputs/eval/grayin-gemma-4-e2b-wi8-afp32-smoke-predictions.jsonl
+  eval_summary_file: model-training/outputs/eval/grayin-gemma-4-e2b-wi8-afp32-smoke-summary.json
+  model_id: grayin-gemma-4-E2B-it-wi8-afp32-smoke
+  quantization: dynamic_wi8_afp32
   runtime_catalog_target: app/src/main/java/ai/grayin/core/ai/ModelCatalog.kt

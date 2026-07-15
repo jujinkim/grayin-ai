@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 from typing import Any
+import unicodedata
 
 
 EVIDENCE_PACK_SCHEMA_VERSION = "grayin-evidence-pack-v1"
@@ -13,8 +14,13 @@ PROMPT_CONTRACT_VERSION = "evidence-pack-prompt-v1"
 
 MAX_EVIDENCE_ITEMS = 12
 MAX_MISSING_SOURCES = 12
-MAX_SUMMARY_CHARS = 600
-MAX_MISSING_CHARS = 300
+MAX_CITATIONS_PER_EVIDENCE = 4
+MAX_ID_UTF8_BYTES = 256
+MAX_QUERY_UTF8_BYTES = 1_000
+MAX_CITATION_LABEL_UTF8_BYTES = 200
+MAX_SUMMARY_UTF8_BYTES = 600
+MAX_MISSING_UTF8_BYTES = 300
+MAX_PROMPT_UTF8_BYTES = 64 * 1024
 
 CONFIDENCE_LEVELS = {"UNKNOWN", "LOW", "MEDIUM", "HIGH"}
 EVENT_KINDS = {
@@ -79,6 +85,31 @@ def _require_list(value: Any, label: str) -> list[Any]:
     if not isinstance(value, list):
         raise ValueError(f"{label} must be a list")
     return value
+
+
+def _closed_prompt_line(value: str, max_utf8_bytes: int) -> str:
+    output: list[str] = []
+    used_bytes = 0
+    pending_space = False
+    for character in value:
+        code_point = ord(character)
+        is_iso_control = code_point <= 0x1F or 0x7F <= code_point <= 0x9F
+        is_surrogate = 0xD800 <= code_point <= 0xDFFF
+        is_unsafe_category = unicodedata.category(character) in {"Cf", "Co", "Cs", "Cn"}
+        if is_iso_control or is_surrogate or is_unsafe_category or character.isspace():
+            pending_space = bool(output)
+            continue
+        encoded_bytes = len(character.encode("utf-8"))
+        separator_bytes = 1 if pending_space and output else 0
+        if used_bytes + separator_bytes + encoded_bytes > max_utf8_bytes:
+            break
+        if separator_bytes:
+            output.append(" ")
+            used_bytes += 1
+        output.append(character)
+        used_bytes += encoded_bytes
+        pending_space = False
+    return "".join(output) or "unknown"
 
 
 def validate_evidence_pack(pack: dict[str, Any]) -> None:
@@ -187,7 +218,7 @@ def render_evidence_pack_prompt(pack: dict[str, Any]) -> str:
         "Answer in the same language as USER_QUERY when practical.",
         "",
         "USER_QUERY:",
-        pack["query"],
+        _closed_prompt_line(pack["query"], MAX_QUERY_UTF8_BYTES),
         "",
         "DERIVED_EVIDENCE:",
     ]
@@ -196,22 +227,23 @@ def render_evidence_pack_prompt(pack: dict[str, Any]) -> str:
     else:
         for number, evidence in enumerate(pack["evidence_items"][:MAX_EVIDENCE_ITEMS], start=1):
             citation_labels = "; ".join(
-                f"{citation_id}:{citations_by_id[citation_id]['label']}"
-                for citation_id in evidence["citation_ids"]
+                f"{_closed_prompt_line(citation_id, MAX_ID_UTF8_BYTES)}:"
+                f"{_closed_prompt_line(citations_by_id[citation_id]['label'], MAX_CITATION_LABEL_UTF8_BYTES)}"
+                for citation_id in evidence["citation_ids"][:MAX_CITATIONS_PER_EVIDENCE]
                 if citation_id in citations_by_id
             ) or "none"
             capabilities = ", ".join(evidence["capabilities"])
             lines.extend(
                 [
                     f"- E{number}",
-                    f"  evidence_id: {evidence['id']}",
-                    f"  event_id: {evidence['derived_memory_event_id']}",
+                    f"  evidence_id: {_closed_prompt_line(evidence['id'], MAX_ID_UTF8_BYTES)}",
+                    f"  event_id: {_closed_prompt_line(evidence['derived_memory_event_id'], MAX_ID_UTF8_BYTES)}",
                     f"  kind: {evidence['event_kind']}",
                     f"  occurred_at: {evidence.get('occurred_at') or 'unknown'}",
                     f"  confidence: {evidence['confidence']}",
                     f"  capabilities: {capabilities}",
                     f"  citations: {citation_labels}",
-                    f"  summary: {evidence['summary'][:MAX_SUMMARY_CHARS]}",
+                    f"  summary: {_closed_prompt_line(evidence['summary'], MAX_SUMMARY_UTF8_BYTES)}",
                 ],
             )
     lines.extend(["", "MISSING_SOURCES:"])
@@ -221,7 +253,7 @@ def render_evidence_pack_prompt(pack: dict[str, Any]) -> str:
         for missing in pack["missing_sources"][:MAX_MISSING_SOURCES]:
             lines.append(
                 f"- {missing['capability']}: {missing['availability']} - "
-                f"{missing['explanation'][:MAX_MISSING_CHARS]}",
+                f"{_closed_prompt_line(missing['explanation'], MAX_MISSING_UTF8_BYTES)}",
             )
     lines.extend(
         [
@@ -233,7 +265,10 @@ def render_evidence_pack_prompt(pack: dict[str, Any]) -> str:
             "Confidence: LOW, MEDIUM, HIGH, or UNKNOWN",
         ],
     )
-    return "\n".join(lines) + "\n"
+    prompt = "\n".join(lines) + "\n"
+    if len(prompt.encode("utf-8")) >= MAX_PROMPT_UTF8_BYTES:
+        raise ValueError("EvidencePack prompt exceeds its closed size boundary")
+    return prompt
 
 
 def build_grounded_answer(

@@ -37,29 +37,36 @@ class EvaluationResult:
         return not self.errors
 
 
-def load_jsonl(path: Path) -> list[dict[str, Any]]:
+def parse_jsonl_bytes(encoded: bytes, source_name: str) -> list[dict[str, Any]]:
+    try:
+        text = encoded.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError(f"{source_name}: JSONL must be UTF-8") from error
     records: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
-    with path.open("r", encoding="utf-8") as source:
-        for line_number, line in enumerate(source, start=1):
-            if not line.strip():
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise ValueError(f"{path}:{line_number}: invalid JSON: {error}") from error
-            if not isinstance(record, dict):
-                raise ValueError(f"{path}:{line_number}: record must be an object")
-            fixture_id = record.get("id")
-            if not isinstance(fixture_id, str) or not fixture_id:
-                raise ValueError(f"{path}:{line_number}: id is missing")
-            if fixture_id in seen_ids:
-                raise ValueError(f"{path}:{line_number}: duplicate id: {fixture_id}")
-            seen_ids.add(fixture_id)
-            records.append(record)
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{source_name}:{line_number}: invalid JSON: {error}") from error
+        if not isinstance(record, dict):
+            raise ValueError(f"{source_name}:{line_number}: record must be an object")
+        fixture_id = record.get("id")
+        if not isinstance(fixture_id, str) or not fixture_id:
+            raise ValueError(f"{source_name}:{line_number}: id is missing")
+        if fixture_id in seen_ids:
+            raise ValueError(f"{source_name}:{line_number}: duplicate id: {fixture_id}")
+        seen_ids.add(fixture_id)
+        records.append(record)
     if not records:
-        raise ValueError(f"{path}: no records")
+        raise ValueError(f"{source_name}: no records")
     return records
+
+
+def load_jsonl(path: Path) -> list[dict[str, Any]]:
+    return parse_jsonl_bytes(path.read_bytes(), str(path))
 
 
 def validate_fixture(fixture: dict[str, Any]) -> None:
@@ -163,14 +170,18 @@ def score_fixture(fixture: dict[str, Any], candidate_answer: str) -> EvaluationR
     )
 
 
-def prediction_map(path: Path) -> dict[str, str]:
+def prediction_map_from_records(records: list[dict[str, Any]], source_name: str) -> dict[str, str]:
     predictions: dict[str, str] = {}
-    for record in load_jsonl(path):
+    for record in records:
         answer = record.get("answer")
         if not isinstance(answer, str):
-            raise ValueError(f"{path}: {record['id']}: answer must be a string")
+            raise ValueError(f"{source_name}: {record['id']}: answer must be a string")
         predictions[record["id"]] = answer
     return predictions
+
+
+def prediction_map(path: Path) -> dict[str, str]:
+    return prediction_map_from_records(load_jsonl(path), str(path))
 
 
 def evaluate(

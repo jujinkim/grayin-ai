@@ -27,6 +27,15 @@ python3 model-training/scripts/run_grounded_eval.py
 
 `run_grounded_eval.py --predictions <jsonl>` accepts synthetic prediction rows with `id` and `answer`. It fails on malformed output, duplicate or unknown citations, an unexpected evidence set, missing-capability mismatch, confidence mismatch, and fixture-specific required/forbidden expressions. It deliberately uses no remote or model-based grader. Passing the reference gate proves fixture and policy consistency only; final model quality, latency, memory, and LiteRT-LM compatibility require the exported `.litertlm` and representative Android-device runs.
 
+After a real ignored `.litertlm` export, run the local runtime gate:
+
+```bash
+python3 model-training/scripts/run_litert_eval.py \
+  --config model-training/configs/grayin_gemma_lora.yaml
+```
+
+The runner invokes the installed `litert-lm run` CLI once per synthetic fixture using only the local model and synthetic prompts, with model-library offline flags set. It extracts exactly one four-line candidate and passes all predictions to the same dependency-free scorer. It atomically publishes ignored predictions and a summary only when every selected fixture passes. Only the complete configured fixture set marks `release_gate.passed=true`; `--limit` is a smoke run. Use a network-isolated build host when OS-level isolation is required. This host gate still does not replace representative Android runtime latency, memory, initialization, and answer-quality checks.
+
 ## 1. Where did I go yesterday?
 
 Required capabilities:

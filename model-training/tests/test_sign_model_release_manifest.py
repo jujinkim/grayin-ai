@@ -22,7 +22,7 @@ class SignedModelReleaseManifestTest(unittest.TestCase):
             root = Path(temporary)
             private_key = root / "private.pem"
             public_key = root / "public.pem"
-            model_file = root / "grayin-gemma-4-E2B-it-q4-v1.litertlm"
+            model_file = root / "grayin-gemma-4-E2B-it-wi8-afp32-v1.litertlm"
             envelope_file = root / "manifest.json"
             model_file.write_bytes(b"LITERTLM" + bytes(1024 * 1024 - 8))
             subprocess.run(
@@ -43,7 +43,7 @@ class SignedModelReleaseManifestTest(unittest.TestCase):
                     "--model-file",
                     str(model_file),
                     "--model-id",
-                    "grayin-gemma-4-E2B-it-q4-v1",
+                    "grayin-gemma-4-E2B-it-wi8-afp32-v1",
                     "--release-version",
                     "1.0.0",
                     "--download-url",

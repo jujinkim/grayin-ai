@@ -2,6 +2,8 @@
 
 This file records local training attempts without storing model artifacts in git.
 
+Current status: the entries below are historical 2026-06-27 training-path records. The ignored reference-model, checkpoint, adapter, merged-model, and LiteRT-LM artifacts are not present in the current workspace, and these runs did not execute the newer merge/export/full 30-fixture CLI/device release gate. They are not current release acceptance evidence.
+
 ## 2026-06-27: Gemma 4 E2B LoRA Smoke
 
 Purpose:
@@ -76,6 +78,6 @@ Ignored artifacts:
 
 Notes:
 
-- This adapter proves the training pipeline and app-behavior LoRA target set.
+- This adapter proved only the then-current LoRA training path and app-behavior target set.
 - The current dataset is intentionally small synthetic bootstrap data; a release adapter still needs a larger curated dataset and evaluation pass.
 - Keep all reference weights, checkpoints, adapters, merged weights, and `.litertlm` exports outside git.
