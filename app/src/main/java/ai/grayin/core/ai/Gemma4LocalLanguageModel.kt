@@ -42,7 +42,7 @@ class Gemma4LocalLanguageModel(
         val answer = generateResponse(modelPath, prompt)
         return LocalModelAnswerDraft(
             answer = answer.ifBlank { "Local Gemma returned an empty answer." },
-            usedEvidenceItemIds = evidencePack.evidenceItems.map { it.id },
+            usedEvidenceItemIds = LocalModelGrounding.evidenceIdsFromAnswer(answer, evidencePack),
             inferenceNotes = listOf("Generated locally by Gemma from derived EvidencePack only."),
             confidence = combineConfidence(evidencePack.evidenceItems, evidencePack.missingSources.isNotEmpty()),
             missingSources = evidencePack.missingSources,

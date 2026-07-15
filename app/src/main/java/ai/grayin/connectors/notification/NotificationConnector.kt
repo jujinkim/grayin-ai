@@ -93,13 +93,18 @@ class NotificationConnector(
             else -> skipped(
                 now,
                 SourceAvailability.NOT_INDEXED,
-                "Notification source indexes new notifications as they arrive; there is no historical notification scan.",
+                if (NotificationAppAllowlist(context).load().isEmpty()) {
+                    "Add at least one application package to the notification allowlist."
+                } else {
+                    "Notification source indexes allowlisted new notifications as they arrive; there is no historical notification scan."
+                },
             )
         }
     }
 
     override suspend fun revoke(): ConnectorRevokeResult {
         prefs(context).edit().clear().apply()
+        NotificationAppAllowlist(context).replace(emptySet())
         return ConnectorRevokeResult(
             connectorId = CONNECTOR_ID,
             revokedAt = Instant.now(),

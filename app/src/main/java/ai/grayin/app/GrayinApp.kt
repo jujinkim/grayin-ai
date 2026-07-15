@@ -430,6 +430,19 @@ fun GrayinApp() {
                                 }
                             }
                         },
+                        onSaveNotificationAllowlist = { rawValue ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.updateNotificationAllowlist(rawValue, strings)
+                                } catch (error: Throwable) {
+                                    statusMessage = error.message ?: strings.notificationAllowlistInvalid
+                                } finally {
+                                    snapshot = controller.snapshot(strings)
+                                    working = false
+                                }
+                            }
+                        },
                     )
                     GrayinScreen.Settings -> SettingsScreen(
                         rows = snapshot.settingsRows,
@@ -676,6 +689,7 @@ private fun SourcesScreen(
     onIndexSource: (String) -> Unit,
     onRevokeSource: (String) -> Unit,
     onDeleteSourceData: (String) -> Unit,
+    onSaveNotificationAllowlist: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -713,6 +727,7 @@ private fun SourcesScreen(
                 onIndexSource = onIndexSource,
                 onRevokeSource = onRevokeSource,
                 onDeleteSourceData = onDeleteSourceData,
+                onSaveNotificationAllowlist = onSaveNotificationAllowlist,
             )
         }
     }
@@ -919,7 +934,15 @@ private fun SourceRow(
     onIndexSource: (String) -> Unit,
     onRevokeSource: (String) -> Unit,
     onDeleteSourceData: (String) -> Unit,
+    onSaveNotificationAllowlist: (String) -> Unit,
 ) {
+    var notificationAllowlistText by rememberSaveable(source.id) {
+        mutableStateOf(source.notificationAllowedPackages.joinToString("\n"))
+    }
+    LaunchedEffect(source.notificationAllowedPackages) {
+        notificationAllowlistText = source.notificationAllowedPackages.joinToString("\n")
+    }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         tonalElevation = 1.dp,
@@ -937,6 +960,25 @@ private fun SourceRow(
                 Text(source.status, style = MaterialTheme.typography.labelLarge)
             }
             Text(source.sensitivity, style = MaterialTheme.typography.bodySmall)
+            if (source.id == NotificationConnectorId) {
+                Text(strings.notificationAllowlistTitle, style = MaterialTheme.typography.titleSmall)
+                Text(strings.notificationAllowlistHint, style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = notificationAllowlistText,
+                    enabled = !working,
+                    minLines = 2,
+                    onValueChange = { notificationAllowlistText = it },
+                    label = { Text(strings.notificationAllowlistTitle) },
+                )
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !working,
+                    onClick = { onSaveNotificationAllowlist(notificationAllowlistText) },
+                ) {
+                    Text(strings.saveNotificationAllowlist)
+                }
+            }
             if (source.canInvoke || source.canAdd || source.canIndex || source.canRevoke || source.canDelete) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (source.canInvoke) {

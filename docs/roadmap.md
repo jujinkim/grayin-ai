@@ -36,10 +36,10 @@ Each step updates affected docs, runs available checks, and produces one coheren
 
 ### 1. Retrieval and Connector Correctness
 
-- [ ] Resolve available capabilities from every indexed connector instead of Local Files only.
-- [ ] Preserve per-event capabilities through retrieval and missing-data calculation.
-- [ ] Validate local-model evidence IDs and citations before displaying a generated answer.
-- [ ] Add and enforce the notification application allowlist required by the product spec.
+- [x] Resolve available capabilities from every indexed connector instead of Local Files only.
+- [x] Preserve per-event capabilities through retrieval and missing-data calculation.
+- [x] Validate local-model evidence IDs and citations before displaying a generated answer.
+- [x] Add and enforce the notification application allowlist required by the product spec.
 
 ### 2. Typed External Enrichment
 

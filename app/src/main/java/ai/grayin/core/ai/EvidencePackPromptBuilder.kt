@@ -39,7 +39,7 @@ object EvidencePackPromptBuilder {
             appendLine()
             appendLine("Return format:")
             appendLine("Answer: <concise answer>")
-            appendLine("Evidence: <evidence ids used>")
+            appendLine("Evidence: <exact evidence_id values used, separated by commas>")
             appendLine("Missing: <missing data, if any>")
             appendLine("Confidence: LOW, MEDIUM, HIGH, or UNKNOWN")
         }

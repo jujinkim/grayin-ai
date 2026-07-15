@@ -98,6 +98,10 @@ data class GrayinStrings(
     val photos: String,
     val calendar: String,
     val notifications: String,
+    val notificationAllowlistTitle: String,
+    val notificationAllowlistHint: String,
+    val saveNotificationAllowlist: String,
+    val notificationAllowlistInvalid: String,
     val appUsage: String,
     val off: String,
     val selected: String,
@@ -250,6 +254,14 @@ data class GrayinStrings(
             GrayinLanguage.KOREAN -> if (enabled) "자동 인덱싱 설정을 켰습니다." else "자동 인덱싱 설정을 껐습니다."
             GrayinLanguage.JAPANESE -> if (enabled) "自動インデックス設定をオンにしました。" else "自動インデックス設定をオフにしました。"
             GrayinLanguage.ENGLISH -> if (enabled) "Automatic indexing settings enabled." else "Automatic indexing settings disabled."
+        }
+    }
+
+    fun notificationAllowlistSaved(count: Int): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "알림 앱 허용 목록을 저장했습니다: ${count}개."
+            GrayinLanguage.JAPANESE -> "通知アプリ許可リストを保存しました: ${count}件。"
+            GrayinLanguage.ENGLISH -> "Saved notification app allowlist: $count package(s)."
         }
     }
 
@@ -490,6 +502,10 @@ private val EnglishStrings = GrayinStrings(
     photos = "Photos",
     calendar = "Calendar",
     notifications = "Notifications",
+    notificationAllowlistTitle = "Allowed notification apps",
+    notificationAllowlistHint = "Enter Android package names separated by commas or new lines. An empty list blocks every notification.",
+    saveNotificationAllowlist = "Save allowed apps",
+    notificationAllowlistInvalid = "Use valid Android package names only.",
     appUsage = "App usage",
     off = "Off",
     selected = "Connected",
@@ -521,7 +537,7 @@ private val EnglishStrings = GrayinStrings(
     noLocalFilesIndexed = "No local files indexed.",
     noSourcesReadyToIndex = "No connected sources are ready to index.",
     revokedLocalFiles = "Revoked local file access and deleted derived local file data.",
-    networkPermissionRestricted = "Network permission: restricted to typed enrichment methods",
+    networkPermissionRestricted = "Network: typed external enrichment and fixed-catalog model downloads only",
     accountAbsent = "Account: absent",
     cloudSyncAbsent = "Cloud sync: absent",
     telemetryAbsent = "Telemetry: absent",
@@ -531,7 +547,7 @@ private val EnglishStrings = GrayinStrings(
     localGemmaModelReady = "Local Gemma status: ready",
     localGemmaModelLoading = "Local Gemma status: loading",
     localGemmaModelUnavailable = "Local Gemma status: unavailable; Ask uses template fallback.",
-    localGemmaModelApkNotBundled = "Model weights are not downloaded by Grayin and are not bundled in the APK.",
+    localGemmaModelApkNotBundled = "Model weights are not bundled in the APK; import or download an approved model at runtime.",
     localGemmaModelDownloadGuide = "Get model from Google AI Edge LiteRT-LM Gemma docs or Hugging Face repo: litert-community/gemma-4-E2B-it-litert-lm.",
     localGemmaModelDownloadUrl = "Download page: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
     localGemmaModelFileGuide = "Expected file name: gemma-4-E2B-it.litertlm.",
@@ -599,6 +615,10 @@ private val KoreanStrings = EnglishStrings.copy(
     photos = "사진",
     calendar = "캘린더",
     notifications = "알림",
+    notificationAllowlistTitle = "허용할 알림 앱",
+    notificationAllowlistHint = "Android 패키지 이름을 쉼표 또는 줄바꿈으로 구분해 입력하세요. 비워 두면 모든 알림을 차단합니다.",
+    saveNotificationAllowlist = "허용 앱 저장",
+    notificationAllowlistInvalid = "올바른 Android 패키지 이름만 입력하세요.",
     appUsage = "앱 사용",
     off = "꺼짐",
     selected = "연결됨",
@@ -630,7 +650,7 @@ private val KoreanStrings = EnglishStrings.copy(
     noLocalFilesIndexed = "인덱싱된 로컬 파일이 없습니다.",
     noSourcesReadyToIndex = "인덱싱할 수 있는 연결된 소스가 없습니다.",
     revokedLocalFiles = "로컬 파일 접근 권한을 해제하고 파생 로컬 파일 데이터를 삭제했습니다.",
-    networkPermissionRestricted = "네트워크 권한: typed enrichment method로 제한됨",
+    networkPermissionRestricted = "네트워크: typed 외부 enrichment 및 고정 catalog 모델 다운로드만 허용",
     accountAbsent = "계정: 없음",
     cloudSyncAbsent = "클라우드 동기화: 없음",
     telemetryAbsent = "텔레메트리: 없음",
@@ -640,7 +660,7 @@ private val KoreanStrings = EnglishStrings.copy(
     localGemmaModelReady = "로컬 Gemma 상태: 준비됨",
     localGemmaModelLoading = "로컬 Gemma 상태: 로딩 중",
     localGemmaModelUnavailable = "로컬 Gemma 상태: 없음. 질문은 템플릿 fallback을 사용합니다.",
-    localGemmaModelApkNotBundled = "모델 weight는 Grayin이 다운로드하지 않으며 APK에 포함되지 않습니다.",
+    localGemmaModelApkNotBundled = "모델 weight는 APK에 포함되지 않습니다. 승인된 모델을 실행 시 가져오거나 다운로드하세요.",
     localGemmaModelDownloadGuide = "모델 획득: Google AI Edge LiteRT-LM Gemma 문서 또는 Hugging Face repo litert-community/gemma-4-E2B-it-litert-lm.",
     localGemmaModelDownloadUrl = "다운로드 페이지: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
     localGemmaModelFileGuide = "필요 파일명: gemma-4-E2B-it.litertlm.",
@@ -708,6 +728,10 @@ private val JapaneseStrings = EnglishStrings.copy(
     photos = "写真",
     calendar = "カレンダー",
     notifications = "通知",
+    notificationAllowlistTitle = "許可する通知アプリ",
+    notificationAllowlistHint = "Androidパッケージ名をカンマまたは改行で区切って入力してください。空欄の場合はすべての通知を遮断します。",
+    saveNotificationAllowlist = "許可アプリを保存",
+    notificationAllowlistInvalid = "有効なAndroidパッケージ名だけを入力してください。",
     appUsage = "アプリ使用",
     off = "オフ",
     selected = "接続済み",
@@ -739,7 +763,7 @@ private val JapaneseStrings = EnglishStrings.copy(
     noLocalFilesIndexed = "インデックス済みのローカルファイルはありません。",
     noSourcesReadyToIndex = "インデックス可能な接続済みソースがありません。",
     revokedLocalFiles = "ローカルファイルへのアクセス許可を解除し、派生ローカルファイルデータを削除しました。",
-    networkPermissionRestricted = "ネットワーク権限: typed enrichment method に制限",
+    networkPermissionRestricted = "ネットワーク: typed外部enrichmentと固定catalogモデルのダウンロードのみ許可",
     accountAbsent = "アカウント: なし",
     cloudSyncAbsent = "クラウド同期: なし",
     telemetryAbsent = "テレメトリー: なし",
@@ -749,7 +773,7 @@ private val JapaneseStrings = EnglishStrings.copy(
     localGemmaModelReady = "ローカルGemma状態: 準備完了",
     localGemmaModelLoading = "ローカルGemma状態: 読み込み中",
     localGemmaModelUnavailable = "ローカルGemma状態: 利用不可。質問はテンプレートfallbackを使います。",
-    localGemmaModelApkNotBundled = "モデルweightはGrayinがダウンロードせず、APKにも含まれません。",
+    localGemmaModelApkNotBundled = "モデルweightはAPKに含まれません。承認済みモデルを実行時にインポートまたはダウンロードしてください。",
     localGemmaModelDownloadGuide = "モデル入手先: Google AI Edge LiteRT-LM Gemma docs または Hugging Face repo litert-community/gemma-4-E2B-it-litert-lm。",
     localGemmaModelDownloadUrl = "ダウンロードページ: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
     localGemmaModelFileGuide = "必要なファイル名: gemma-4-E2B-it.litertlm。",

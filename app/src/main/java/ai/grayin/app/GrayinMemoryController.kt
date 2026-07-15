@@ -6,12 +6,14 @@ import ai.grayin.connectors.calendar.CalendarConnector
 import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFilesConnector
 import ai.grayin.connectors.location.LocationConnector
+import ai.grayin.connectors.notification.NotificationAppAllowlist
 import ai.grayin.connectors.notification.NotificationConnector
 import ai.grayin.connectors.photos.PhotosConnector
 import ai.grayin.connectors.usagestats.AppUsageConnector
 import ai.grayin.core.ai.Gemma4LocalLanguageModel
 import ai.grayin.core.ai.Gemma4ModelPathResolver
 import ai.grayin.core.ai.LocalLanguageModel
+import ai.grayin.core.ai.LocalModelGrounding
 import ai.grayin.core.ai.LocalModelAnswerDraft
 import ai.grayin.core.ai.LocalModelStatus
 import ai.grayin.core.ai.ModelCatalog
@@ -38,9 +40,10 @@ import ai.grayin.core.model.MemoryCapability
 import ai.grayin.core.model.MissingSource
 import ai.grayin.core.model.ProcessingState
 import ai.grayin.core.model.SensitivityLevel
-import ai.grayin.core.model.SourceAvailability
 import ai.grayin.core.model.SourceReference
 import ai.grayin.core.retrieval.DefaultQueryPlanner
+import ai.grayin.core.retrieval.MissingEvidenceResolver
+import ai.grayin.core.retrieval.MemoryCapabilityResolver
 import ai.grayin.core.retrieval.QueryPlan
 import ai.grayin.core.store.LocalMemoryStore
 import ai.grayin.core.store.SqlCipherLocalMemoryStore
@@ -60,6 +63,7 @@ data class ConnectorUiState(
     val canIndex: Boolean = false,
     val canRevoke: Boolean = false,
     val canDelete: Boolean = false,
+    val notificationAllowedPackages: List<String> = emptyList(),
 )
 
 data class AnswerUiState(
@@ -104,6 +108,7 @@ class GrayinMemoryController(
         localFilesConnector,
     ),
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
+    private val notificationAllowlist: NotificationAppAllowlist = NotificationAppAllowlist(context.applicationContext),
     private val modelInstallStore: ModelInstallStore = ModelInstallStore(context.applicationContext),
     private val modelDownloadScheduler: ModelDownloadScheduler = ModelDownloadScheduler(context.applicationContext),
     private val modelPathResolver: Gemma4ModelPathResolver = Gemma4ModelPathResolver(
@@ -338,6 +343,13 @@ class GrayinMemoryController(
         }
     }
 
+    suspend fun updateNotificationAllowlist(rawValue: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        val parsed = NotificationAppAllowlist.parse(rawValue)
+        if (parsed.invalidEntries.isNotEmpty()) return@withContext strings.notificationAllowlistInvalid
+        notificationAllowlist.replace(parsed.allowedPackages)
+        strings.notificationAllowlistSaved(parsed.allowedPackages.size)
+    }
+
     suspend fun deleteLocalFileData(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val deleteResult = store.deleteConnectorData(LocalFileMemoryExtractor.CONNECTOR_ID)
         strings.deletedLocalFileEvents(deleteResult.deletedDerivedMemoryEventIds.size)
@@ -393,18 +405,24 @@ class GrayinMemoryController(
         val evidenceItems = evidenceFor(trimmedQuery, plan)
         val usedCitationIds = evidenceItems.flatMap { it.citationIds }.toSet()
         val citations = store.loadCitations().filter { it.id in usedCitationIds }
-        val missingSources = missingSourcesFor(plan, evidenceItems, strings)
-        val evidencePack = EvidencePack(
-            id = "evidence:${Instant.now().toEpochMilli()}",
-            query = trimmedQuery,
-            generatedAt = Instant.now(),
-            evidenceItems = evidenceItems,
-            citations = citations,
-            missingSources = missingSources,
+        val missingSources = MissingEvidenceResolver.resolve(
+            plan = plan,
+            hasEvidence = evidenceItems.isNotEmpty(),
+            noMatchingEvidenceExplanation = strings.noAnswerAvailable,
+        )
+        val evidencePack = LocalModelGrounding.citedEvidencePack(
+            EvidencePack(
+                id = "evidence:${Instant.now().toEpochMilli()}",
+                query = trimmedQuery,
+                generatedAt = Instant.now(),
+                evidenceItems = evidenceItems,
+                citations = citations,
+                missingSources = missingSources,
+            ),
         )
         val localDraft = localAnswerDraft(evidencePack)
         if (localDraft != null) {
-            return@withContext localDraft.toAnswerUiState(evidenceItems, citations, strings)
+            return@withContext localDraft.toAnswerUiState(evidencePack.evidenceItems, evidencePack.citations, strings)
         }
 
         val answer = fallbackAnswerGenerator.generate(GroundedAnswerRequest(evidencePack))
@@ -434,7 +452,7 @@ class GrayinMemoryController(
         if (evidencePack.evidenceItems.isEmpty() || evidencePack.citations.isEmpty()) return null
         if (localLanguageModel.status() != LocalModelStatus.READY) return null
         return runCatching { localLanguageModel.generate(evidencePack) }.getOrNull()
-            ?.takeIf { draft -> draft.usedEvidenceItemIds.isNotEmpty() && draft.answer.isNotBlank() }
+            ?.let { draft -> LocalModelGrounding.validateDraft(evidencePack, draft) }
     }
 
     private fun LocalModelAnswerDraft.toAnswerUiState(
@@ -443,7 +461,7 @@ class GrayinMemoryController(
         strings: GrayinStrings,
     ): AnswerUiState {
         val usedEvidenceIds = usedEvidenceItemIds.toSet()
-        val usedEvidence = evidenceItems.filter { it.id in usedEvidenceIds }.ifEmpty { evidenceItems }
+        val usedEvidence = evidenceItems.filter { it.id in usedEvidenceIds }
         return AnswerUiState(
             answer = answer,
             confidence = confidence.name,
@@ -462,14 +480,7 @@ class GrayinMemoryController(
     }
 
     private suspend fun availableCapabilities(): Set<MemoryCapability> {
-        val localEvents = store.loadDerivedMemoryEvents().filter { event ->
-            event.sourceReferenceIds.any { it.startsWith("source:${LocalFileMemoryExtractor.CONNECTOR_ID}:") }
-        }
-        return if (localEvents.isEmpty()) {
-            emptySet()
-        } else {
-            setOf(MemoryCapability.HAS_TIME, MemoryCapability.HAS_TEXT)
-        }
+        return MemoryCapabilityResolver.forEvents(store.loadDerivedMemoryEvents())
     }
 
     private suspend fun evidenceFor(query: String, plan: QueryPlan): List<EvidenceItem> {
@@ -499,7 +510,7 @@ class GrayinMemoryController(
                 occurredAt = event.startedAt ?: event.createdAt,
                 confidence = event.confidence,
                 citationIds = event.citationIds,
-                capabilities = setOf(MemoryCapability.HAS_TIME, MemoryCapability.HAS_TEXT),
+                capabilities = MemoryCapabilityResolver.forEvent(event),
             )
         }
     }
@@ -511,20 +522,6 @@ class GrayinMemoryController(
         val summary = event.summary.lowercase()
         val summaryScore = queryTokens.count { summary.contains(it) }
         return keywordScore + labelScore + summaryScore
-    }
-
-    private fun missingSourcesFor(
-        plan: QueryPlan,
-        evidenceItems: List<EvidenceItem>,
-        strings: GrayinStrings,
-    ): List<MissingSource> {
-        if (evidenceItems.isNotEmpty()) return plan.missingSources
-        return plan.missingSources + MissingSource(
-            capability = MemoryCapability.HAS_TEXT,
-            availability = SourceAvailability.NOT_INDEXED,
-            explanation = strings.noLocalTextEvidenceIndexed,
-            connectorId = LocalFileMemoryExtractor.CONNECTOR_ID,
-        )
     }
 
     private suspend fun sourceRow(
@@ -548,6 +545,11 @@ class GrayinMemoryController(
             canIndex = state.enabled,
             canRevoke = state.enabled,
             canDelete = sourceReferences.any { it.connectorId == connectorId },
+            notificationAllowedPackages = if (connectorId == NotificationConnector.CONNECTOR_ID) {
+                notificationAllowlist.load().toList()
+            } else {
+                emptyList()
+            },
         )
     }
 

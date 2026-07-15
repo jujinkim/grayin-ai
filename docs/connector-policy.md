@@ -58,7 +58,7 @@ Location supports explicit runtime location permission plus app-level connection
 
 App Usage supports explicit usage-access settings permission plus app-level connection before indexing. It reads Android UsageStats transiently, emits derived app-duration events/citations/source references, and does not store raw usage event dumps.
 
-Notifications supports explicit notification-listener settings access plus app-level connection before indexing future notification arrivals. It reads posted notification title/text transiently inside listener callbacks, skips security-code notifications, emits derived notification signal events/citations/source references, and does not store raw notification text.
+Notifications supports explicit notification-listener settings access plus app-level connection before indexing future notification arrivals. Its application-package allowlist is empty by default, so no notification content is read until the user adds an exact Android package name. The listener checks the package before reading notification extras, reads allowed title/text transiently, skips security-code notifications, emits derived notification signal events/citations/source references, and does not store raw notification text. Revocation clears both source enablement and the allowlist.
 
 ## MVP API Boundary
 

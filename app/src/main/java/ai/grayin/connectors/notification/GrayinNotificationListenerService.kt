@@ -23,9 +23,11 @@ import kotlinx.coroutines.launch
 class GrayinNotificationListenerService : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val extractor = NotificationSignalExtractor()
+    private val allowlist by lazy { NotificationAppAllowlist(applicationContext) }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (!NotificationConnector.isSourceEnabled(applicationContext)) return
+        if (!allowlist.isAllowed(sbn.packageName)) return
         val result = extractor.extract(sbn) ?: return
         scope.launch {
             val store = SqlCipherLocalMemoryStore(applicationContext)
@@ -53,7 +55,10 @@ private class NotificationSignalExtractor {
     fun extract(sbn: StatusBarNotification): NotificationExtractionResult? {
         val postedAt = Instant.ofEpochMilli(sbn.postTime)
         val indexedAt = Instant.now()
-        val kind = classify(sbn.notification)
+        val kind = NotificationSignalClassifier.classify(
+            text = notificationText(sbn.notification),
+            category = sbn.notification.category,
+        )
         if (kind == NotificationDerivedEventKind.SECURITY_HINT) return null
         val sourceHash = sha256("${sbn.packageName}:${sbn.id}:${sbn.tag.orEmpty()}:${sbn.postTime}")
         val sourceId = "source:${NotificationConnector.CONNECTOR_ID}:$sourceHash"
@@ -104,32 +109,13 @@ private class NotificationSignalExtractor {
         )
     }
 
-    private fun classify(notification: Notification): NotificationDerivedEventKind {
+    private fun notificationText(notification: Notification): String {
         val extras = notification.extras
-        val text = listOfNotNull(
+        return listOfNotNull(
             extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
             extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
             extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString(),
-            notification.category,
-        ).joinToString(" ").lowercase()
-        return when {
-            text.anyContains("otp", "verification", "인증", "確認コード", "security code") -> {
-                NotificationDerivedEventKind.SECURITY_HINT
-            }
-
-            text.anyContains("paid", "payment", "card", "결제", "支払い") -> NotificationDerivedEventKind.PAYMENT
-            text.anyContains("delivery", "delivered", "shipping", "배달", "배송", "配達") -> {
-                NotificationDerivedEventKind.DELIVERY
-            }
-
-            text.anyContains("reservation", "booking", "예약", "予約") -> NotificationDerivedEventKind.RESERVATION
-            text.anyContains("taxi", "train", "flight", "bus", "ride", "택시", "기차", "버스") -> {
-                NotificationDerivedEventKind.TRANSPORT
-            }
-
-            notification.category == Notification.CATEGORY_MESSAGE -> NotificationDerivedEventKind.MESSAGE_HINT
-            else -> NotificationDerivedEventKind.OTHER
-        }
+        ).joinToString(" ")
     }
 
     private fun keywords(packageName: String, kindLabel: String): List<String> {
@@ -138,10 +124,6 @@ private class NotificationSignalExtractor {
             .filter { it.length >= 3 }
             .distinct()
             .take(MAX_KEYWORDS)
-    }
-
-    private fun String.anyContains(vararg needles: String): Boolean {
-        return needles.any { contains(it) }
     }
 
     private fun sha256(value: String): String {

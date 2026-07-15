@@ -9,7 +9,7 @@ Every connector must report metadata, permission state, scan status, missing-sou
 - Location: high sensitivity, default OFF until user grants location permission and connects it. Reads Android last-known provider location transiently and stores only derived place-visit events, citations, and source references.
 - Photos: high sensitivity, default OFF until user grants photo permission and connects it. Reads Android MediaStore image metadata transiently and stores only derived photo index events, citations, and source references.
 - Calendar: high sensitivity, default OFF until user grants calendar permission and connects it. Reads Android calendar instances transiently and stores only derived calendar events, citations, and source references.
-- Notifications: very high sensitivity, default OFF until user enables notification listener access and connects it. Reads posted notifications transiently and stores only derived notification signal events, citations, and source references.
+- Notifications: very high sensitivity, default OFF until user enables notification listener access, connects it, and adds exact Android package names to the default-empty allowlist. Reads only allowed posted notifications transiently and stores only derived notification signal events, citations, and source references.
 - App Usage: very high sensitivity, default OFF until user grants usage access and connects it. Reads Android usage stats transiently and stores only derived app-usage events, citations, and source references.
 - Local Files: high sensitivity, default OFF until user selects files. Supports user-selected `.txt` and `.md` documents through Android's document picker.
 
@@ -72,11 +72,13 @@ The Notifications connector:
 
 - requires explicit Android notification-listener settings access
 - requires user connection before indexing
+- requires a user-managed application-package allowlist that defaults to empty
+- rejects malformed package entries and checks the posting package before reading notification extras
 - reads posted notification title/text only transiently inside listener callbacks
 - skips security-code notifications
 - stores only derived notification signal events and source references
 - does not store raw notification text
-- supports app-level revoke by disabling the connector and deleting derived data
+- supports app-level revoke by disabling the connector, clearing the allowlist, and deleting derived data
 
 Connectors must not read or store source originals outside transient connector processing.
 

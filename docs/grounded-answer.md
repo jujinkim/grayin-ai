@@ -19,7 +19,9 @@ Every generated `GroundedAnswer` includes:
 
 `TemplateGroundedAnswerGenerator` uses only evidence items that reference known citation IDs from the `EvidencePack`.
 
-Evidence without a valid citation is excluded from the answer and inference steps.
+Before generation, `LocalModelGrounding` removes evidence without a known citation and removes citation references that are not present in the pack.
+
+The local-model response contract includes an `Evidence:` line containing exact, comma-separated `EvidenceItem.id` values. A model draft is accepted only when it is non-empty, claims at least one exact ID, and every claimed ID belongs to the cited pack. Prefix matches, unknown IDs, and uncited IDs are rejected. Rejected drafts fall back to the deterministic grounded-answer generator.
 
 Answers must be assembled from cited evidence summaries only. Inference steps point back to the evidence item IDs used for each claim.
 
