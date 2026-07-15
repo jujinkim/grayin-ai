@@ -320,6 +320,7 @@ class TemplateDownloadTest(unittest.TestCase):
                 "Content-Length": str(len(payload) if content_length is None else content_length),
             }
             self.read_sizes: list[int] = []
+            self.offset = 0
 
         def __enter__(self):
             return self
@@ -330,9 +331,11 @@ class TemplateDownloadTest(unittest.TestCase):
         def geturl(self) -> str:
             return self.url
 
-        def read(self, size: int) -> bytes:
+        def read1(self, size: int) -> bytes:
             self.read_sizes.append(size)
-            return self.payload[:size]
+            chunk = self.payload[self.offset : self.offset + size]
+            self.offset += len(chunk)
+            return chunk
 
     class FakeOpener:
         def __init__(self, response) -> None:
@@ -354,7 +357,7 @@ class TemplateDownloadTest(unittest.TestCase):
             mock.patch.object(template_download, "TEMPLATE_SHA256", hashlib.sha256(payload).hexdigest()),
         ):
             self.assertEqual(payload, template_download.fetch_template_payload(opener=opener))
-        self.assertEqual([len(payload) + 1], response.read_sizes)
+        self.assertEqual([len(payload) + 1, 1], response.read_sizes)
         self.assertEqual([template_download.CONNECT_READ_TIMEOUT_SECONDS], opener.timeouts)
         request = opener.requests[0]
         self.assertEqual(TEMPLATE_RAW_URL, request.full_url)
@@ -406,6 +409,96 @@ class TemplateDownloadTest(unittest.TestCase):
         proxy_handler = build_opener.call_args.args[0]
         self.assertIsInstance(proxy_handler, template_download.urllib.request.ProxyHandler)
         self.assertEqual({}, proxy_handler.proxies)
+
+    def test_fixed_template_fetch_hard_deadline_covers_open_and_restores_handler(self) -> None:
+        self.assertEqual((BaseException,), template_download._HardDeadlineSignal.__bases__)
+        previous_handler = template_download.signal.getsignal(template_download.signal.SIGALRM)
+
+        def existing_handler(_signal_number, _frame) -> None:
+            return None
+
+        class SlowHeaderOpener:
+            def __init__(self) -> None:
+                self.timeouts: list[int] = []
+                self.caught_os_error = False
+                self.caught_exception = False
+                self.continued_after_signal = False
+
+            def open(self, _request, timeout: int):
+                self.timeouts.append(timeout)
+                try:
+                    try:
+                        template_download.signal.raise_signal(template_download.signal.SIGALRM)
+                    except OSError:
+                        self.caught_os_error = True
+                except Exception:
+                    self.caught_exception = True
+                self.continued_after_signal = True
+                raise AssertionError("the hard deadline sentinel did not interrupt open")
+
+        opener = SlowHeaderOpener()
+        template_download.signal.signal(template_download.signal.SIGALRM, existing_handler)
+        try:
+            with self.assertRaisesRegex(TimeoutError, "overall timeout"):
+                template_download.fetch_template_payload(opener=opener)
+            self.assertIs(
+                existing_handler,
+                template_download.signal.getsignal(template_download.signal.SIGALRM),
+            )
+            self.assertEqual(
+                (0.0, 0.0),
+                template_download.signal.getitimer(template_download.signal.ITIMER_REAL),
+            )
+        finally:
+            template_download.signal.signal(template_download.signal.SIGALRM, previous_handler)
+        self.assertEqual([template_download.CONNECT_READ_TIMEOUT_SECONDS], opener.timeouts)
+        self.assertFalse(opener.caught_os_error)
+        self.assertFalse(opener.caught_exception)
+        self.assertFalse(opener.continued_after_signal)
+
+    def test_fixed_template_fetch_refuses_to_replace_an_active_alarm(self) -> None:
+        opener = self.FakeOpener(self.FakeResponse(b"unused"))
+        with (
+            mock.patch.object(template_download.signal, "getitimer", return_value=(5.0, 0.0)),
+            mock.patch.object(template_download.signal, "setitimer") as setitimer,
+            self.assertRaisesRegex(RuntimeError, "active alarm"),
+        ):
+            template_download.fetch_template_payload(opener=opener)
+        setitimer.assert_not_called()
+        self.assertEqual([], opener.requests)
+
+    def test_fixed_template_fetch_stops_a_slow_drip_at_the_overall_deadline(self) -> None:
+        payload = b"slow"
+
+        class Clock:
+            def __init__(self) -> None:
+                self.now = 0.0
+
+            def monotonic(self) -> float:
+                return self.now
+
+        clock = Clock()
+
+        class SlowDripResponse(self.FakeResponse):
+            def read1(self, size: int) -> bytes:
+                self.read_sizes.append(size)
+                clock.now += 9.0
+                chunk = self.payload[self.offset : self.offset + 1]
+                self.offset += len(chunk)
+                return chunk
+
+        response = SlowDripResponse(payload)
+        with (
+            mock.patch.object(template_download, "TEMPLATE_SIZE_BYTES", len(payload)),
+            mock.patch.object(template_download, "TEMPLATE_SHA256", hashlib.sha256(payload).hexdigest()),
+            self.assertRaisesRegex(TimeoutError, "overall timeout"),
+        ):
+            template_download.fetch_template_payload(
+                opener=self.FakeOpener(response),
+                monotonic=clock.monotonic,
+            )
+
+        self.assertEqual([5, 4, 3, 2], response.read_sizes)
 
 
 class CommandContractTest(unittest.TestCase):

@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
+import signal
 import ssl
+import threading
 import time
 import urllib.request
 
@@ -35,6 +38,11 @@ TEMPLATE_RAW_URL = (
 )
 CONNECT_READ_TIMEOUT_SECONDS = 10
 OVERALL_TIMEOUT_SECONDS = 30
+READ_CHUNK_BYTES = 4 * 1024
+
+
+class _HardDeadlineSignal(BaseException):
+    pass
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -50,6 +58,80 @@ def build_template_opener():
     )
 
 
+@contextmanager
+def _hard_request_deadline(timeout_seconds: float):
+    """Apply a process-level hard deadline without replacing an active alarm."""
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError("pinned template hard deadline requires the main thread")
+    if not all(
+        hasattr(signal, attribute)
+        for attribute in ("SIGALRM", "ITIMER_REAL", "getitimer", "setitimer")
+    ):
+        raise RuntimeError("pinned template hard deadline requires POSIX interval timers")
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+    if previous_timer[0] > 0 or previous_timer[1] > 0:
+        raise RuntimeError("pinned template hard deadline refuses to replace an active alarm")
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    deadline_fired = False
+
+    def handle_timeout(_signal_number, _frame) -> None:
+        nonlocal deadline_fired
+        deadline_fired = True
+        raise _HardDeadlineSignal()
+
+    signal.signal(signal.SIGALRM, handle_timeout)
+    timer_armed = False
+    deadline_signal: _HardDeadlineSignal | None = None
+    try:
+        try:
+            signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+            timer_armed = True
+            yield
+        finally:
+            try:
+                if timer_armed:
+                    signal.setitimer(signal.ITIMER_REAL, 0)
+            finally:
+                signal.signal(signal.SIGALRM, previous_handler)
+    except _HardDeadlineSignal as error:
+        deadline_signal = error
+    if deadline_signal is not None or deadline_fired:
+        raise TimeoutError(
+            "pinned template request exceeded the overall timeout",
+        ) from deadline_signal
+
+
+def _ensure_before_deadline(deadline: float, monotonic) -> None:
+    if deadline - monotonic() <= 0:
+        raise TimeoutError("pinned template request exceeded the overall timeout")
+
+
+def _read_bounded_payload(response, deadline: float, monotonic) -> bytes:
+    read_once = getattr(response, "read1", None)
+    if not callable(read_once):
+        raise RuntimeError("pinned template response does not support bounded single reads")
+
+    chunks: list[bytes] = []
+    remaining_bytes = TEMPLATE_SIZE_BYTES + 1
+    while remaining_bytes > 0:
+        _ensure_before_deadline(deadline, monotonic)
+        requested_bytes = min(READ_CHUNK_BYTES, remaining_bytes)
+        try:
+            chunk = read_once(requested_bytes)
+        except TimeoutError as error:
+            raise TimeoutError("pinned template request exceeded a read timeout") from error
+        if monotonic() >= deadline:
+            raise TimeoutError("pinned template request exceeded the overall timeout")
+        if not chunk:
+            break
+        if not isinstance(chunk, bytes) or len(chunk) > requested_bytes:
+            raise ValueError("pinned template response violated the bounded read contract")
+        chunks.append(chunk)
+        remaining_bytes -= len(chunk)
+    return b"".join(chunks)
+
+
 def fetch_template_payload(opener=None, monotonic=time.monotonic) -> bytes:
     client = opener if opener is not None else build_template_opener()
     request = urllib.request.Request(
@@ -60,27 +142,25 @@ def fetch_template_payload(opener=None, monotonic=time.monotonic) -> bytes:
         },
         method="GET",
     )
-    started = monotonic()
-    with client.open(request, timeout=CONNECT_READ_TIMEOUT_SECONDS) as response:
-        if monotonic() - started > OVERALL_TIMEOUT_SECONDS:
-            raise TimeoutError("pinned template request exceeded the overall timeout")
-        if getattr(response, "status", None) != 200:
-            raise ValueError("pinned template endpoint did not return HTTP 200")
-        if response.geturl() != TEMPLATE_RAW_URL:
-            raise ValueError("pinned template endpoint redirected unexpectedly")
-        media_type = (response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
-        if media_type != "text/plain":
-            raise ValueError("pinned template endpoint returned an unexpected media type")
-        content_length = response.headers.get("Content-Length")
-        try:
-            declared_size = int(content_length or "")
-        except ValueError as error:
-            raise ValueError("pinned template endpoint omitted a valid Content-Length") from error
-        if declared_size != TEMPLATE_SIZE_BYTES:
-            raise ValueError("pinned template endpoint returned an unexpected Content-Length")
-        payload = response.read(TEMPLATE_SIZE_BYTES + 1)
-    if monotonic() - started > OVERALL_TIMEOUT_SECONDS:
-        raise TimeoutError("pinned template request exceeded the overall timeout")
+    with _hard_request_deadline(OVERALL_TIMEOUT_SECONDS):
+        deadline = monotonic() + OVERALL_TIMEOUT_SECONDS
+        with client.open(request, timeout=CONNECT_READ_TIMEOUT_SECONDS) as response:
+            _ensure_before_deadline(deadline, monotonic)
+            if getattr(response, "status", None) != 200:
+                raise ValueError("pinned template endpoint did not return HTTP 200")
+            if response.geturl() != TEMPLATE_RAW_URL:
+                raise ValueError("pinned template endpoint redirected unexpectedly")
+            media_type = (response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            if media_type != "text/plain":
+                raise ValueError("pinned template endpoint returned an unexpected media type")
+            content_length = response.headers.get("Content-Length")
+            try:
+                declared_size = int(content_length or "")
+            except ValueError as error:
+                raise ValueError("pinned template endpoint omitted a valid Content-Length") from error
+            if declared_size != TEMPLATE_SIZE_BYTES:
+                raise ValueError("pinned template endpoint returned an unexpected Content-Length")
+            payload = _read_bounded_payload(response, deadline, monotonic)
     if len(payload) != TEMPLATE_SIZE_BYTES:
         raise ValueError("pinned template response length does not match the release pin")
     if hashlib.sha256(payload).hexdigest() != TEMPLATE_SHA256:
