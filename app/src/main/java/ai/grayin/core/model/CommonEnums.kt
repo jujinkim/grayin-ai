@@ -117,6 +117,10 @@ enum class ConnectorScanIssueCode(
         "document_process_crashed",
         "The isolated document processor stopped unexpectedly.",
     ),
+    DOCUMENT_PROCESS_TIMED_OUT(
+        "document_process_timed_out",
+        "The selected document exceeded the processing time limit.",
+    ),
     NO_EXTRACTABLE_TEXT("no_extractable_text", "No extractable text was found in the document."),
     PARTIAL_DOCUMENT_INDEX("partial_document_index", "Only part of the document could be indexed."),
     ;

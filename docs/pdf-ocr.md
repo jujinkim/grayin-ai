@@ -2,9 +2,9 @@
 
 ## Current Status
 
-Settings can install, cancel, and delete the fixed English, Korean, and Japanese Tesseract language packs. The installer verifies and publishes each download atomically and does not bundle `.traineddata` files in the APK/AAB.
+Settings can install, cancel, and delete the fixed English, Korean, and Japanese Tesseract language packs. The installer verifies and publishes each download atomically and does not bundle `.traineddata` files in the APK/AAB. The build includes the exact PdfiumAndroidKt and standard Tesseract4Android runtime libraries, locked dependency versions, SHA-256 dependency verification metadata, and packaged license notices.
 
-PDF selection, parsing, page rendering, and local OCR are not implemented yet. Installing a language pack therefore does not make PDF indexing available by itself. The remaining runtime work is tracked in `docs/roadmap.md`.
+The private `:document` runtime now validates descriptors and signatures, extracts embedded page text, renders and runs local OCR only when needed, applies the canonical resource limits, and returns a bounded derived-only AIDL result. Local Files does not select or send PDF descriptors to this runtime yet, so PDF indexing is not user-usable until the connector integration step is complete. Installing a language pack alone still does not index PDFs.
 
 ## Explicit Source Consent
 
@@ -41,12 +41,13 @@ The immutable Apache-2.0 license reference is:
 - A monotonically increasing generation fences canceled and replaced workers.
 - Retryable work stays queued; terminal state stores only a stable failure enum.
 - A failed, canceled, or stale replacement preserves any last verified pack.
+- OCR runtime eligibility is determined by re-verifying the installed file and hash directly, never by cross-process preference status; a verified last-good pack remains usable during replacement work.
 - Packs live under `noBackupFilesDir/ocr/tesseract/tessdata`; staging lives under the adjacent `staging` directory.
 - The artifact host can observe the selected fixed pack path and ordinary network metadata such as IP address, but receives no document or memory data.
 
-## Planned Local Document Runtime
+## Local Document Runtime
 
-The next implementation step must use a private, non-exported Android service in the `:document` process. That process is for crash and memory-pressure isolation; it is not an Android isolated UID because it must read the user-granted document descriptor and app-private language data.
+The runtime uses a private, non-exported Android service in the `:document` process. That process is for crash and memory-pressure isolation; it is not an Android isolated UID because it must read the user-granted document descriptor and app-private language data.
 
 The runtime contract is:
 
@@ -57,6 +58,8 @@ The runtime contract is:
 - return only bounded derived page signals and stable outcome codes across Binder
 - never return PDF bytes, page bitmaps, full extracted text, OCR transcripts, document URIs, or exception messages across Binder
 - recover from document-process death without crashing the main app or committing a partial connector snapshot
+
+The AIDL request contains only a random request ID and duplicated descriptor. The terminal result contains a protocol version, fixed outcome/issue/confidence/extraction codes, page numbers, bounded structural counts, and at most eight bounded keyword signals per page. It is independently validated below 64 KiB in both processes. It contains no URI, path, file name, MIME value, source identity, raw text, bitmap, byte payload, exception, or free-form error. OCR never materializes a full-page transcript or a copied image `Pixa`; recognition is bounded by the 4-megapixel render limit and a read-only result iterator admits at most 512 geometrically bounded words into the 32 KiB UTF-8 accumulator. A non-blocking 10-second deadline starts before Tesseract construction and returns the typed timeout when native work yields; a separate 12-second hard watchdog terminates only `:document` if JNI remains stuck. An equivalent hard document watchdog protects the two-minute limit.
 
 ## Canonical Resource Limits
 
@@ -97,6 +100,7 @@ Document processing uses fixed `ConnectorScanIssueCode` values:
 - `OCR_PAGE_LIMIT_REACHED`
 - `OCR_TIMED_OUT`
 - `DOCUMENT_PROCESS_CRASHED`
+- `DOCUMENT_PROCESS_TIMED_OUT`
 - `NO_EXTRACTABLE_TEXT`
 - `PARTIAL_DOCUMENT_INDEX`
 
@@ -108,8 +112,12 @@ Revoking Local Files must release its persisted URI permission when possible and
 
 ## Dependencies and Notices
 
-The planned runtime uses `io.legere:pdfiumandroid:1.0.35` for PDF access and `cz.adaptech.tesseract4android:tesseract4android:4.9.0` for local OCR. They are not yet present in the build. The runtime step must add dependency verification metadata, review transitive native libraries, and add required license notices before marking PDF/OCR complete.
+The build uses `io.legere:pdfiumandroid:1.0.35` from Maven Central for PDF access and the standard `cz.adaptech.tesseract4android:tesseract4android:4.9.0` variant for local OCR. JitPack is an `exclusiveContent` repository for that one Tesseract module only; it cannot supply or shadow other dependencies.
+
+`app/gradle.lockfile` locks the resolved versions, and `gradle/verification-metadata.xml` verifies artifact and metadata SHA-256 values. The reviewed AAR hashes are `862ed337d6b52485fefba9ced9fe7fdb800d41fb300d8c8ebb03d8bea64d72f0` for PdfiumAndroidKt and `bce5d6413a1a5ae3d7240033fbbc851ba3217d0a08d9769400e17a077f42cb2a` for Tesseract4Android.
+
+The AAR native inventory and license mapping are documented in `docs/third-party-notices.md`. Readable notice and license files ship under `app/src/main/assets/third_party_licenses/`. The runtime implementation is intentionally independent of PDF selection and SQLCipher commit; those remain connector-owned so no raw descriptor or incomplete cross-process result can enter the store.
 
 ## Verification
 
-Required coverage includes catalog constants, URL closure, redirect/header/size/hash rejection, cancellation cleanup, generation fencing, last-verified preservation, no-backup placement, explicit Settings-only scheduling, PDF signature/seekability checks, every resource limit, embedded-text and OCR paths, process death, typed outcomes, no raw persistence, atomic snapshot replacement, and APK inspection proving that `.traineddata` and raw document fixtures are not shipped unintentionally. `:app:verifyDebugApkNoBundledOcrData` automates the `.traineddata` APK check.
+Required coverage includes catalog constants, URL closure, redirect/header/size/hash rejection, cancellation cleanup, generation fencing, last-verified preservation, no-backup placement, explicit Settings-only scheduling, PDF signature/seekability checks, every resource limit, embedded-text and OCR paths, process death, typed outcomes, no raw persistence, atomic snapshot replacement, and APK inspection proving that `.traineddata` and raw document fixtures are not shipped unintentionally. `:app:verifyDebugApkNoBundledOcrData` automates the `.traineddata` APK check, `:app:verifyDebugApkPdfOcrNotices` confirms that all PDF/OCR notice assets are packaged, and `:app:verifyDebugApkDocumentBoundary` rejects production PDF fixtures and verifies every expected native library/ABI. JVM, lint, debug/release APK, and instrumentation-source compilation are covered on the host; embedded-text success, installed-pack OCR, cancellation, timeout, and process-death recovery remain explicit device/emulator acceptance checks because no device was connected for this runtime step.

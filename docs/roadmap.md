@@ -22,7 +22,8 @@ Current phase status: local-first MVP foundation and basic Android source connec
 - Localized UI copy for system, Korean, English, and Japanese language settings.
 - Bottom navigation with icons and localized labels.
 - Settings shows local model selection, official model pages, local Gemma status, current adb install path, and `.litertlm` import/delete fallback controls. Catalog download/cancel/delete actions render only after a model entry has complete reviewed transport metadata; none currently does.
-- Settings installs, cancels, and deletes fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action; PDF indexing is not implemented yet.
+- Settings installs, cancels, and deletes fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action; user-selectable PDF indexing remains unavailable until Local Files integration.
+- A private `:document` Pdfium/Tesseract runtime enforces descriptor, signature, page, bitmap, text, OCR, and time limits and returns only bounded derived AIDL results; Local Files integration is still pending.
 - INTERNET permission bounded by `docs/network-policy.md`: typed map/place/reverse-geocode/weather enrichment plus fixed-catalog model, authenticated manifest, or OCR language-data downloads.
 
 ## Completion Plan
@@ -69,10 +70,12 @@ The installer boundary and planned document-runtime limits are specified in `doc
 - [x] Persist latest connector scan status and support atomic snapshot reconciliation for removed pages.
 - [x] Store bounded typed scan issue codes and localize them only after reading.
 - [x] Install fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action.
+- [x] Add the private crash-isolated Pdfium/Tesseract runtime, hard watchdogs, bounded AIDL contract, locked dependencies, and packaged notices.
 - [ ] Accept user-selected PDF documents.
-- [ ] Extract text and page metadata transiently; render and OCR pages locally when embedded text is unavailable.
+- [x] Extract text and page metadata transiently in the private runtime; render and OCR pages locally when embedded text is unavailable.
 - [ ] Persist only derived page summaries, keyword signals, citations, and source references.
-- [ ] Add size/page/time limits and explicit unsupported/missing-data results.
+- [x] Add document size/page/render/text/OCR/time limits and explicit unsupported/missing-data results.
+- [ ] Enforce the 10-minute connector scan limit and run device/emulator acceptance for embedded text, installed-pack OCR, cancellation, timeout, and `:document` process-death recovery.
 
 ### 5. Encrypted Export and Import
 

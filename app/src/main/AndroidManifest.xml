@@ -43,6 +43,10 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+        <service
+            android:name=".connectors.localfiles.document.DocumentProcessingService"
+            android:exported="false"
+            android:process=":document" />
     </application>
 
 </manifest>

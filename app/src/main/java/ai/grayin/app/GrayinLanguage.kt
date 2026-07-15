@@ -239,6 +239,7 @@ data class GrayinStrings(
                 ConnectorScanIssueCode.OCR_PAGE_LIMIT_REACHED -> "PDF가 문서별 OCR 페이지 제한을 초과했습니다."
                 ConnectorScanIssueCode.OCR_TIMED_OUT -> "기기 내 OCR이 시간 제한을 초과했습니다."
                 ConnectorScanIssueCode.DOCUMENT_PROCESS_CRASHED -> "격리된 문서 처리기가 예기치 않게 중단되었습니다."
+                ConnectorScanIssueCode.DOCUMENT_PROCESS_TIMED_OUT -> "문서 처리가 시간 제한을 초과했습니다."
                 ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT -> "문서에서 추출할 수 있는 텍스트를 찾지 못했습니다."
                 ConnectorScanIssueCode.PARTIAL_DOCUMENT_INDEX -> "문서 일부만 인덱싱했습니다."
             }
@@ -268,6 +269,7 @@ data class GrayinStrings(
                 ConnectorScanIssueCode.OCR_PAGE_LIMIT_REACHED -> "PDFが文書ごとのOCRページ上限を超えています。"
                 ConnectorScanIssueCode.OCR_TIMED_OUT -> "端末内OCRが時間制限を超えました。"
                 ConnectorScanIssueCode.DOCUMENT_PROCESS_CRASHED -> "分離された文書処理プロセスが予期せず停止しました。"
+                ConnectorScanIssueCode.DOCUMENT_PROCESS_TIMED_OUT -> "文書処理が時間制限を超えました。"
                 ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT -> "文書から抽出可能なテキストが見つかりません。"
                 ConnectorScanIssueCode.PARTIAL_DOCUMENT_INDEX -> "文書の一部のみをインデックスしました。"
             }

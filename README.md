@@ -67,7 +67,7 @@ Examples:
 - app usage summaries
 - local text and Markdown-derived indexes
 
-PDF selection and local page OCR are the next roadmap step. The language-data installer is complete, but installing a pack does not make PDF indexing available yet.
+The private bounded Pdfium/Tesseract document runtime and language-data installer are complete. PDF selection and Local Files graph integration are the next roadmap step; installing a pack alone does not make PDF indexing available yet.
 
 See `docs/pdf-ocr.md` for the fixed catalog, privacy boundary, and remaining local document-runtime contract.
 

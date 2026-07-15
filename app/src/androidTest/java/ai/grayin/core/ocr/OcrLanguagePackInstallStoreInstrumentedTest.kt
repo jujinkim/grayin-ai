@@ -47,6 +47,7 @@ class OcrLanguagePackInstallStoreInstrumentedTest {
             store.publishVerified(entry, firstGeneration, firstPart),
         )
         assertEquals(OcrLanguagePackStatus.READY, store.recordFor(entry).status)
+        assertTrue(store.isVerifiedInstalled(entry))
         assertTrue(verifiedBytes.contentEquals(destination.readBytes()))
 
         val secondGeneration = store.beginInstall(entry)
@@ -59,6 +60,7 @@ class OcrLanguagePackInstallStoreInstrumentedTest {
         )
         assertFalse(stalePart.exists())
         assertEquals(secondGeneration, store.recordFor(entry).generation)
+        assertTrue(store.isVerifiedInstalled(entry))
         assertTrue(verifiedBytes.contentEquals(destination.readBytes()))
 
         store.invalidateForCancel(entry)
@@ -79,6 +81,7 @@ class OcrLanguagePackInstallStoreInstrumentedTest {
         store.invalidateForCancel(entry)
         assertTrue(store.deleteInstalled(entry))
         assertFalse(destination.exists())
+        assertFalse(store.isVerifiedInstalled(entry))
         assertEquals(OcrLanguagePackStatus.NOT_INSTALLED, store.recordFor(entry).status)
     }
 

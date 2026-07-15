@@ -222,6 +222,10 @@ class OcrLanguagePackInstallStore(context: Context) {
 
     fun installedFile(entry: OcrLanguagePackEntry): File = File(tessdataDir(), entry.fileName)
 
+    fun isVerifiedInstalled(entry: OcrLanguagePackEntry): Boolean = synchronized(INSTALL_LOCK) {
+        verifyInstalled(entry)
+    }
+
     fun tesseractDataPath(): File = tesseractDir()
 
     private fun verifyInstalled(entry: OcrLanguagePackEntry): Boolean {

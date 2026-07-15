@@ -22,6 +22,8 @@ Network-enabled enrichment does not weaken this rule. Only an ephemeral `Enrichm
 
 Fixed OCR `.traineddata` files are public runtime artifacts, not user originals. Their WorkManager input, progress, and install state may contain only catalog pack ID, local generation, bounded progress, byte count, and stable status/failure enums. They must not contain a document URI or name, source content, extracted text, OCR transcript, query, evidence, provider body, or exception message. Verified packs live under app-private `noBackupFilesDir/ocr/tesseract/tessdata`; same-filesystem staging parts are deleted after failure or cancellation and are never backed up. Selecting or indexing a document never starts an artifact download.
 
+PDF parsing and OCR run in the private `:document` process. Binder input is limited to a random request ID and duplicated `ParcelFileDescriptor`; Binder output is limited to bounded page numbers, structural counts, derived keyword signals, and fixed codes. The service never returns raw text, OCR transcripts, images, document identity, source references, or exception text. Main-process code must discard the entire in-memory result on Binder death, timeout, cancellation, or failed validation and may commit only a terminal validated result.
+
 ## Raw Original Examples
 
 - original photos

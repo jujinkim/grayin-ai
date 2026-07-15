@@ -1,0 +1,67 @@
+Grayin AI PDF/OCR third-party notices
+=====================================
+
+This notice and the referenced license texts are packaged in the application.
+They cover the PDF/OCR runtime dependencies introduced for local document
+processing. They do not replace a complete application-wide release audit.
+
+PdfiumAndroidKt 1.0.35
+---------------------
+
+Artifact: io.legere:pdfiumandroid:1.0.35
+Source: https://github.com/johngray1965/PdfiumAndroidKt/tree/v1.0.35
+Artifact SHA-256:
+862ed337d6b52485fefba9ced9fe7fdb800d41fb300d8c8ebb03d8bea64d72f0
+
+Original work Copyright 2015 Bekket McClane
+Modified work Copyright 2016 Bartosz Schiller
+Modified work Copyright 2023 John Gray
+
+The Android binding is licensed under Apache License 2.0. The packaged PDFium
+native library is licensed under the BSD 3-Clause terms reproduced in
+PDFIUM-BSD-3-CLAUSE.txt. Apache License 2.0 is reproduced in APACHE-2.0.txt.
+
+The binding's complete public header set matches the immutable PDFium
+140.0.7337.0 Android distribution dated 2025-08-04 (including its original
+fpdfview.h before the binding's export-macro adjustment). The distribution's
+arm64 archive SHA-256 is
+33621b05dcec8cf074fdd53886cc0e574035c0cb67b110cf89d01851c3f5e87b. Its
+complete 17-file license bundle is reproduced under pdfium-140.0.7337.0/
+(the legacy FreeType copyright byte is normalized to UTF-8 for Android asset
+readability). It covers Abseil, AGG 2.3, Catapult, cpu_features,
+fast_float, FreeType, ICU, Little CMS, libjpeg-turbo/IJG, OpenJPEG, libpng,
+libtiff, libunwind, LLVM libc, PDFium, and zlib.
+
+The AAR contains libpdfium.so and libpdfiumandroid.so for arm64-v8a,
+armeabi-v7a, x86, and x86_64.
+
+Tesseract4Android 4.9.0, standard variant
+------------------------------------------------
+
+Artifact: cz.adaptech.tesseract4android:tesseract4android:4.9.0
+Source: https://github.com/adaptech-cz/Tesseract4Android/tree/4.9.0
+Artifact SHA-256:
+bce5d6413a1a5ae3d7240033fbbc851ba3217d0a08d9769400e17a077f42cb2a
+
+Copyright 2019 Adaptech s.r.o., Robert Pösel
+
+The Android wrapper and Tesseract OCR 5.5.1 are licensed under Apache License
+2.0, reproduced in APACHE-2.0.txt. The standard AAR also contains the following
+native libraries for arm64-v8a, armeabi-v7a, x86, and x86_64:
+
+- Leptonica 1.85.0: BSD 2-Clause terms in LEPTONICA-BSD-2-CLAUSE.txt
+- Independent JPEG Group software release 9f: terms in IJG-JPEG.txt
+- libpng 1.6.48: PNG Reference Library License in LIBPNG.txt
+
+This software is based in part on the work of the Independent JPEG Group.
+
+Guava 33.5.0-android
+--------------------
+
+Artifact: com.google.guava:guava:33.5.0-android
+Source: https://github.com/google/guava/tree/v33.5.0
+
+Guava is a PdfiumAndroidKt runtime dependency and is also declared directly so
+WorkManager's public ListenableFuture type remains available on the compile
+classpath. Guava is licensed under Apache License 2.0, reproduced in
+APACHE-2.0.txt.

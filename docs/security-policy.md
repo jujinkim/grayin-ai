@@ -64,6 +64,10 @@ MVP must not include:
 
 MVP must not log source originals, derived memory contents, source references, evidence packs, prompts, answers, or connector outputs.
 
+## Local Document Runtime
+
+PDFium and Tesseract run only in the private, non-exported `:document` process. The process has the application UID so it can read a duplicated user-granted descriptor and verified app-private OCR packs, but it exposes no intent filter and checks the Binder caller UID. It creates no PDF/image/text temporary files and makes no network calls. The AIDL contract excludes URI, path, name, MIME, source identity, raw text, bitmap, bytes, and exceptions; both processes validate the closed wire-code and payload limits. Native timeout escalation terminates only `:document`, leaving the main process and previous SQLCipher snapshot intact.
+
 ## Remaining Hardening
 
 - Add optional screenshot blocking for sensitive screens.

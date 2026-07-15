@@ -31,6 +31,8 @@
 - Artifact supply-chain substitution or redirect
 - Interrupted artifact replacement
 - Stale download worker publication
+- Malformed or adversarial PDF native-parser failure
+- Stuck or memory-exhausting local OCR work
 
 ## Mitigations
 
@@ -51,6 +53,9 @@
 - Optional screenshot blocking
 - Optional biometric app lock
 - Connector-level deletion
+- Private `:document` process for PDFium/Tesseract crash and memory-pressure containment
+- Seekability/signature/size/page/render/text/OCR/time checks before derived output is accepted
+- Derived-only bounded Binder result with death handling and no partial store commit
 
 ## Network Metadata Risk
 
