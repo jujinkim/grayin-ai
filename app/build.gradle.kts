@@ -1,3 +1,5 @@
+import java.util.zip.ZipFile
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -50,4 +52,22 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+}
+
+tasks.register("verifyDebugApkNoBundledOcrData") {
+    dependsOn("assembleDebug")
+    doLast {
+        val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+        check(apk.isFile) { "Debug APK was not produced." }
+        val bundledOcrData = ZipFile(apk).use { archive ->
+            archive.entries()
+                .asSequence()
+                .map { entry -> entry.name }
+                .filter { name -> name.endsWith(".traineddata", ignoreCase = true) }
+                .toList()
+        }
+        check(bundledOcrData.isEmpty()) {
+            "OCR language data must not be bundled: ${bundledOcrData.joinToString()}"
+        }
+    }
 }

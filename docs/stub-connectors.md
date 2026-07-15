@@ -85,4 +85,4 @@ The Notifications connector:
 
 Connectors must not read or store source originals outside transient connector processing.
 
-INTERNET permission is used for typed map/place, weather, or reverse-geocode enrichment and fixed-catalog model/manifest downloads. Connectors and feature code must not call arbitrary or user-supplied URLs, upload raw or derived user data, invoke remote LLMs, or create cloud sync. See `docs/network-policy.md`.
+INTERNET permission is used for typed map/place, weather, or reverse-geocode enrichment and fixed-catalog model, authenticated manifest, or user-selected OCR language-data downloads. Connectors and indexing code cannot initiate artifact downloads or call arbitrary/user-supplied URLs, upload raw or derived user data, invoke remote LLMs, or create cloud sync. See `docs/network-policy.md`.

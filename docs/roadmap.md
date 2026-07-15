@@ -14,15 +14,16 @@ Current phase status: local-first MVP foundation and basic Android source connec
 - Ask flow over cited local evidence with confidence and missing-data output.
 - Local Gemma LiteRT-LM answer adapter over retrieved `EvidencePack`, with template fallback when the model file is unavailable.
 - Runtime local-model catalog for Grayin dedicated model placeholder, official Gemma 4 E2B, and official Gemma 4 E4B.
-- WorkManager runtime model download into app-private storage; APK/AAB does not bundle model weights.
+- Fail-closed WorkManager model-download infrastructure using the shared fixed-artifact verifier; all current model network entries remain disabled until immutable URL, exact byte count, and SHA-256 metadata exist.
 - App-specific model training scaffold under `model-training/`, with Gemma/reference/output model artifacts excluded from git.
 - First-launch Sources intro explaining that user-connected sources must be indexed before Ask can use them.
 - Sources UI is backed by connector metadata and permission/index state.
 - Sources UI exposes top-level Index all now, persisted automatic indexing settings, and live queue/runtime status with localized outcomes.
 - Localized UI copy for system, Korean, English, and Japanese language settings.
 - Bottom navigation with icons and localized labels.
-- Settings shows local model selection, download/cancel/delete controls, official model pages, local Gemma status, current adb install path, and `.litertlm` import/delete fallback controls.
-- INTERNET permission bounded by `docs/network-policy.md`: typed map/place/reverse-geocode/weather enrichment plus fixed-catalog model/manifest downloads.
+- Settings shows local model selection, official model pages, local Gemma status, current adb install path, and `.litertlm` import/delete fallback controls. Catalog download/cancel/delete actions render only after a model entry has complete reviewed transport metadata; none currently does.
+- Settings installs, cancels, and deletes fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action; PDF indexing is not implemented yet.
+- INTERNET permission bounded by `docs/network-policy.md`: typed map/place/reverse-geocode/weather enrichment plus fixed-catalog model, authenticated manifest, or OCR language-data downloads.
 
 ## Completion Plan
 
@@ -63,8 +64,11 @@ The current Open-Meteo public endpoint is suitable only for non-commercial proto
 
 ### 4. PDF and OCR Indexing
 
+The installer boundary and planned document-runtime limits are specified in `docs/pdf-ocr.md`.
+
 - [x] Persist latest connector scan status and support atomic snapshot reconciliation for removed pages.
 - [x] Store bounded typed scan issue codes and localize them only after reading.
+- [x] Install fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action.
 - [ ] Accept user-selected PDF documents.
 - [ ] Extract text and page metadata transiently; render and OCR pages locally when embedded text is unavailable.
 - [ ] Persist only derived page summaries, keyword signals, citations, and source references.
@@ -92,7 +96,9 @@ The current Open-Meteo public endpoint is suitable only for non-commercial proto
 
 ### 8. Local Model Release Hardening
 
-- [ ] Require pinned SHA-256 for every downloaded model; verify remote manifests with a bundled ECDSA P-256 public key.
+- [x] Reject model downloads before connection unless immutable HTTPS URL, exact byte count, and pinned SHA-256 metadata are complete; reject redirects and publish atomically.
+- [ ] Add durable model-download generation fencing before enabling a catalog transport entry.
+- [ ] Verify remotely updated manifests with a bundled ECDSA P-256 public key.
 - [ ] Validate imported model identity beyond extension and minimum size.
 - [ ] Expand synthetic training/evaluation data and run grounded-answer benchmarks.
 - [ ] Merge/export the release adapter to `.litertlm` outside git.

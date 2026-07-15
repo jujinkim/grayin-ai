@@ -53,7 +53,7 @@ Grayin AI is not:
 - No Grayin application backend.
 - No account.
 - No cloud storage or sync.
-- Network access is allowed only for typed external enrichment and fixed-catalog model/manifest downloads.
+- Network access is allowed only for typed external enrichment and fixed-catalog model, authenticated manifest, or OCR language-data downloads.
 - No commercial LLM API in MVP.
 - No raw/original data storage, ever.
 - No raw/original data transmission, ever.
@@ -65,7 +65,7 @@ Grayin AI is not:
 - Local-first by default.
 - External enrichment must be explicit and limited to minimal derived lookup inputs for map, place, reverse-geocode, or weather requests.
 - App feature code, connectors, local models, and users must not call or provide arbitrary URLs or endpoints.
-- Runtime model and manifest downloads must use fixed catalog URLs with pinned SHA-256 digests; remote manifests require a pinned ECDSA P-256 signature. APK/AAB must not bundle model weights.
+- Runtime model, manifest, and OCR language-data downloads must use fixed catalog URLs with pinned SHA-256 digests; remote manifests require a pinned ECDSA P-256 signature. APK/AAB must not bundle model weights or OCR `.traineddata` files.
 - Raw sources, stored derived-memory records, evidence packs, prompts, answers, embeddings, source references, and fields outside an approved ephemeral enrichment-request projection must never be transmitted.
 - All data sources are explicit opt-in.
 - Every connector can be enabled, disabled, revoked, and deleted independently.
@@ -383,7 +383,7 @@ No remote or commercial LLM API in MVP.
 
 Local inference must not require network access.
 
-Model acquisition may use fixed-catalog HTTPS downloads before inference. Map/place, weather, and reverse-geocode enrichment may use the network outside the local AI path through typed gateway methods only.
+Model acquisition may use fixed-catalog HTTPS downloads before inference. A user may separately install fixed-catalog English, Korean, or Japanese OCR data before local PDF processing; indexing never triggers that download. Map/place, weather, and reverse-geocode enrichment may use the network outside the local AI path through typed gateway methods only.
 
 The local LLM receives only Evidence Pack.
 
@@ -434,7 +434,7 @@ MVP should document and prepare for:
 - optional screenshot blocking
 - optional biometric app lock
 
-MVP uses INTERNET permission for typed external enrichment and fixed-catalog model/manifest downloads.
+MVP uses INTERNET permission for typed external enrichment and fixed-catalog model, authenticated manifest, or OCR language-data downloads.
 
 It must not use network access for arbitrary or user-supplied URL calls, cloud sync, accounts, telemetry, raw data upload, stored derived-memory upload, fields outside an approved ephemeral enrichment-request projection, or remote LLM APIs. `docs/network-policy.md` is the canonical network boundary.
 

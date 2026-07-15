@@ -4,22 +4,22 @@
 
 APK/AAB must not include model weights. Grayin ships the LiteRT-LM runtime only. Users choose a local model at runtime, then download or import a `.litertlm` file into app-private storage.
 
-Model downloads are one of the two allowed network boundaries in `docs/network-policy.md`. They must use fixed catalog URLs and must never include user-memory data.
+Model downloads use the fixed-artifact network boundary in `docs/network-policy.md`. They must use immutable catalog URLs and must never include user-memory data. Current entries are deliberately disabled because no reviewed model artifact has a complete immutable URL, exact byte count, and SHA-256 digest, and the model-specific generation fence is not implemented yet.
 
 ## Model Options
 
 | Model | Source | Approx size | Status |
 | --- | --- | ---: | --- |
 | Grayin Gemma 4 E2B Q4 v1 | Grayin file server | 2.3 GB | Catalog placeholder until server URL/checksum exist |
-| Gemma 4 E2B | Google AI Edge LiteRT Community on Hugging Face | 2.58 GB | Downloadable |
-| Gemma 4 E4B | Google AI Edge LiteRT Community on Hugging Face | 3.65 GB | Downloadable, high-end devices |
+| Gemma 4 E2B | Google AI Edge LiteRT Community on Hugging Face | 2.58 GB | Official page only; network download disabled pending exact metadata |
+| Gemma 4 E4B | Google AI Edge LiteRT Community on Hugging Face | 3.65 GB | Official page only; network download disabled pending exact metadata |
 
 ## Implementation Todo
 
-- Add model catalog entries with id, label, provider, URL, file name, size, checksum, RAM recommendation, license URL, and recommended flag.
-- Add model install state store for selected model, install metadata, download status, progress, checksum, and failure reason.
-- Add runtime downloader using WorkManager foreground work.
-- Download to app-private `.tmp`, validate size/checksum, then atomically rename to `files/models/{modelId}/model.litertlm`.
+- Keep model catalog entries with id, label, provider, optional immutable URL, file name, exact size, checksum, RAM recommendation, license URL, and recommended flag.
+- Keep model install state for selected model, install metadata, download status, progress, checksum, and stable failure reason.
+- Keep WorkManager foreground orchestration behind the shared fixed-artifact verifier.
+- Download to an app-private same-filesystem `.tmp`, validate headers/exact size/checksum, flush, then atomically publish to `files/models/{modelId}/model.litertlm`.
 - Update resolver to prefer selected ready downloaded model, then imported model, then adb development model, then template fallback.
 - Update Settings with model picker, source/size/status rows, download/cancel/delete controls, and existing import fallback.
 - Set up Grayin dedicated model hosting outside git, preferably object storage/CDN rather than GitHub Pages, with immutable release URLs and no arbitrary user-entered endpoints.
@@ -40,8 +40,8 @@ Model downloads are one of the two allowed network boundaries in `docs/network-p
 
 - Implemented model catalog in `ModelCatalog`.
 - Implemented app-private install state in `ModelInstallStore`.
-- Implemented Wi-Fi/unmetered WorkManager downloads in `ModelDownloadWorker`.
-- Implemented Settings model picker with select, open page, download, cancel, and delete controls.
+- Implemented Wi-Fi/unmetered WorkManager orchestration in `ModelDownloadWorker`, routed through the shared fixed-artifact verifier.
+- Implemented Settings model picker with select/open-page controls and conditional download/cancel/delete actions. The conditional actions are currently hidden because every transport entry is fail-closed.
 - `Gemma4ModelPathResolver` prefers the selected ready downloaded model, then legacy import/dev paths.
-- Grayin dedicated model remains a disabled catalog placeholder until URL and checksum are available.
+- Every current model transport entry remains disabled until an immutable URL, exact byte count, and checksum are available. Official page links and local import remain enabled.
 - App-specific training scaffold lives in `model-training/`; generated `.litertlm` files remain ignored and must be published separately.

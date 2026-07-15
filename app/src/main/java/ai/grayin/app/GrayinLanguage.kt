@@ -3,6 +3,9 @@ package ai.grayin.app
 import android.content.Context
 import ai.grayin.core.ai.ModelDownloadStatus
 import ai.grayin.core.model.ConnectorScanIssueCode
+import ai.grayin.core.ocr.OcrLanguagePack
+import ai.grayin.core.ocr.OcrLanguagePackFailureCode
+import ai.grayin.core.ocr.OcrLanguagePackStatus
 import ai.grayin.core.indexing.AutomaticIndexingOutcome
 import ai.grayin.core.indexing.IndexingFailureCode
 import ai.grayin.core.indexing.IndexingSkipReason
@@ -271,6 +274,179 @@ data class GrayinStrings(
 
             GrayinLanguage.ENGLISH -> code.defaultEnglish
         }
+    }
+
+    fun ocrLanguageDataTitle(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "로컬 OCR 언어 데이터"
+        GrayinLanguage.JAPANESE -> "ローカルOCR言語データ"
+        GrayinLanguage.ENGLISH -> "Local OCR language data"
+    }
+
+    fun ocrLanguageDataDisclosure(): String = when (languageCode) {
+        GrayinLanguage.KOREAN ->
+            "PDF와 페이지 이미지는 기기에서만 처리되며 업로드되지 않습니다. OCR 네트워크는 사용자가 선택한 공개 언어 데이터 다운로드에만 쓰입니다. 호스트는 선택 언어 경로와 IP 등 네트워크 메타데이터를 볼 수 있지만 문서 정보는 받지 않습니다."
+
+        GrayinLanguage.JAPANESE ->
+            "PDFとページ画像は端末内だけで処理され、アップロードされません。OCRのネットワーク利用は、選択した公開言語データのダウンロードだけです。ホストには選択言語のパスやIPなどの通信情報が見えますが、文書情報は送信されません。"
+
+        GrayinLanguage.ENGLISH ->
+            "PDFs and page images stay on this device and are never uploaded. For OCR, network access is used only to download language data you select. The host can see the selected pack path and network metadata such as IP address, but receives no document data."
+    }
+
+    fun ocrLanguagePackSize(size: String): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "정확한 다운로드 크기: $size"
+        GrayinLanguage.JAPANESE -> "正確なダウンロードサイズ: $size"
+        GrayinLanguage.ENGLISH -> "Exact download size: $size"
+    }
+
+    fun ocrLanguagePackLicense(license: String): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "라이선스: $license"
+        GrayinLanguage.JAPANESE -> "ライセンス: $license"
+        GrayinLanguage.ENGLISH -> "License: $license"
+    }
+
+    fun ocrLanguagePackCatalogCommit(commit: String): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "고정 소스: tessdata_fast @ $commit"
+        GrayinLanguage.JAPANESE -> "固定ソース: tessdata_fast @ $commit"
+        GrayinLanguage.ENGLISH -> "Pinned source: tessdata_fast @ $commit"
+    }
+
+    fun ocrLanguagePackRequiresUnmeteredNetwork(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "Wi-Fi 또는 무제한 네트워크와 충분한 저장 공간이 필요합니다."
+        GrayinLanguage.JAPANESE -> "Wi-Fiまたは従量制でないネットワークと十分な空き容量が必要です。"
+        GrayinLanguage.ENGLISH -> "Requires Wi-Fi or another unmetered network and sufficient storage."
+    }
+
+    fun ocrLanguagePackProgress(progressPercent: Int): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "다운로드 진행률: ${progressPercent.coerceIn(0, 100)}%"
+        GrayinLanguage.JAPANESE -> "ダウンロード進捗: ${progressPercent.coerceIn(0, 100)}%"
+        GrayinLanguage.ENGLISH -> "Download progress: ${progressPercent.coerceIn(0, 100)}%"
+    }
+
+    fun ocrLanguagePackDownloadAction(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "OCR 언어 데이터 다운로드"
+        GrayinLanguage.JAPANESE -> "OCR言語データをダウンロード"
+        GrayinLanguage.ENGLISH -> "Download OCR language data"
+    }
+
+    fun ocrLanguagePackCancelAction(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "다운로드 취소"
+        GrayinLanguage.JAPANESE -> "ダウンロードをキャンセル"
+        GrayinLanguage.ENGLISH -> "Cancel download"
+    }
+
+    fun ocrLanguagePackDeleteAction(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "OCR 언어 데이터 삭제"
+        GrayinLanguage.JAPANESE -> "OCR言語データを削除"
+        GrayinLanguage.ENGLISH -> "Delete OCR language data"
+    }
+
+    fun ocrLanguagePackName(pack: OcrLanguagePack): String = when (pack) {
+        OcrLanguagePack.ENGLISH -> when (languageCode) {
+            GrayinLanguage.KOREAN -> "영어"
+            GrayinLanguage.JAPANESE -> "英語"
+            GrayinLanguage.ENGLISH -> "English"
+        }
+
+        OcrLanguagePack.KOREAN -> when (languageCode) {
+            GrayinLanguage.KOREAN -> "한국어"
+            GrayinLanguage.JAPANESE -> "韓国語"
+            GrayinLanguage.ENGLISH -> "Korean"
+        }
+
+        OcrLanguagePack.JAPANESE -> when (languageCode) {
+            GrayinLanguage.KOREAN -> "일본어"
+            GrayinLanguage.JAPANESE -> "日本語"
+            GrayinLanguage.ENGLISH -> "Japanese"
+        }
+    }
+
+    fun ocrLanguagePackStatus(status: OcrLanguagePackStatus): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> when (status) {
+            OcrLanguagePackStatus.NOT_INSTALLED -> "상태: 설치되지 않음"
+            OcrLanguagePackStatus.QUEUED -> "상태: 다운로드 대기 중"
+            OcrLanguagePackStatus.DOWNLOADING -> "상태: 다운로드 중"
+            OcrLanguagePackStatus.READY -> "상태: 준비됨"
+            OcrLanguagePackStatus.FAILED -> "상태: 실패"
+        }
+
+        GrayinLanguage.JAPANESE -> when (status) {
+            OcrLanguagePackStatus.NOT_INSTALLED -> "状態: 未インストール"
+            OcrLanguagePackStatus.QUEUED -> "状態: ダウンロード待ち"
+            OcrLanguagePackStatus.DOWNLOADING -> "状態: ダウンロード中"
+            OcrLanguagePackStatus.READY -> "状態: 準備完了"
+            OcrLanguagePackStatus.FAILED -> "状態: 失敗"
+        }
+
+        GrayinLanguage.ENGLISH -> when (status) {
+            OcrLanguagePackStatus.NOT_INSTALLED -> "Status: not installed"
+            OcrLanguagePackStatus.QUEUED -> "Status: queued"
+            OcrLanguagePackStatus.DOWNLOADING -> "Status: downloading"
+            OcrLanguagePackStatus.READY -> "Status: ready"
+            OcrLanguagePackStatus.FAILED -> "Status: failed"
+        }
+    }
+
+    fun ocrLanguagePackFailure(code: OcrLanguagePackFailureCode): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> when (code) {
+            OcrLanguagePackFailureCode.REDIRECT_REJECTED -> "고정 다운로드 주소가 다른 주소로 이동해 거부했습니다."
+            OcrLanguagePackFailureCode.HTTP_REJECTED -> "언어 데이터 호스트가 다운로드를 거부했습니다."
+            OcrLanguagePackFailureCode.SERVER_ERROR -> "언어 데이터 호스트를 일시적으로 사용할 수 없습니다."
+            OcrLanguagePackFailureCode.CONTENT_TYPE_INVALID -> "언어 데이터 응답 형식이 올바르지 않습니다."
+            OcrLanguagePackFailureCode.CONTENT_ENCODING_INVALID -> "언어 데이터 응답 인코딩이 올바르지 않습니다."
+            OcrLanguagePackFailureCode.SIZE_MISMATCH -> "언어 데이터 크기가 고정 카탈로그와 다릅니다."
+            OcrLanguagePackFailureCode.CHECKSUM_MISMATCH -> "언어 데이터 무결성 검증에 실패했습니다."
+            OcrLanguagePackFailureCode.NETWORK_OR_IO_FAILURE -> "네트워크 또는 로컬 파일 작업에 실패했습니다."
+            OcrLanguagePackFailureCode.ATOMIC_INSTALL_FAILED -> "검증된 언어 데이터를 안전하게 설치하지 못했습니다."
+        }
+
+        GrayinLanguage.JAPANESE -> when (code) {
+            OcrLanguagePackFailureCode.REDIRECT_REJECTED -> "固定ダウンロード先が転送を返したため拒否しました。"
+            OcrLanguagePackFailureCode.HTTP_REJECTED -> "言語データのホストがダウンロードを拒否しました。"
+            OcrLanguagePackFailureCode.SERVER_ERROR -> "言語データのホストを一時的に利用できません。"
+            OcrLanguagePackFailureCode.CONTENT_TYPE_INVALID -> "言語データの応答形式が正しくありません。"
+            OcrLanguagePackFailureCode.CONTENT_ENCODING_INVALID -> "言語データの応答エンコードが正しくありません。"
+            OcrLanguagePackFailureCode.SIZE_MISMATCH -> "言語データのサイズが固定カタログと一致しません。"
+            OcrLanguagePackFailureCode.CHECKSUM_MISMATCH -> "言語データの整合性検証に失敗しました。"
+            OcrLanguagePackFailureCode.NETWORK_OR_IO_FAILURE -> "ネットワークまたはローカルファイル処理に失敗しました。"
+            OcrLanguagePackFailureCode.ATOMIC_INSTALL_FAILED -> "検証済み言語データを安全にインストールできませんでした。"
+        }
+
+        GrayinLanguage.ENGLISH -> when (code) {
+            OcrLanguagePackFailureCode.REDIRECT_REJECTED -> "The fixed download address returned a redirect and was rejected."
+            OcrLanguagePackFailureCode.HTTP_REJECTED -> "The language-data host rejected the download."
+            OcrLanguagePackFailureCode.SERVER_ERROR -> "The language-data host is temporarily unavailable."
+            OcrLanguagePackFailureCode.CONTENT_TYPE_INVALID -> "The language-data response type was invalid."
+            OcrLanguagePackFailureCode.CONTENT_ENCODING_INVALID -> "The language-data response encoding was invalid."
+            OcrLanguagePackFailureCode.SIZE_MISMATCH -> "The language-data size did not match the fixed catalog."
+            OcrLanguagePackFailureCode.CHECKSUM_MISMATCH -> "Language-data integrity verification failed."
+            OcrLanguagePackFailureCode.NETWORK_OR_IO_FAILURE -> "A network or local file operation failed."
+            OcrLanguagePackFailureCode.ATOMIC_INSTALL_FAILED -> "The verified language data could not be installed safely."
+        }
+    }
+
+    fun ocrLanguagePackQueued(name: String): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "$name OCR 언어 데이터 다운로드를 대기열에 추가했습니다. 무제한 네트워크에서 실행됩니다."
+        GrayinLanguage.JAPANESE -> "$name OCR言語データのダウンロードを待機列に追加しました。従量制でないネットワークで実行されます。"
+        GrayinLanguage.ENGLISH -> "Queued $name OCR language data. It runs on an unmetered network."
+    }
+
+    fun ocrLanguagePackCanceled(name: String): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "$name OCR 언어 데이터 다운로드를 취소했습니다."
+        GrayinLanguage.JAPANESE -> "$name OCR言語データのダウンロードをキャンセルしました。"
+        GrayinLanguage.ENGLISH -> "Canceled $name OCR language-data download."
+    }
+
+    fun ocrLanguagePackDeleted(name: String): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "$name OCR 언어 데이터를 삭제했습니다."
+        GrayinLanguage.JAPANESE -> "$name OCR言語データを削除しました。"
+        GrayinLanguage.ENGLISH -> "Deleted $name OCR language data."
+    }
+
+    fun ocrLanguagePackActionFailed(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "OCR 언어 데이터 작업을 완료하지 못했습니다."
+        GrayinLanguage.JAPANESE -> "OCR言語データの操作を完了できませんでした。"
+        GrayinLanguage.ENGLISH -> "Could not complete the OCR language-data action."
     }
 
     fun itemCount(count: Int): String {
@@ -932,7 +1108,7 @@ private val EnglishStrings = GrayinStrings(
     noLocalFilesIndexed = "No local files indexed.",
     noSourcesReadyToIndex = "No connected sources are ready to index.",
     revokedLocalFiles = "Revoked local file access and deleted derived local file data.",
-    networkPermissionRestricted = "Network: typed external enrichment and fixed-catalog model downloads only",
+    networkPermissionRestricted = "Network: typed enrichment and verified fixed-catalog model or OCR data downloads only",
     onlineEnrichmentTitle = "External place and weather enrichment",
     onlineEnrichmentDisclosure = "Optional. Sends only rounded coordinates and a UTC date to fixed providers. Open-Meteo may retain request URL/IP logs for up to 90 days. No source content or stored memory is sent.",
     onlineEnrichmentProviderCredit = "Weather data provider: Open-Meteo (CC BY 4.0)",
@@ -1052,7 +1228,7 @@ private val KoreanStrings = EnglishStrings.copy(
     noLocalFilesIndexed = "인덱싱된 로컬 파일이 없습니다.",
     noSourcesReadyToIndex = "인덱싱할 수 있는 연결된 소스가 없습니다.",
     revokedLocalFiles = "로컬 파일 접근 권한을 해제하고 파생 로컬 파일 데이터를 삭제했습니다.",
-    networkPermissionRestricted = "네트워크: typed 외부 enrichment 및 고정 catalog 모델 다운로드만 허용",
+    networkPermissionRestricted = "네트워크: typed 외부 enrichment와 검증된 고정 catalog 모델·OCR 데이터 다운로드만 허용",
     onlineEnrichmentTitle = "외부 장소·날씨 enrichment",
     onlineEnrichmentDisclosure = "선택 기능입니다. 고정 provider에 반올림 좌표와 UTC 날짜만 보냅니다. Open-Meteo는 요청 URL/IP 로그를 최대 90일 보관할 수 있습니다. 소스 내용이나 저장된 기억은 보내지 않습니다.",
     onlineEnrichmentProviderCredit = "날씨 데이터 제공: Open-Meteo (CC BY 4.0)",
@@ -1172,7 +1348,7 @@ private val JapaneseStrings = EnglishStrings.copy(
     noLocalFilesIndexed = "インデックス済みのローカルファイルはありません。",
     noSourcesReadyToIndex = "インデックス可能な接続済みソースがありません。",
     revokedLocalFiles = "ローカルファイルへのアクセス許可を解除し、派生ローカルファイルデータを削除しました。",
-    networkPermissionRestricted = "ネットワーク: typed外部enrichmentと固定catalogモデルのダウンロードのみ許可",
+    networkPermissionRestricted = "ネットワーク: typed外部enrichmentと検証済み固定catalogのモデル・OCRデータのダウンロードのみ許可",
     onlineEnrichmentTitle = "外部の場所・天気enrichment",
     onlineEnrichmentDisclosure = "任意機能です。固定providerへ丸めた座標とUTC日付だけを送信します。Open-MeteoはリクエストURL/IPログを最大90日保持する場合があります。ソース内容や保存済み記憶は送信しません。",
     onlineEnrichmentProviderCredit = "天気データ提供: Open-Meteo (CC BY 4.0)",

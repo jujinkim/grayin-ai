@@ -2,7 +2,11 @@ package ai.grayin.app
 
 import ai.grayin.core.ai.ModelDownloadStatus
 import ai.grayin.core.model.ConnectorScanIssueCode
+import ai.grayin.core.ocr.OcrLanguagePack
+import ai.grayin.core.ocr.OcrLanguagePackFailureCode
+import ai.grayin.core.ocr.OcrLanguagePackStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -155,6 +159,46 @@ class GrayinLanguageTest {
         ConnectorScanIssueCode.entries.forEach { issueCode ->
             strings.forEach { localized ->
                 assertTrue(localized.connectorScanIssue(issueCode).isNotBlank())
+            }
+        }
+    }
+
+    @Test
+    fun everyOcrPackStateFailureAndActionHasLocalizedCopy() {
+        val strings = listOf(
+            GrayinText.forOption(GrayinLanguageOption.ENGLISH),
+            GrayinText.forOption(GrayinLanguageOption.KOREAN),
+            GrayinText.forOption(GrayinLanguageOption.JAPANESE),
+        )
+
+        strings.forEach { localized ->
+            val commonRows = listOf(
+                localized.ocrLanguageDataTitle(),
+                localized.ocrLanguageDataDisclosure(),
+                localized.ocrLanguagePackSize("1.00 MB"),
+                localized.ocrLanguagePackLicense("Apache-2.0"),
+                localized.ocrLanguagePackCatalogCommit("abcdef"),
+                localized.ocrLanguagePackRequiresUnmeteredNetwork(),
+                localized.ocrLanguagePackProgress(42),
+                localized.ocrLanguagePackDownloadAction(),
+                localized.ocrLanguagePackCancelAction(),
+                localized.ocrLanguagePackDeleteAction(),
+                localized.ocrLanguagePackQueued("English"),
+                localized.ocrLanguagePackCanceled("English"),
+                localized.ocrLanguagePackDeleted("English"),
+                localized.ocrLanguagePackActionFailed(),
+            )
+            commonRows.forEach { row -> assertTrue(row.isNotBlank()) }
+            OcrLanguagePack.entries.forEach { pack ->
+                assertTrue(localized.ocrLanguagePackName(pack).isNotBlank())
+            }
+            OcrLanguagePackStatus.entries.forEach { status ->
+                assertTrue(localized.ocrLanguagePackStatus(status).isNotBlank())
+            }
+            OcrLanguagePackFailureCode.entries.forEach { failure ->
+                val copy = localized.ocrLanguagePackFailure(failure)
+                assertTrue(copy.isNotBlank())
+                assertFalse(copy.contains(failure.name))
             }
         }
     }

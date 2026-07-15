@@ -20,6 +20,8 @@ It must never be:
 
 Network-enabled enrichment does not weaken this rule. Only an ephemeral `EnrichmentRequest` projection approved by `docs/network-policy.md` may be transmitted to a map/place, reverse-geocode, or weather provider. It may contain required rounded coordinates, timestamp, locale, units, or an approved coarse query, but never a persisted `DerivedMemoryEvent`. Raw originals, stored derived-memory records, evidence packs, prompts, answers, embeddings, and source references never leave the device.
 
+Fixed OCR `.traineddata` files are public runtime artifacts, not user originals. Their WorkManager input, progress, and install state may contain only catalog pack ID, local generation, bounded progress, byte count, and stable status/failure enums. They must not contain a document URI or name, source content, extracted text, OCR transcript, query, evidence, provider body, or exception message. Verified packs live under app-private `noBackupFilesDir/ocr/tesseract/tessdata`; same-filesystem staging parts are deleted after failure or cancellation and are never backed up. Selecting or indexing a document never starts an artifact download.
+
 ## Raw Original Examples
 
 - original photos

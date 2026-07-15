@@ -58,6 +58,10 @@ import ai.grayin.core.retrieval.MissingEvidenceResolver
 import ai.grayin.core.retrieval.MemoryCapabilityResolver
 import ai.grayin.core.retrieval.QueryPlan
 import ai.grayin.core.retrieval.ScopedQueryPlanning
+import ai.grayin.core.ocr.OcrLanguagePackCatalog
+import ai.grayin.core.ocr.OcrLanguagePackDownloadScheduler
+import ai.grayin.core.ocr.OcrLanguagePackInstallStore
+import ai.grayin.core.ocr.OcrLanguagePackStatus
 import ai.grayin.core.store.LocalMemoryStore
 import ai.grayin.core.store.SqlCipherLocalMemoryStore
 import java.time.Instant
@@ -101,6 +105,16 @@ data class ModelOptionUiState(
     val canDeleteDownloaded: Boolean,
 )
 
+data class OcrLanguagePackUiState(
+    val id: String,
+    val name: String,
+    val status: String,
+    val detailRows: List<String>,
+    val canDownload: Boolean,
+    val canCancelDownload: Boolean,
+    val canDelete: Boolean,
+)
+
 data class GrayinSnapshot(
     val sourceRows: List<ConnectorUiState>,
     val indexingStatus: IndexingStatusUiState,
@@ -108,6 +122,7 @@ data class GrayinSnapshot(
     val placesRows: List<String>,
     val settingsRows: List<String>,
     val modelOptions: List<ModelOptionUiState>,
+    val ocrLanguagePacks: List<OcrLanguagePackUiState>,
 )
 
 class GrayinMemoryController(
@@ -135,6 +150,10 @@ class GrayinMemoryController(
     ),
     private val modelInstallStore: ModelInstallStore = ModelInstallStore(context.applicationContext),
     private val modelDownloadScheduler: ModelDownloadScheduler = ModelDownloadScheduler(context.applicationContext),
+    private val ocrLanguagePackInstallStore: OcrLanguagePackInstallStore =
+        OcrLanguagePackInstallStore(context.applicationContext),
+    private val ocrLanguagePackDownloadScheduler: OcrLanguagePackDownloadScheduler =
+        OcrLanguagePackDownloadScheduler(context.applicationContext),
     private val modelPathResolver: Gemma4ModelPathResolver = Gemma4ModelPathResolver(
         context.applicationContext,
         modelInstallStore,
@@ -168,6 +187,7 @@ class GrayinMemoryController(
                 "${strings.derivedMemoryEventsPrefix} ${events.size}",
             ),
             modelOptions = localModelOptions(strings),
+            ocrLanguagePacks = ocrLanguagePackOptions(strings),
         )
     }
 
@@ -218,7 +238,7 @@ class GrayinMemoryController(
                 recommended = entry.recommended,
                 downloadPageUrl = entry.downloadPageUrl,
                 canSelect = !selected,
-                canDownload = entry.downloadUrl != null &&
+                canDownload = entry.downloadConfigured &&
                     record.status != ModelDownloadStatus.READY &&
                     record.status != ModelDownloadStatus.QUEUED &&
                     record.status != ModelDownloadStatus.DOWNLOADING,
@@ -241,13 +261,13 @@ class GrayinMemoryController(
             add(strings.localModelRecommendedRam(entry.recommendedRamGb))
             add(strings.localModelFileName(entry.fileName))
             if (entry.recommended) add(strings.localModelRecommended)
-            if (entry.downloadUrl == null) add(strings.localModelDownloadUnavailable)
+            if (!entry.downloadConfigured) add(strings.localModelDownloadUnavailable)
             if (record.status == ModelDownloadStatus.QUEUED || record.status == ModelDownloadStatus.DOWNLOADING) {
                 add(strings.localModelRequiresUnmeteredNetwork)
                 record.progressPercent?.let { progress -> add(strings.localModelProgress(progress)) }
             }
-            if (record.status == ModelDownloadStatus.FAILED && record.failureReason != null) {
-                add(strings.localModelFailure(record.failureReason))
+            if (record.status == ModelDownloadStatus.FAILED && record.failureCode != null) {
+                add(strings.localModelFailure(record.failureCode.storageKey))
             }
             if (record.status == ModelDownloadStatus.READY && record.installedBytes > 0L) {
                 add(strings.localModelInstalledSize(formatGigabytes(record.installedBytes)))
@@ -257,6 +277,47 @@ class GrayinMemoryController(
 
     private fun formatGigabytes(bytes: Long): String {
         return String.format(Locale.US, "%.2f GB", bytes / 1_000_000_000.0)
+    }
+
+    private suspend fun ocrLanguagePackOptions(strings: GrayinStrings): List<OcrLanguagePackUiState> {
+        return OcrLanguagePackCatalog.all().map { entry ->
+            ocrLanguagePackDownloadScheduler.reconcile(entry.id)
+            val record = ocrLanguagePackInstallStore.recordFor(entry)
+            OcrLanguagePackUiState(
+                id = entry.id,
+                name = strings.ocrLanguagePackName(entry.language),
+                status = strings.ocrLanguagePackStatus(record.status),
+                detailRows = buildList {
+                    add(strings.ocrLanguagePackSize(formatExactDownloadSize(entry.expectedSizeBytes)))
+                    add(strings.ocrLanguagePackLicense(entry.licenseLabel))
+                    add(strings.ocrLanguagePackCatalogCommit(OcrLanguagePackCatalog.TESSDATA_FAST_COMMIT))
+                    if (
+                        record.status == OcrLanguagePackStatus.QUEUED ||
+                        record.status == OcrLanguagePackStatus.DOWNLOADING
+                    ) {
+                        add(strings.ocrLanguagePackRequiresUnmeteredNetwork())
+                        record.progressPercent?.let { progress ->
+                            add(strings.ocrLanguagePackProgress(progress))
+                        }
+                    }
+                    if (record.status == OcrLanguagePackStatus.FAILED) {
+                        record.failureCode?.let { failure ->
+                            add(strings.ocrLanguagePackFailure(failure))
+                        }
+                    }
+                },
+                canDownload = record.status != OcrLanguagePackStatus.READY &&
+                    record.status != OcrLanguagePackStatus.QUEUED &&
+                    record.status != OcrLanguagePackStatus.DOWNLOADING,
+                canCancelDownload = record.status == OcrLanguagePackStatus.QUEUED ||
+                    record.status == OcrLanguagePackStatus.DOWNLOADING,
+                canDelete = record.status == OcrLanguagePackStatus.READY,
+            )
+        }
+    }
+
+    private fun formatExactDownloadSize(bytes: Long): String {
+        return String.format(Locale.US, "%,d bytes (%.2f MB)", bytes, bytes / 1_000_000.0)
     }
 
     suspend fun indexLocalFiles(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
@@ -336,12 +397,42 @@ class GrayinMemoryController(
 
     suspend fun downloadLocalModel(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown
-        if (entry.downloadUrl == null) return@withContext strings.localModelDownloadUnavailable
+        if (!entry.downloadConfigured) return@withContext strings.localModelDownloadUnavailable
         modelInstallStore.selectModel(entry.id)
         modelInstallStore.recordQueued(entry.id)
         modelDownloadScheduler.enqueue(entry.id)
         strings.localModelDownloadQueued(entry.displayName)
     }
+
+    suspend fun downloadOcrLanguagePack(packId: String, strings: GrayinStrings): String =
+        withContext(Dispatchers.IO) {
+            val entry = OcrLanguagePackCatalog.entry(packId)
+                ?: return@withContext strings.ocrLanguagePackActionFailed()
+            if (!ocrLanguagePackDownloadScheduler.enqueue(entry.id)) {
+                return@withContext strings.ocrLanguagePackActionFailed()
+            }
+            strings.ocrLanguagePackQueued(strings.ocrLanguagePackName(entry.language))
+        }
+
+    suspend fun cancelOcrLanguagePackDownload(packId: String, strings: GrayinStrings): String =
+        withContext(Dispatchers.IO) {
+            val entry = OcrLanguagePackCatalog.entry(packId)
+                ?: return@withContext strings.ocrLanguagePackActionFailed()
+            if (!ocrLanguagePackDownloadScheduler.cancel(entry.id)) {
+                return@withContext strings.ocrLanguagePackActionFailed()
+            }
+            strings.ocrLanguagePackCanceled(strings.ocrLanguagePackName(entry.language))
+        }
+
+    suspend fun deleteOcrLanguagePack(packId: String, strings: GrayinStrings): String =
+        withContext(Dispatchers.IO) {
+            val entry = OcrLanguagePackCatalog.entry(packId)
+                ?: return@withContext strings.ocrLanguagePackActionFailed()
+            if (!ocrLanguagePackDownloadScheduler.delete(entry.id)) {
+                return@withContext strings.ocrLanguagePackActionFailed()
+            }
+            strings.ocrLanguagePackDeleted(strings.ocrLanguagePackName(entry.language))
+        }
 
     suspend fun cancelLocalModelDownload(modelId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val entry = ModelCatalog.entry(modelId) ?: return@withContext strings.localModelUnknown

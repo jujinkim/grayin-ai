@@ -9,12 +9,13 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import java.io.File
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.MessageDigest
-import java.util.concurrent.CancellationException
+import ai.grayin.core.artifact.ArtifactDownloadFailureCode
+import ai.grayin.core.artifact.ArtifactDownloadResult
+import ai.grayin.core.artifact.FixedCatalogArtifactDownloader
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -25,109 +26,114 @@ class ModelDownloadWorker(
     workerParameters: WorkerParameters,
 ) : CoroutineWorker(appContext, workerParameters) {
     private val installStore = ModelInstallStore(appContext)
+    private val downloader = FixedCatalogArtifactDownloader()
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val modelId = inputData.getString(KEY_MODEL_ID) ?: return@withContext Result.failure()
         val entry = ModelCatalog.entry(modelId) ?: return@withContext Result.failure()
-        val downloadUrl = entry.downloadUrl
-            ?: return@withContext fail(modelId, "Model download is not configured.")
+        if (!entry.downloadConfigured) {
+            return@withContext fail(modelId, ModelDownloadFailureCode.DOWNLOAD_NOT_CONFIGURED)
+        }
+        val artifact = entry.artifactSpecOrNull()
+            ?: return@withContext fail(modelId, ModelDownloadFailureCode.DOWNLOAD_NOT_CONFIGURED)
         val tempFile = installStore.tempFile(entry)
 
         try {
             setForeground(createForegroundInfo(entry, 0))
-            download(entry, downloadUrl, tempFile)
-            Result.success()
+            installStore.recordDownloading(
+                modelId = entry.id,
+                downloadedBytes = 0L,
+                totalBytes = artifact.expectedSizeBytes,
+                progressPercent = 0,
+            )
+            when (
+                val download = downloader.downloadToPart(
+                    artifact = artifact,
+                    partFile = tempFile,
+                    onProgress = { downloadedBytes, totalBytes ->
+                        val progressPercent = progressPercent(downloadedBytes, totalBytes)
+                        installStore.recordDownloading(
+                            modelId = entry.id,
+                            downloadedBytes = downloadedBytes,
+                            totalBytes = totalBytes,
+                            progressPercent = progressPercent,
+                        )
+                        setProgress(
+                            workDataOf(
+                                KEY_MODEL_ID to entry.id,
+                                KEY_PROGRESS_PERCENT to progressPercent,
+                                KEY_DOWNLOADED_BYTES to downloadedBytes,
+                                KEY_TOTAL_BYTES to totalBytes,
+                            ),
+                        )
+                        setForeground(createForegroundInfo(entry, progressPercent))
+                    },
+                )
+            ) {
+                is ArtifactDownloadResult.Verified -> publish(entry, tempFile, download)
+                is ArtifactDownloadResult.Failed -> {
+                    if (download.retryable && runAttemptCount < MAX_RETRY_ATTEMPT_INDEX) {
+                        installStore.recordQueued(modelId)
+                        Result.retry()
+                    } else {
+                        installStore.recordFailed(
+                            modelId,
+                            download.code.toModelFailureCode(),
+                        )
+                        Result.failure()
+                    }
+                }
+            }
         } catch (error: CancellationException) {
             tempFile.delete()
             installStore.recordNotDownloaded(modelId)
             throw error
-        } catch (error: Throwable) {
+        } catch (_: Throwable) {
             tempFile.delete()
-            installStore.recordFailed(modelId, error.message)
+            installStore.recordFailed(modelId, ModelDownloadFailureCode.DOWNLOAD_FAILED)
             Result.failure()
         }
     }
 
-    private suspend fun download(entry: ModelCatalogEntry, downloadUrl: String, tempFile: File) {
-        val modelDir = requireNotNull(tempFile.parentFile) { "Model directory is unavailable." }
-        modelDir.mkdirs()
-        tempFile.delete()
-
-        val connection = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
-            instanceFollowRedirects = true
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "GrayinAI/0.1")
-        }
-
+    private suspend fun publish(
+        entry: ModelCatalogEntry,
+        tempFile: java.io.File,
+        verified: ArtifactDownloadResult.Verified,
+    ): Result {
+        currentCoroutineContext().ensureActive()
+        val destination = installStore.modelFile(entry)
         try {
-            connection.connect()
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) {
-                throw IOException("HTTP $responseCode")
-            }
-            val totalBytes = connection.contentLengthLong.takeIf { it > 0L } ?: entry.approxSizeBytes
-            val digest = MessageDigest.getInstance("SHA-256")
-            var copiedBytes = 0L
-            var lastProgressPercent = -1
-
-            installStore.recordDownloading(entry.id, downloadedBytes = 0L, totalBytes = totalBytes, progressPercent = 0)
-            connection.inputStream.use { source ->
-                tempFile.outputStream().use { target ->
-                    val buffer = ByteArray(COPY_BUFFER_BYTES)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val read = source.read(buffer)
-                        if (read < 0) break
-                        target.write(buffer, 0, read)
-                        digest.update(buffer, 0, read)
-                        copiedBytes += read
-
-                        val progressPercent = progressPercent(copiedBytes, totalBytes)
-                        if (progressPercent != lastProgressPercent) {
-                            lastProgressPercent = progressPercent
-                            installStore.recordDownloading(entry.id, copiedBytes, totalBytes, progressPercent)
-                            setProgress(
-                                workDataOf(
-                                    KEY_MODEL_ID to entry.id,
-                                    KEY_PROGRESS_PERCENT to progressPercent,
-                                    KEY_DOWNLOADED_BYTES to copiedBytes,
-                                    KEY_TOTAL_BYTES to totalBytes,
-                                ),
-                            )
-                            setForeground(createForegroundInfo(entry, progressPercent))
-                        }
-                    }
-                }
-            }
-
-            if (copiedBytes < MIN_MODEL_BYTES) {
-                throw IOException("Downloaded model is too small.")
-            }
-            val sha256 = digest.digest().joinToString(separator = "") { "%02x".format(it) }
-            val expectedSha256 = entry.sha256
-            if (expectedSha256 != null && !sha256.equals(expectedSha256, ignoreCase = true)) {
-                throw IOException("Downloaded model checksum mismatch.")
-            }
-
-            val destination = installStore.modelFile(entry)
-            if (destination.exists() && !destination.delete()) {
-                throw IOException("Existing model file cannot be replaced.")
-            }
-            if (!tempFile.renameTo(destination)) {
-                tempFile.copyTo(destination, overwrite = true)
-                tempFile.delete()
-            }
-            installStore.recordReady(entry, destination, copiedBytes, sha256)
-        } finally {
-            connection.disconnect()
+            Files.move(
+                tempFile.toPath(),
+                destination.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            tempFile.delete()
+            installStore.recordFailed(entry.id, ModelDownloadFailureCode.ATOMIC_INSTALL_FAILED)
+            return Result.failure()
         }
+        installStore.recordReady(entry, destination, verified.bytes, verified.sha256)
+        return Result.success()
     }
 
-    private fun fail(modelId: String, message: String): Result {
-        installStore.recordFailed(modelId, message)
+    private fun fail(modelId: String, failureCode: ModelDownloadFailureCode): Result {
+        installStore.recordFailed(modelId, failureCode)
         return Result.failure()
+    }
+
+    private fun ArtifactDownloadFailureCode.toModelFailureCode(): ModelDownloadFailureCode {
+        return when (this) {
+            ArtifactDownloadFailureCode.REDIRECT_REJECTED -> ModelDownloadFailureCode.REDIRECT_REJECTED
+            ArtifactDownloadFailureCode.HTTP_REJECTED -> ModelDownloadFailureCode.HTTP_REJECTED
+            ArtifactDownloadFailureCode.SERVER_ERROR -> ModelDownloadFailureCode.SERVER_ERROR
+            ArtifactDownloadFailureCode.CONTENT_TYPE_INVALID -> ModelDownloadFailureCode.CONTENT_TYPE_INVALID
+            ArtifactDownloadFailureCode.CONTENT_ENCODING_INVALID -> ModelDownloadFailureCode.CONTENT_ENCODING_INVALID
+            ArtifactDownloadFailureCode.SIZE_MISMATCH -> ModelDownloadFailureCode.SIZE_MISMATCH
+            ArtifactDownloadFailureCode.CHECKSUM_MISMATCH -> ModelDownloadFailureCode.CHECKSUM_MISMATCH
+            ArtifactDownloadFailureCode.IO_FAILURE -> ModelDownloadFailureCode.NETWORK_OR_IO_FAILURE
+        }
     }
 
     private fun createForegroundInfo(entry: ModelCatalogEntry, progressPercent: Int): ForegroundInfo {
@@ -151,8 +157,8 @@ class ModelDownloadWorker(
         return ForegroundInfo(NOTIFICATION_ID, notification)
     }
 
-    private fun progressPercent(downloadedBytes: Long, totalBytes: Long?): Int {
-        if (totalBytes == null || totalBytes <= 0L) return 0
+    private fun progressPercent(downloadedBytes: Long, totalBytes: Long): Int {
+        if (totalBytes <= 0L) return 0
         return ((downloadedBytes * 100L) / totalBytes).coerceIn(0L, 100L).toInt()
     }
 
@@ -164,9 +170,6 @@ class ModelDownloadWorker(
 
         private const val NOTIFICATION_CHANNEL_ID = "grayin_model_downloads"
         private const val NOTIFICATION_ID = 2101
-        private const val CONNECT_TIMEOUT_MS = 30_000
-        private const val READ_TIMEOUT_MS = 30_000
-        private const val COPY_BUFFER_BYTES = 1024 * 1024
-        private const val MIN_MODEL_BYTES = 100L * 1024L * 1024L
+        private const val MAX_RETRY_ATTEMPT_INDEX = 2
     }
 }

@@ -141,8 +141,8 @@ fun GrayinApp() {
                 working = true
                 try {
                     statusMessage = controller.rememberSelectedLocalFile(uri, strings)
-                } catch (error: Throwable) {
-                    statusMessage = error.message ?: strings.localFileSelectionFailed
+                } catch (_: Throwable) {
+                    statusMessage = strings.localFileSelectionFailed
                 } finally {
                     refreshSnapshotSafely()
                     working = false
@@ -158,8 +158,8 @@ fun GrayinApp() {
                 working = true
                 try {
                     statusMessage = controller.importLocalGemmaModel(uri, strings)
-                } catch (error: Throwable) {
-                    statusMessage = error.message ?: strings.localGemmaModelImportFailed
+                } catch (_: Throwable) {
+                    statusMessage = strings.localGemmaModelImportFailed
                 } finally {
                     refreshSnapshotSafely()
                     working = false
@@ -175,8 +175,8 @@ fun GrayinApp() {
                 working = true
                 try {
                     statusMessage = controller.invokeConnector(CalendarConnectorId, strings)
-                } catch (error: Throwable) {
-                    statusMessage = error.message ?: strings.sourcePermissionDenied
+                } catch (_: Throwable) {
+                    statusMessage = strings.sourcePermissionDenied
                 } finally {
                     refreshSnapshotSafely()
                     working = false
@@ -194,8 +194,8 @@ fun GrayinApp() {
                 working = true
                 try {
                     statusMessage = controller.invokeConnector(PhotosConnectorId, strings)
-                } catch (error: Throwable) {
-                    statusMessage = error.message ?: strings.sourcePermissionDenied
+                } catch (_: Throwable) {
+                    statusMessage = strings.sourcePermissionDenied
                 } finally {
                     refreshSnapshotSafely()
                     working = false
@@ -213,8 +213,8 @@ fun GrayinApp() {
                 working = true
                 try {
                     statusMessage = controller.invokeConnector(LocationConnectorId, strings)
-                } catch (error: Throwable) {
-                    statusMessage = error.message ?: strings.sourcePermissionDenied
+                } catch (_: Throwable) {
+                    statusMessage = strings.sourcePermissionDenied
                 } finally {
                     refreshSnapshotSafely()
                     working = false
@@ -236,8 +236,8 @@ fun GrayinApp() {
             working = true
             try {
                 statusMessage = controller.indexLocalFiles(strings)
-            } catch (error: Throwable) {
-                statusMessage = error.message ?: strings.indexingFailed
+            } catch (_: Throwable) {
+                statusMessage = strings.indexingFailed
             } finally {
                 refreshSnapshotSafely()
                 working = false
@@ -250,8 +250,8 @@ fun GrayinApp() {
             working = true
             try {
                 statusMessage = controller.indexAllEnabledSources(strings)
-            } catch (error: Throwable) {
-                statusMessage = error.message ?: strings.indexingFailed
+            } catch (_: Throwable) {
+                statusMessage = strings.indexingFailed
             } finally {
                 refreshSnapshotSafely()
                 working = false
@@ -410,9 +410,9 @@ fun GrayinApp() {
                                 hasAsked = true
                                 try {
                                     answerState = controller.ask(query, strings)
-                                } catch (error: Throwable) {
+                                } catch (_: Throwable) {
                                     answerState = AnswerUiState(
-                                        answer = error.message ?: strings.searchFailed,
+                                        answer = strings.searchFailed,
                                         confidence = "UNKNOWN",
                                         evidenceRows = listOf(strings.noCitedEvidence),
                                         missingRows = listOf(strings.tryIndexingAgain),
@@ -463,8 +463,8 @@ fun GrayinApp() {
                                             if (statusMessage == strings.sourcePermissionDenied) {
                                                 context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                                             }
-                                        } catch (error: Throwable) {
-                                            statusMessage = error.message ?: strings.sourcePermissionDenied
+                                        } catch (_: Throwable) {
+                                            statusMessage = strings.sourcePermissionDenied
                                         } finally {
                                             refreshSnapshotSafely()
                                             working = false
@@ -480,8 +480,8 @@ fun GrayinApp() {
                                             if (statusMessage == strings.sourcePermissionDenied) {
                                                 context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                                             }
-                                        } catch (error: Throwable) {
-                                            statusMessage = error.message ?: strings.sourcePermissionDenied
+                                        } catch (_: Throwable) {
+                                            statusMessage = strings.sourcePermissionDenied
                                         } finally {
                                             refreshSnapshotSafely()
                                             working = false
@@ -499,8 +499,8 @@ fun GrayinApp() {
                                 working = true
                                 try {
                                     statusMessage = controller.indexConnector(connectorId, strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.indexingFailed
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.indexingFailed
                                 } finally {
                                     refreshSnapshotSafely()
                                     working = false
@@ -512,8 +512,8 @@ fun GrayinApp() {
                                 working = true
                                 try {
                                     statusMessage = controller.revokeConnector(connectorId, strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.revokeFailed
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.revokeFailed
                                 } finally {
                                     refreshSnapshotSafely()
                                     working = false
@@ -525,8 +525,8 @@ fun GrayinApp() {
                                 working = true
                                 try {
                                     statusMessage = controller.deleteConnectorData(connectorId, strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.deleteFailed
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.deleteFailed
                                 } finally {
                                     refreshSnapshotSafely()
                                     working = false
@@ -538,8 +538,8 @@ fun GrayinApp() {
                                 working = true
                                 try {
                                     statusMessage = controller.updateNotificationAllowlist(rawValue, strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.notificationAllowlistInvalid
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.notificationAllowlistInvalid
                                 } finally {
                                     refreshSnapshotSafely()
                                     working = false
@@ -551,8 +551,8 @@ fun GrayinApp() {
                                 working = true
                                 try {
                                     statusMessage = controller.updateOnlineEnrichment(enabled, strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.searchFailed
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.searchFailed
                                 } finally {
                                     refreshSnapshotSafely()
                                     working = false
@@ -563,6 +563,7 @@ fun GrayinApp() {
                     GrayinScreen.Settings -> SettingsScreen(
                         rows = snapshot.settingsRows,
                         modelOptions = snapshot.modelOptions,
+                        ocrLanguagePacks = snapshot.ocrLanguagePacks,
                         statusMessage = statusMessage,
                         languageOption = languageOption,
                         strings = strings,
@@ -586,8 +587,8 @@ fun GrayinApp() {
                                 working = true
                                 try {
                                     statusMessage = controller.selectLocalModel(modelId, strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.localModelUnknown
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.localModelUnknown
                                 } finally {
                                     refreshSnapshotSafely()
                                     working = false
@@ -599,8 +600,8 @@ fun GrayinApp() {
                                 working = true
                                 try {
                                     statusMessage = controller.downloadLocalModel(modelId, strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.localGemmaModelImportFailed
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.localModelDownloadUnavailable
                                 } finally {
                                     refreshSnapshotSafely()
                                     working = false
@@ -612,8 +613,8 @@ fun GrayinApp() {
                                 working = true
                                 try {
                                     statusMessage = controller.cancelLocalModelDownload(modelId, strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.deleteFailed
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.deleteFailed
                                 } finally {
                                     refreshSnapshotSafely()
                                     working = false
@@ -625,8 +626,47 @@ fun GrayinApp() {
                                 working = true
                                 try {
                                     statusMessage = controller.deleteDownloadedLocalModel(modelId, strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.deleteFailed
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.deleteFailed
+                                } finally {
+                                    refreshSnapshotSafely()
+                                    working = false
+                                }
+                            }
+                        },
+                        onDownloadOcrLanguagePack = { packId ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.downloadOcrLanguagePack(packId, strings)
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.ocrLanguagePackActionFailed()
+                                } finally {
+                                    refreshSnapshotSafely()
+                                    working = false
+                                }
+                            }
+                        },
+                        onCancelOcrLanguagePackDownload = { packId ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.cancelOcrLanguagePackDownload(packId, strings)
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.ocrLanguagePackActionFailed()
+                                } finally {
+                                    refreshSnapshotSafely()
+                                    working = false
+                                }
+                            }
+                        },
+                        onDeleteOcrLanguagePack = { packId ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.deleteOcrLanguagePack(packId, strings)
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.ocrLanguagePackActionFailed()
                                 } finally {
                                     refreshSnapshotSafely()
                                     working = false
@@ -641,8 +681,8 @@ fun GrayinApp() {
                                 working = true
                                 try {
                                     statusMessage = controller.deleteLocalGemmaModel(strings)
-                                } catch (error: Throwable) {
-                                    statusMessage = error.message ?: strings.deleteFailed
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.deleteFailed
                                 } finally {
                                     refreshSnapshotSafely()
                                     working = false
@@ -1239,6 +1279,7 @@ private fun SourceRow(
 private fun SettingsScreen(
     rows: List<String>,
     modelOptions: List<ModelOptionUiState>,
+    ocrLanguagePacks: List<OcrLanguagePackUiState>,
     statusMessage: String,
     languageOption: GrayinLanguageOption,
     strings: GrayinStrings,
@@ -1250,6 +1291,9 @@ private fun SettingsScreen(
     onDownloadModel: (String) -> Unit,
     onCancelModelDownload: (String) -> Unit,
     onDeleteDownloadedModel: (String) -> Unit,
+    onDownloadOcrLanguagePack: (String) -> Unit,
+    onCancelOcrLanguagePackDownload: (String) -> Unit,
+    onDeleteOcrLanguagePack: (String) -> Unit,
     onImportModel: () -> Unit,
     onDeleteModel: () -> Unit,
 ) {
@@ -1276,6 +1320,16 @@ private fun SettingsScreen(
             ) {
                 Text(if (working) strings.indexing else strings.indexNow)
             }
+        }
+        item {
+            OcrLanguagePackSettings(
+                packs = ocrLanguagePacks,
+                strings = strings,
+                working = working,
+                onDownload = onDownloadOcrLanguagePack,
+                onCancelDownload = onCancelOcrLanguagePackDownload,
+                onDelete = onDeleteOcrLanguagePack,
+            )
         }
         item {
             LocalModelSettings(
@@ -1327,6 +1381,69 @@ private fun SettingsScreen(
         }
         items(rows) { row ->
             StatusRow(row)
+        }
+    }
+}
+
+@Composable
+private fun OcrLanguagePackSettings(
+    packs: List<OcrLanguagePackUiState>,
+    strings: GrayinStrings,
+    working: Boolean,
+    onDownload: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(strings.ocrLanguageDataTitle(), style = MaterialTheme.typography.titleMedium)
+        Text(strings.ocrLanguageDataDisclosure(), style = MaterialTheme.typography.bodySmall)
+        packs.forEach { pack ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                tonalElevation = 1.dp,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(pack.name, style = MaterialTheme.typography.titleSmall)
+                    Text(pack.status, style = MaterialTheme.typography.bodyMedium)
+                    pack.detailRows.forEach { row ->
+                        Text(row, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (pack.canDownload) {
+                        Button(
+                            enabled = !working,
+                            onClick = { onDownload(pack.id) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(strings.ocrLanguagePackDownloadAction())
+                        }
+                    }
+                    if (pack.canCancelDownload) {
+                        OutlinedButton(
+                            enabled = !working,
+                            onClick = { onCancelDownload(pack.id) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(strings.ocrLanguagePackCancelAction())
+                        }
+                    }
+                    if (pack.canDelete) {
+                        OutlinedButton(
+                            enabled = !working,
+                            onClick = { onDelete(pack.id) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(strings.ocrLanguagePackDeleteAction())
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1539,6 +1656,7 @@ private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
         placesRows = listOf(strings.noPlaceClusters),
         settingsRows = listOf(strings.loadingLocalState),
         modelOptions = emptyList(),
+        ocrLanguagePacks = emptyList(),
     )
 }
 

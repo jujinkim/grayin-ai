@@ -16,7 +16,7 @@ Grayin AI is designed around user-owned local memory.
 
 ## Network Scope
 
-Online enrichment may fetch map/place, weather, or reverse-geocode information. Runtime model infrastructure may download a model file or signed manifest selected from the fixed app catalog.
+Online enrichment may fetch map/place, weather, or reverse-geocode information. Fixed artifact infrastructure may download a model file, signed manifest, or user-selected OCR language pack from the app catalog. Internal OCR WorkManager input contains only a fixed pack ID and generation. The artifact host sees the selected fixed pack path plus ordinary network metadata such as the device IP address, but the request contains no selected-document identity, URI, content, query, evidence, or memory data.
 
 External enrichment has a separate default-OFF user switch under Location. Reverse geocoding sends a coordinate rounded to 0.001 degrees through Android `Geocoder`. Open-Meteo weather sends a coordinate rounded to 0.01 degrees plus one UTC date. It does not send the stored location event, source reference, query, or user label.
 
@@ -26,7 +26,7 @@ Allowed network requests must:
 
 - use minimal derived lookup inputs such as rounded latitude/longitude, timestamp, locale, units, or an approved coarse place query
 - call typed gateway methods for map/place, weather, or reverse-geocode operations
-- use fixed HTTPS catalog entries for model or manifest downloads
+- use fixed HTTPS catalog entries for model, manifest, or OCR language-data downloads
 - avoid arbitrary or user-supplied URL and endpoint parameters
 - never upload raw/original source data
 - never upload stored derived-memory records, evidence packs, prompts, answers, embeddings, source references, or fields outside the approved ephemeral enrichment-request projection

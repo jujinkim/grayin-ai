@@ -78,10 +78,55 @@ class SecurityBoundaryTest {
 
         assertEquals(
             setOf(
-                "ai/grayin/core/ai/ModelDownloadWorker.kt",
+                "ai/grayin/core/artifact/FixedCatalogArtifactDownloader.kt",
                 "ai/grayin/core/enrichment/OpenMeteoTransport.kt",
             ),
             networkFiles,
         )
+    }
+
+    @Test
+    fun fixedArtifactSpecsAreConstructedOnlyByApprovedCatalogs() {
+        val constructorOwners = File("src/main/java").walkTopDown()
+            .filter(File::isFile)
+            .filter { file -> file.extension == "kt" && file.readText().contains("FixedCatalogArtifactSpec(") }
+            .map { file -> file.relativeTo(File("src/main/java")).invariantSeparatorsPath }
+            .toSet()
+
+        assertEquals(
+            setOf(
+                "ai/grayin/core/ai/ModelCatalog.kt",
+                "ai/grayin/core/artifact/FixedCatalogArtifactDownloader.kt",
+                "ai/grayin/core/ocr/OcrLanguagePackCatalog.kt",
+            ),
+            constructorOwners,
+        )
+    }
+
+    @Test
+    fun indexingCodeCannotScheduleOcrLanguageDownloads() {
+        val indexingSources = listOf(
+            File("src/main/java/ai/grayin/core/indexing"),
+            File("src/main/java/ai/grayin/connectors"),
+        ).flatMap { root ->
+            root.walkTopDown().filter(File::isFile).filter { file -> file.extension == "kt" }.toList()
+        }
+
+        indexingSources.forEach { file ->
+            assertFalse(
+                "Indexing must not schedule OCR language data: ${file.invariantSeparatorsPath}",
+                file.readText().contains("OcrLanguagePackDownloadScheduler"),
+            )
+        }
+    }
+
+    @Test
+    fun ocrLanguageDataIsNotBundledInTheApp() {
+        val bundled = File("src/main").walkTopDown()
+            .filter(File::isFile)
+            .filter { file -> file.extension == "traineddata" }
+            .toList()
+
+        assertTrue(bundled.isEmpty())
     }
 }

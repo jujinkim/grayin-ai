@@ -28,6 +28,9 @@
 - Connector over-collection
 - Accidental raw data persistence
 - Online enrichment metadata leakage
+- Artifact supply-chain substitution or redirect
+- Interrupted artifact replacement
+- Stale download worker publication
 
 ## Mitigations
 
@@ -53,4 +56,6 @@
 
 External enrichment can reveal a rounded coordinate/date and the device IP address to the selected provider. Current reverse-geocode projection uses 0.001-degree coordinates through Android `Geocoder`; weather uses 0.01-degree coordinates and one UTC date through fixed Open-Meteo forecast/archive endpoints. Open-Meteo states that URL/IP request logs may be retained for 90 days. The mitigation is a separate default-OFF consent, coarse projections, fixed HTTPS hosts/queries, disabled redirects and cleartext traffic, response caps/schema checks, no retries through other providers, and coordinate-only local fallback.
 
-Model downloads reveal model selection and network metadata to the fixed artifact host. They must not include user-memory identifiers or evidence data. See `docs/network-policy.md`.
+Model and OCR language-data downloads reveal the selected fixed catalog item and network metadata to its artifact host. They must not include document identity, user-memory identifiers, or evidence data. See `docs/network-policy.md`.
+
+Artifact supply-chain and interrupted-install risks are reduced with an APK-authenticated closed catalog, immutable HTTPS paths, exact byte counts, pinned SHA-256 digests, redirect/header rejection, flushed same-filesystem staging, and atomic replacement. OCR download state additionally uses generation fencing, so failed, canceled, or stale OCR replacement preserves any last verified pack. Only Settings can enqueue an OCR language pack; connectors and indexing code cannot do so. Current model transport entries remain disabled until complete reviewed release metadata and equivalent stale-worker fencing exist.

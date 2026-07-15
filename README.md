@@ -19,7 +19,7 @@ Grayin AI is non-agentic. It does not act on behalf of the user. It helps the us
 - No application backend
 - No account
 - No cloud storage or sync
-- Network access only for typed external enrichment and fixed-catalog model downloads
+- Network access only for typed external enrichment and verified fixed-catalog artifacts
 - No raw data retention
 - No commercial LLM API in MVP
 - No agentic actions
@@ -40,6 +40,7 @@ Current usable app path:
 - Android Keystore protects the generated SQLCipher passphrase
 - Ask answers from indexed, cited local evidence and lists missing sources
 - Settings supports language selection: `system`, `korean`, `english`, or `japanese`
+- Settings installs, cancels, and deletes fixed-catalog `eng`, `kor`, or `jpn` OCR language data after an explicit user action
 - Bottom navigation uses icons and localized labels
 
 ## Network Boundary
@@ -49,11 +50,11 @@ Grayin AI is local-first, not offline-only.
 Network use is limited to:
 
 - typed map, place, reverse-geocode, and weather enrichment using minimal derived lookup inputs
-- fixed-catalog model and authenticated-manifest downloads into app-private storage
+- verified fixed-catalog model, authenticated-manifest, and user-selected OCR language-data downloads into app-private storage
 
 The app does not expose arbitrary or user-entered endpoints. External enrichment receives only an ephemeral typed lookup projection, never a stored derived-memory record. The app does not upload raw sources, evidence packs, prompts, answers, embeddings, or source references. It does not use remote LLMs, application backends, accounts, cloud sync, telemetry, ads, or crash reporting. See `docs/network-policy.md`.
 
-External enrichment may fetch map/place, weather, or reverse-geocode details through typed gateway methods. Runtime model downloads use fixed catalog URLs. Both paths follow `docs/network-policy.md`.
+External enrichment may fetch map/place, weather, or reverse-geocode details through typed gateway methods. Artifact downloads use a closed catalog with immutable HTTPS paths, exact byte counts, SHA-256 verification, and atomic installation. Current model transport entries are disabled until complete release metadata exists; official model pages and local import remain available. OCR language-data downloads are limited to the pinned `eng`, `kor`, and `jpn` catalog and can start only from Settings. These paths follow `docs/network-policy.md`.
 
 External place/weather enrichment has a separate default-OFF Location switch. Android reverse geocoding receives a 0.001-degree coordinate. The fixed Open-Meteo weather provider receives a 0.01-degree coordinate and one UTC date, rejects redirects, caps/validates responses, and returns explicit unavailable reasons without blocking local indexing. Its current public endpoint is non-commercial prototype infrastructure; provider terms and possible 90-day URL/IP log retention are disclosed in the app and privacy docs.
 
@@ -64,7 +65,11 @@ Examples:
 - calendar events
 - notification-derived payment/reservation/transport events
 - app usage summaries
-- local Markdown/PDF/OCR-derived indexes
+- local text and Markdown-derived indexes
+
+PDF selection and local page OCR are the next roadmap step. The language-data installer is complete, but installing a pack does not make PDF indexing available yet.
+
+See `docs/pdf-ocr.md` for the fixed catalog, privacy boundary, and remaining local document-runtime contract.
 
 The user can ask questions such as:
 
@@ -101,6 +106,8 @@ Current package structure:
 - `ai.grayin.core.grounding`
 - `ai.grayin.core.security`
 - `ai.grayin.core.ai`
+- `ai.grayin.core.artifact`
+- `ai.grayin.core.ocr`
 - `ai.grayin.connectors.location`
 - `ai.grayin.connectors.photos`
 - `ai.grayin.connectors.calendar`
@@ -120,8 +127,8 @@ Test command:
 ANDROID_HOME=/home/jujin/workspace/android-sdk ANDROID_SDK_ROOT=/home/jujin/workspace/android-sdk ./gradlew :app:testDebugUnitTest
 ```
 
-The manifest includes `android.permission.INTERNET` for typed external enrichment and fixed-catalog model downloads.
+The manifest includes `android.permission.INTERNET` for typed external enrichment and verified fixed-catalog artifact downloads.
 
 ## Roadmap
 
-Current phase is complete. Future work is tracked in `docs/roadmap.md`.
+The validated baseline and remaining completion steps are tracked separately in `docs/roadmap.md`.

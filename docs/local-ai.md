@@ -25,7 +25,11 @@ No commercial LLM API is configured.
 
 The Gemma adapter does not use the network. It only reads an installed local model file and an `EvidencePack`.
 
-Runtime model download is separate from inference. It is limited to fixed catalog URLs for official Gemma LiteRT Community models and a future static Grayin artifact host. Users cannot enter arbitrary model URLs. Downloads must follow `docs/network-policy.md` and pass configured integrity checks before installation.
+Runtime model download is separate from inference. Users cannot enter arbitrary model URLs. A catalog item becomes downloadable only when it has an immutable HTTPS URL, exact byte count, lowercase SHA-256 digest, reviewed license metadata, and durable stale-worker generation fencing. It then uses the shared fixed-artifact verifier and atomic publication rules in `docs/network-policy.md`.
+
+No current model entry has complete transport metadata, so every model network download is disabled before a connection opens. Settings may open official model pages, and local `.litertlm` import remains available. This fail-closed state remains until a reviewed immutable release artifact is published.
+
+App-managed catalog files created by an older build are not trusted from readability or a stored path alone. When the current entry is disabled or its exact size/digest cannot be verified, the legacy catalog file and install metadata are removed instead of being exposed as `READY`. User-imported and adb development paths remain separate.
 
 The app uses INTERNET permission for typed external enrichment and fixed-catalog artifact downloads, but local model adapters must remain network-free. Map or place enrichment goes through `OnlineEnrichmentGateway` with approved derived lookup inputs only, never through model-generated URL calls.
 
@@ -36,8 +40,8 @@ The app does not bundle model weights in the APK/AAB.
 Settings exposes a runtime model catalog:
 
 - `Grayin Gemma 4 E2B Q4 v1`: app-dedicated model placeholder; disabled until Grayin file-server URL and checksum exist.
-- `Gemma 4 E2B`: Google AI Edge LiteRT Community model hosted on Hugging Face.
-- `Gemma 4 E4B`: Google AI Edge LiteRT Community model hosted on Hugging Face for higher-end devices.
+- `Gemma 4 E2B`: official Google AI Edge LiteRT Community page and metadata placeholder; network download disabled.
+- `Gemma 4 E4B`: official higher-memory model page and metadata placeholder; network download disabled.
 
 Downloaded models are stored in app-private storage:
 
@@ -58,13 +62,15 @@ Official source:
 - Google AI Edge LiteRT-LM Gemma docs: `https://developers.google.com/edge/litert-lm/models/gemma-4`
 - Hugging Face model repo: `https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm`
 
-Runtime download:
+Runtime download after immutable release metadata is configured:
 
 - Open Settings.
 - Pick `Gemma 4 E2B` or `Gemma 4 E4B`.
-- Tap Download.
-- WorkManager downloads only on Wi-Fi or another unmetered network.
-- The model is copied to app-private storage and becomes the selected local model.
+- Tap Download only when Settings reports that the catalog entry is available.
+- WorkManager uses Wi-Fi or another unmetered network.
+- The shared fixed-artifact verifier rejects redirects, unexpected headers, size mismatch, and checksum mismatch before atomic installation into app-private storage.
+
+In the current build, use the official page plus manual import or the development installation flow below because the Download action is disabled.
 
 Manual import fallback expected file:
 
