@@ -8,6 +8,18 @@ import org.junit.Test
 
 class SecurityBoundaryTest {
     @Test
+    fun manifestDeclaresDataSyncForegroundServiceForModelDownloads() {
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+        val serviceBlock = manifest.substringAfter(
+            "android:name=\"androidx.work.impl.foreground.SystemForegroundService\"",
+        ).substringBefore("/>")
+
+        assertTrue(manifest.contains("android.permission.FOREGROUND_SERVICE_DATA_SYNC"))
+        assertTrue(serviceBlock.contains("android:foregroundServiceType=\"dataSync\""))
+        assertTrue(serviceBlock.contains("tools:node=\"merge\""))
+    }
+
+    @Test
     fun manifestAllowsInternetPermissionForOnlineEnrichment() {
         val manifest = File("src/main/AndroidManifest.xml").readText()
 

@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -205,7 +206,11 @@ class ModelDownloadWorker(
             .setOnlyAlertOnce(true)
             .setProgress(100, progressPercent.coerceIn(0, 100), false)
             .build()
-        return ForegroundInfo(NOTIFICATION_ID, notification)
+        return ForegroundInfo(
+            NOTIFICATION_ID,
+            notification,
+            ModelDownloadForegroundPolicy.serviceType(Build.VERSION.SDK_INT),
+        )
     }
 
     private fun progressPercent(downloadedBytes: Long, totalBytes: Long): Int {
@@ -224,6 +229,16 @@ class ModelDownloadWorker(
 
         private const val NOTIFICATION_CHANNEL_ID = "grayin_model_downloads"
         private const val NOTIFICATION_ID = 2101
+    }
+}
+
+internal object ModelDownloadForegroundPolicy {
+    fun serviceType(sdkInt: Int): Int {
+        return if (sdkInt >= Build.VERSION_CODES.Q) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        } else {
+            0
+        }
     }
 }
 

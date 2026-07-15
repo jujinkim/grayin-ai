@@ -54,6 +54,10 @@
             android:name=".connectors.localfiles.document.DocumentProcessingService"
             android:exported="false"
             android:process=":document" />
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 
 </manifest>

@@ -1,5 +1,7 @@
 package ai.grayin.core.ai
 
+import android.content.pm.ServiceInfo
+import android.os.Build
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.WorkInfo
@@ -9,6 +11,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModelDownloadSchedulerTest {
+    @Test
+    fun modelDownloadForegroundServiceUsesDataSyncTypeWhenSupported() {
+        assertEquals(0, ModelDownloadForegroundPolicy.serviceType(Build.VERSION_CODES.O_MR1))
+        assertEquals(
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            ModelDownloadForegroundPolicy.serviceType(Build.VERSION_CODES.Q),
+        )
+        assertEquals(
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            ModelDownloadForegroundPolicy.serviceType(Build.VERSION_CODES.UPSIDE_DOWN_CAKE),
+        )
+    }
+
     @Test
     fun downloadConstraintsRequireUnmeteredNetworkAndAvailableStorage() {
         val constraints = ModelDownloadScheduler.downloadConstraints()
