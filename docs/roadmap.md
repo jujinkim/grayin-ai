@@ -1,6 +1,6 @@
 # Roadmap
 
-Current phase status: the repository-local implementation plan is complete through Step 8. Step 9 separates host-verifiable repository checks from external release inputs and physical-device acceptance so unavailable credentials, model artifacts, providers, or hardware are never presented as code placeholders.
+Current phase status: the repository-local implementation plan is complete through Step 9. External release inputs and physical-device acceptance remain separate below so unavailable credentials, model artifacts, providers, or hardware are never presented as code placeholders.
 
 ## Current Capability
 
@@ -121,10 +121,12 @@ Repository tooling prepares and validates a release without committing weights, 
 
 ### 9. Final Verification
 
-- [ ] Run all JVM coverage for policy, queue, crypto, parsing, capability, connector closure, model release, and grounding behavior.
-- [ ] Compile Android instrumentation coverage for permissions, SQLCipher, document flows, WorkManager, notification filtering, app security, and model storage.
-- [ ] Run Android lint, debug/release builds, APK boundary inspections, model-training policy gates, and repository diff checks.
-- [ ] Remove stale roadmap/status text and confirm every repository-enforceable hard constraint.
+- [x] Run all JVM coverage for policy, queue, crypto, parsing, capability, connector closure, model release, and grounding behavior.
+- [x] Compile Android instrumentation coverage for permissions, SQLCipher, document flows, WorkManager, notification filtering, app security, and model storage.
+- [x] Run Android lint, debug/release builds, APK boundary inspections, model-training policy gates, and repository diff checks.
+- [x] Remove stale roadmap/status text and confirm every repository-enforceable hard constraint.
+
+Host verification completed on 2026-07-15. A clean rerun executed 119 Gradle tasks: all 377 JVM tests passed with zero failures; Android instrumentation sources compiled; debug and unsigned release APKs assembled; lint completed with no errors (76 warnings and 3 hints remain); and the OCR-data, PDF/OCR notice, document-runtime, and debug/release model-artifact APK boundaries passed. The model tooling checked 30 training and 30 held-out records across 10 families and 3 languages, passed all 30 deterministic grounded-answer fixtures and all 46 Python tests, and passed configuration, artifact-policy, release-plan, smoke-plan, bytecode-compilation, and diff checks. An independent final diff review found no remaining high- or medium-severity repository issue. Instrumentation execution and real model/provider release acceptance remain in the explicit gates below.
 
 ## External Operational Release Gates
 
