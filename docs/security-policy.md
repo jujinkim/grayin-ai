@@ -16,6 +16,7 @@ Grayin AI uses SQLCipher persistence with an Android Keystore-protected passphra
 - Do not sync, export, log, or transmit database keys.
 - Rotate keys only through an explicit local migration path.
 - Serialize first-time passphrase creation and persist the encrypted passphrase synchronously before returning it to a database opener.
+- Keep the Local Files source-identity HMAC-SHA256 key non-exportable in Android Keystore. Domain-separate and length-prefix document and PDF-page inputs and persist the full 64-character lowercase result only.
 
 ## Export and Import Plan
 
@@ -46,9 +47,9 @@ Provider endpoints and artifact URLs must be fixed by trusted provider or catalo
 
 ## Backup
 
-The MVP manifest sets `android:allowBackup="false"`.
+The manifest sets `android:allowBackup="false"` and references explicit legacy full-backup and Android 12+ data-extraction rules. Both rule sets exclude every credential-encrypted and device-encrypted app domain from cloud backup and device-to-device transfer.
 
-This excludes the app from normal Android backup until a fully documented encrypted backup/export path exists.
+This keeps SQLCipher, preferences, HMAC selection markers, installed artifacts, and any migration residue out of Android backup until a fully documented encrypted export/import path exists. Export/import remains a separate user-initiated encrypted envelope and does not enable platform backup.
 
 ## SDK Exclusions
 
@@ -67,6 +68,10 @@ MVP must not log source originals, derived memory contents, source references, e
 ## Local Document Runtime
 
 PDFium and Tesseract run only in the private, non-exported `:document` process. The process has the application UID so it can read a duplicated user-granted descriptor and verified app-private OCR packs, but it exposes no intent filter and checks the Binder caller UID. It creates no PDF/image/text temporary files and makes no network calls. The AIDL contract excludes URI, path, name, MIME, source identity, raw text, bitmap, bytes, and exceptions; both processes validate the closed wire-code and payload limits. Native timeout escalation terminates only `:document`, leaving the main process and previous SQLCipher snapshot intact.
+
+Local Files preferences never store a selected URI or file name. They store only a Keystore HMAC marker and match it against Android's persisted SAF grants at scan time. Selection commits the marker before taking its grant, is serialized with revoke, and never takes a new grant after the 128-document bound. Local Files is the sole owner of persisted read grants in this app; revoke releases and then re-enumerates every app-held persisted read grant before it clears the markers. A release or verification failure leaves markers and derived data intact and reports failure. Future SAF features must add an explicit ownership registry before taking a persisted grant.
+
+SQLCipher accepts Local Files output only when every source is HMAC-only, every event uses the closed structural summary/keyword/label/timestamp schema, unrelated graph sections are empty, every citation uses a closed generic/page label, and the scan atomically replaces the connector snapshot. Keystore HMAC failures abort a scan or legacy migration instead of being interpreted as revoked access, preserving the prior snapshot and migration input. Schema v6 removes legacy Local Files identity rows before reindexing. Delete/revoke also clears active queue leases before graph removal so stale workers cannot republish.
 
 ## Remaining Hardening
 

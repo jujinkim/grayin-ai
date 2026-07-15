@@ -438,7 +438,7 @@ fun GrayinApp() {
                         onIndexAllSources = ::indexAllSources,
                         onAutomaticIndexingChanged = ::updateAutomaticIndexing,
                         onAddLocalFile = {
-                            openDocumentLauncher.launch(arrayOf("text/*", "application/octet-stream"))
+                            openDocumentLauncher.launch(LocalDocumentPickerContract.mimeTypes())
                         },
                         onInvokeSource = { connectorId, requiredPermissions ->
                             when {
@@ -1186,6 +1186,9 @@ private fun SourceRow(
                 Text(source.status, style = MaterialTheme.typography.labelLarge)
             }
             Text(source.sensitivity, style = MaterialTheme.typography.bodySmall)
+            if (source.id == LocalFilesConnectorId) {
+                Text(strings.localDocumentSupportDisclosure(), style = MaterialTheme.typography.bodySmall)
+            }
             source.onlineEnrichmentEnabled?.let { enabled ->
                 Text(strings.onlineEnrichmentTitle, style = MaterialTheme.typography.titleSmall)
                 Text(strings.onlineEnrichmentDisclosure, style = MaterialTheme.typography.bodySmall)
@@ -1257,7 +1260,13 @@ private fun SourceRow(
                             enabled = !working,
                             onClick = { onRevokeSource(source.id) },
                         ) {
-                            Text(strings.revoke)
+                            Text(
+                                if (source.id == LocalFilesConnectorId) {
+                                    strings.localDocumentRevokeAllAction()
+                                } else {
+                                    strings.revoke
+                                },
+                            )
                         }
                     }
                     if (source.canDelete) {
@@ -1645,8 +1654,18 @@ private const val LocationConnectorId = "location"
 private const val PhotosConnectorId = "photos"
 private const val AppUsageConnectorId = "app_usage"
 private const val NotificationConnectorId = "notification"
+private const val LocalFilesConnectorId = "local_files"
 private const val LocalGemmaModelDownloadPage = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm"
 private const val StatusRefreshIntervalMs = 2_000L
+
+internal object LocalDocumentPickerContract {
+    fun mimeTypes(): Array<String> = arrayOf(
+        "text/plain",
+        "text/markdown",
+        "application/pdf",
+        "application/octet-stream",
+    )
+}
 
 private fun emptySnapshot(strings: GrayinStrings): GrayinSnapshot {
     return GrayinSnapshot(

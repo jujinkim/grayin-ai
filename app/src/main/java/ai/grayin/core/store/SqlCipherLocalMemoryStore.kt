@@ -139,7 +139,9 @@ class SqlCipherLocalMemoryStore(
     override suspend fun deleteConnectorData(connectorId: String): StoreDeleteResult = withDatabase { db ->
         db.beginTransaction()
         try {
-            val result = deleteConnectorRows(db, connectorId, completedAt = clock.instant())
+            val completedAt = clock.instant()
+            fenceActiveConnectorTasks(db, connectorId, completedAt)
+            val result = deleteConnectorRows(db, connectorId, completedAt = completedAt)
             db.setTransactionSuccessful()
             result
         } finally {
@@ -883,6 +885,9 @@ class SqlCipherLocalMemoryStore(
         if (version < CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION) {
             runMigration(db, CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION, ::migrateConnectorScanIssueCodes)
         }
+        if (version < LOCAL_SOURCE_IDENTITY_SCHEMA_VERSION) {
+            runMigration(db, LOCAL_SOURCE_IDENTITY_SCHEMA_VERSION, ::purgeLegacyLocalFileIdentity)
+        }
     }
 
     private fun runMigration(
@@ -1134,6 +1139,50 @@ class SqlCipherLocalMemoryStore(
                     arrayOf(connectorId),
                 ) == 1,
             ) { "Could not migrate connector scan issue codes." }
+        }
+    }
+
+    private fun purgeLegacyLocalFileIdentity(db: SQLiteDatabase) {
+        deleteConnectorRows(
+            db = db,
+            connectorId = LOCAL_FILES_CONNECTOR_ID,
+            completedAt = clock.instant(),
+        )
+    }
+
+    private fun fenceActiveConnectorTasks(
+        db: SQLiteDatabase,
+        connectorId: String,
+        completedAt: Instant,
+    ) {
+        val activeItems = readQueueItems(
+            db = db,
+            selection = "connector_id = ? AND state IN (?, ?)",
+            selectionArgs = arrayOf(
+                connectorId,
+                IndexingQueueState.PENDING.name,
+                IndexingQueueState.RUNNING.name,
+            ),
+            orderBy = "requested_at_ms ASC, id ASC",
+        )
+        activeItems.forEach { item ->
+            val terminalAt = maxOf(completedAt, item.task.requestedAt, item.startedAt ?: completedAt)
+            val updated = item.copy(
+                state = IndexingQueueState.SKIPPED,
+                completedAt = terminalAt,
+                leaseOwner = null,
+                leaseUntil = null,
+                skipReason = IndexingSkipReason.SOURCE_DATA_DELETED,
+                failureCode = null,
+            )
+            check(
+                db.update(
+                    TABLE_INDEXING_QUEUE,
+                    updated.toValues(),
+                    "id = ? AND state = ?",
+                    arrayOf(item.id, item.state.name),
+                ) == 1,
+            ) { "Could not fence active connector indexing before deletion." }
         }
     }
 
@@ -1822,9 +1871,11 @@ class SqlCipherLocalMemoryStore(
         const val AUTOMATIC_CONTROL_SCHEMA_VERSION = 3
         const val CONNECTOR_SCAN_STATUS_SCHEMA_VERSION = 4
         const val CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION = 5
-        const val SCHEMA_VERSION = CONNECTOR_SCAN_ISSUE_CODE_SCHEMA_VERSION
+        const val LOCAL_SOURCE_IDENTITY_SCHEMA_VERSION = 6
+        const val SCHEMA_VERSION = LOCAL_SOURCE_IDENTITY_SCHEMA_VERSION
         const val MAX_QUEUE_SNAPSHOT_ITEMS = 500
         const val UNINITIALIZED_AUTOMATIC_SETTINGS_KEY = "v1:uninitialized"
+        const val LOCAL_FILES_CONNECTOR_ID = "local_files"
 
         @Volatile
         var loaded = false

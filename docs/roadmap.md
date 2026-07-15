@@ -4,7 +4,7 @@ Current phase status: local-first MVP foundation and basic Android source connec
 
 ## Current Capability
 
-- User-selected `.txt` and `.md` files through Android document picker.
+- User-selected Text, Markdown, and PDF documents through Android document picker, with page-level PDF indexing and local OCR fallback.
 - User-connected Android last-known location samples through runtime location permission.
 - User-connected Android calendar events through runtime calendar read permission.
 - User-connected Android photo metadata through runtime media read permission.
@@ -22,8 +22,9 @@ Current phase status: local-first MVP foundation and basic Android source connec
 - Localized UI copy for system, Korean, English, and Japanese language settings.
 - Bottom navigation with icons and localized labels.
 - Settings shows local model selection, official model pages, local Gemma status, current adb install path, and `.litertlm` import/delete fallback controls. Catalog download/cancel/delete actions render only after a model entry has complete reviewed transport metadata; none currently does.
-- Settings installs, cancels, and deletes fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action; user-selectable PDF indexing remains unavailable until Local Files integration.
-- A private `:document` Pdfium/Tesseract runtime enforces descriptor, signature, page, bitmap, text, OCR, and time limits and returns only bounded derived AIDL results; Local Files integration is still pending.
+- Settings installs, cancels, and deletes fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action; document indexing never initiates a download.
+- Local Files passes explicitly selected PDF descriptors to a private `:document` Pdfium/Tesseract runtime, which enforces descriptor, signature, page, bitmap, text, OCR, and time limits and returns only bounded derived AIDL results.
+- Local document selection stores only Keystore HMAC markers. SQLCipher schema v6 removes legacy URI/name-based Local Files graphs before HMAC-only reindexing.
 - INTERNET permission bounded by `docs/network-policy.md`: typed map/place/reverse-geocode/weather enrichment plus fixed-catalog model, authenticated manifest, or OCR language-data downloads.
 
 ## Completion Plan
@@ -70,12 +71,13 @@ The installer boundary and planned document-runtime limits are specified in `doc
 - [x] Persist latest connector scan status and support atomic snapshot reconciliation for removed pages.
 - [x] Store bounded typed scan issue codes and localize them only after reading.
 - [x] Install fixed-catalog English, Korean, and Japanese OCR language data only after an explicit user action.
-- [x] Add the private crash-isolated Pdfium/Tesseract runtime, hard watchdogs, bounded AIDL contract, locked dependencies, and packaged notices.
-- [ ] Accept user-selected PDF documents.
+- [x] Add the private separate-process Pdfium/Tesseract runtime with crash containment, hard watchdogs, a bounded AIDL contract, locked dependencies, and packaged notices.
+- [x] Accept user-selected PDF documents.
 - [x] Extract text and page metadata transiently in the private runtime; render and OCR pages locally when embedded text is unavailable.
-- [ ] Persist only derived page summaries, keyword signals, citations, and source references.
+- [x] Persist only HMAC source references, derived page summaries, keyword signals, and closed page citations.
 - [x] Add document size/page/render/text/OCR/time limits and explicit unsupported/missing-data results.
-- [ ] Enforce the 10-minute connector scan limit and run device/emulator acceptance for embedded text, installed-pack OCR, cancellation, timeout, and `:document` process-death recovery.
+- [x] Enforce the 10-minute connector scan limit, 128-page aggregate output limit, and atomic full-snapshot replacement.
+- [ ] Run device/emulator acceptance for embedded text, installed-pack OCR, cancellation, timeout, and `:document` process-death recovery.
 
 ### 5. Encrypted Export and Import
 

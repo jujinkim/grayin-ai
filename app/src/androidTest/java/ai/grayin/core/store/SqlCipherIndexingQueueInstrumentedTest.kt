@@ -721,6 +721,149 @@ class SqlCipherIndexingQueueInstrumentedTest {
     }
 
     @Test
+    fun connectorDeleteFencesRunningAndPendingTasksBeforeStaleCommit() = runBlocking {
+        val databaseName = newDatabaseName()
+        val requestedAt = Instant.parse("2026-07-15T06:10:00Z")
+        val deletedAt = requestedAt.plusSeconds(10)
+        val memoryStore = store(databaseName, Clock.fixed(deletedAt, ZoneOffset.UTC))
+        memoryStore.enqueue(
+            listOf(
+                manualTask("local-running", requestedAt, connectorId = "local_files"),
+                manualTask("local-pending", requestedAt.plusSeconds(1), connectorId = "local_files"),
+                manualTask("other-pending", requestedAt.plusSeconds(2), connectorId = "other.connector"),
+            ),
+        )
+        val claimed = checkNotNull(
+            memoryStore.claimNextAtomically(
+                leaseOwner = "delete-race-worker",
+                claimedAt = requestedAt.plusSeconds(3),
+                leaseUntil = requestedAt.plusSeconds(60),
+            ),
+        )
+
+        memoryStore.deleteConnectorData("local_files")
+
+        val staleCommit = memoryStore.commitClaimedConnectorScan(
+            scanResult = ConnectorScanResult(
+                connectorId = "local_files",
+                processingState = ProcessingState.SKIPPED,
+                replaceExistingConnectorData = true,
+                scannedAt = deletedAt,
+            ),
+            itemId = claimed.id,
+            leaseOwner = checkNotNull(claimed.leaseOwner),
+            attemptCount = claimed.attemptCount,
+        )
+        assertEquals(ConnectorScanCommitResult.LeaseLost, staleCommit)
+        val items = memoryStore.snapshot().items.associateBy { item -> item.id }
+        listOf("local-running", "local-pending").forEach { itemId ->
+            assertEquals(IndexingQueueState.SKIPPED, items.getValue(itemId).state)
+            assertEquals(IndexingSkipReason.SOURCE_DATA_DELETED, items.getValue(itemId).skipReason)
+        }
+        assertEquals(IndexingQueueState.PENDING, items.getValue("other-pending").state)
+        assertTrue(memoryStore.loadSourceReferences("local_files").isEmpty())
+        assertTrue(memoryStore.loadConnectorScanStatuses().none { it.connectorId == "local_files" })
+    }
+
+    @Test
+    fun v5MigrationPurgesLegacyLocalFileRawIdentityOnly() = runBlocking {
+        val databaseName = newDatabaseName()
+        val memoryStore = store(databaseName)
+        memoryStore.loadSnapshot()
+        memoryStore.saveConnectorScan(scanResult("unrelated", connectorId = "other.connector"))
+        val databasePath = context.getDatabasePath(databaseName).absolutePath
+        val at = "2026-07-15T06:30:00Z"
+        val sourceId = "source:local_files:legacy"
+        val eventId = "event:local_files:legacy"
+        val citationId = "citation:local_files:legacy"
+        SQLiteDatabase.openOrCreateDatabase(databasePath, TEST_PASSPHRASE, null, null).use { database ->
+            database.insertOrThrow(
+                "source_references",
+                null,
+                ContentValues().apply {
+                    put("id", sourceId)
+                    put("connector_id", "local_files")
+                    put("source_kind", SourceKind.LOCAL_FILE.name)
+                    put("local_pointer", "content://provider/private/secret-note.md")
+                    put("external_id_hash", "legacy-unkeyed-sha")
+                    put("observed_at", at)
+                    put("sensitivity", "HIGH")
+                },
+            )
+            database.insertOrThrow(
+                "derived_memory_events",
+                null,
+                ContentValues().apply {
+                    put("id", eventId)
+                    put("kind", DerivedMemoryEventKind.LOCAL_FILE_INDEX.name)
+                    put("source_reference_ids", JSONArray().put(sourceId).toString())
+                    put("summary", "Legacy derived summary")
+                    put("keywords", JSONArray().toString())
+                    put("labels", JSONArray().toString())
+                    put("entities", JSONArray().toString())
+                    put("confidence", "MEDIUM")
+                    put("sensitivity", "HIGH")
+                    put("citation_ids", JSONArray().put(citationId).toString())
+                    put("created_at", at)
+                },
+            )
+            database.insertOrThrow(
+                "citations",
+                null,
+                ContentValues().apply {
+                    put("id", citationId)
+                    put("source_reference_id", sourceId)
+                    put("derived_memory_event_id", eventId)
+                    put("label", "Local file: secret-note.md")
+                    put("observed_at", at)
+                    put("confidence", "MEDIUM")
+                },
+            )
+            database.insertOrThrow(
+                "daily_summaries",
+                null,
+                ContentValues().apply {
+                    put("id", "daily:legacy-local-files")
+                    put("date", "2026-07-15")
+                    put("summary", "Daily summary referencing legacy local file")
+                    put("derived_memory_event_ids", JSONArray().put(eventId).toString())
+                    put("place_cluster_ids", JSONArray().toString())
+                    put("app_usage_summary_ids", JSONArray().toString())
+                    put("confidence", "MEDIUM")
+                    put("missing_sources", JSONArray().toString())
+                },
+            )
+            database.insertOrThrow(
+                "connector_scan_status",
+                null,
+                ContentValues().apply {
+                    put("connector_id", "local_files")
+                    put("processing_state", ProcessingState.COMPLETED.name)
+                    put("missing_sources", JSONArray().toString())
+                    put("scanned_at", at)
+                },
+            )
+            database.execSQL("PRAGMA user_version = 5")
+        }
+
+        val migrated = store(databaseName).loadSnapshot()
+
+        assertTrue(migrated.sourceReferences.none { it.connectorId == "local_files" })
+        assertTrue(migrated.derivedMemoryEvents.none { it.id.startsWith("event:local_files:") })
+        assertTrue(migrated.citations.none { it.id.startsWith("citation:local_files:") })
+        assertTrue(migrated.dailySummaries.none { it.id == "daily:legacy-local-files" })
+        assertTrue(migrated.connectorScanStatuses.none { it.connectorId == "local_files" })
+        assertTrue(migrated.sourceReferences.any { it.connectorId == "other.connector" })
+        SQLiteDatabase.openOrCreateDatabase(databasePath, TEST_PASSPHRASE, null, null).use { database ->
+            val version = database.rawQuery("PRAGMA user_version", null).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                cursor.getInt(0)
+            }
+            assertEquals(6, version)
+        }
+    }
+
+    @Test
     fun v4ScanStatusMigrationDropsFreeFormTextAndPreservesKnownMeaning() = runBlocking {
         val databaseName = newDatabaseName()
         val memoryStore = store(databaseName)
@@ -728,7 +871,7 @@ class SqlCipherIndexingQueueInstrumentedTest {
         val databasePath = context.getDatabasePath(databaseName).absolutePath
         val scannedAt = "2026-07-15T07:00:00Z"
         val legacyRows = listOf(
-            "local_files" to "Only .txt and .md files are supported in this milestone.",
+            "calendar" to "No calendar events found in the indexed time window.",
             "unknown.connector" to "RAW_SENTINEL parser detail",
         )
         SQLiteDatabase.openOrCreateDatabase(databasePath, TEST_PASSPHRASE, null, null).use { database ->
@@ -760,8 +903,8 @@ class SqlCipherIndexingQueueInstrumentedTest {
         val statuses = store(databaseName).loadConnectorScanStatuses().associateBy { it.connectorId }
 
         assertEquals(
-            ConnectorScanIssueCode.LOCAL_DOCUMENT_TYPE_UNSUPPORTED,
-            statuses.getValue("local_files").missingSources.single().issueCode,
+            ConnectorScanIssueCode.NO_CALENDAR_EVENTS_IN_RANGE,
+            statuses.getValue("calendar").missingSources.single().issueCode,
         )
         assertEquals(
             ConnectorScanIssueCode.SOURCE_UNAVAILABLE,

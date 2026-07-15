@@ -11,16 +11,19 @@ Every connector must report metadata, permission state, scan status, typed missi
 - Calendar: high sensitivity, default OFF until user grants calendar permission and connects it. Reads Android calendar instances transiently and stores only derived calendar events, citations, and source references.
 - Notifications: very high sensitivity, default OFF until user enables notification listener access, connects it, and adds exact Android package names to the default-empty allowlist. Reads only allowed posted notifications transiently and stores only derived notification signal events, citations, and source references.
 - App Usage: very high sensitivity, default OFF until user grants usage access and connects it. Reads Android usage stats transiently and stores only derived app-usage events, citations, and source references.
-- Local Files: high sensitivity, default OFF until user selects files. Supports user-selected `.txt` and `.md` documents through Android's document picker.
+- Local Files: high sensitivity, default OFF until user selects documents. Supports Text, Markdown, and PDF through Android's document picker.
 
 ## Local Files
 
 The Local Files connector:
 
-- stores persisted read permission only after explicit user selection
+- asks Android to persist read permission only after explicit user selection
+- stores only a Keystore HMAC marker and resolves the live URI from Android's SAF grant list during a scan
 - reads selected files only inside connector-owned scan scopes
-- emits only source references, derived events, and citations
+- processes PDFs in the private on-device Pdfium/Tesseract service and accepts only its validated bounded result
+- emits only HMAC source references, derived events, and closed citations without a URI or file name
 - stores keyword signals and summary metadata, not full file content
+- replaces the full Local Files snapshot atomically and preserves the previous snapshot if the 10-minute connector timeout cancels the scan
 - supports revoke and delete-derived-data flows
 
 ## Calendar

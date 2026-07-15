@@ -33,10 +33,12 @@ The Sources screen lists connector-backed state, sensitivity labels, and an intr
 
 Local Files supports:
 
-- Add local file
+- Add Text, Markdown, or PDF document
 - Index now
-- Revoke
+- Revoke all selected local document permissions
 - Delete derived data
+
+The Local Files row discloses the supported formats and that originals are read transiently while PDF/OCR processing stays in the on-device private process. Selection failures cover unsupported formats, the 128-document selection bound, and unavailable persisted read access. Revoke removes all selected document grants and derived Local Files data; deleting derived data keeps the grants for later reindexing.
 
 Location, Photos, Calendar, Notifications, and App Usage expose permission/settings connection, indexing state, revoke, and delete-derived-data controls.
 

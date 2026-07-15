@@ -20,7 +20,9 @@ import ai.grayin.core.ai.ModelDownloadScheduler
 import ai.grayin.core.ai.ModelDownloadStatus
 import ai.grayin.core.ai.ModelInstallRecord
 import ai.grayin.core.ai.ModelInstallStore
+import ai.grayin.core.connector.ConnectorDeleteRequest
 import ai.grayin.core.connector.ConnectorPermissionState
+import ai.grayin.core.connector.ConnectorScanStatus
 import ai.grayin.core.connector.ConnectorIndexingMode
 import ai.grayin.core.connector.InvokableMemoryConnector
 import ai.grayin.core.connector.MemoryConnector
@@ -171,7 +173,16 @@ class GrayinMemoryController(
         val localModelStatus = runCatching { localLanguageModel.status() }
             .getOrDefault(LocalModelStatus.UNAVAILABLE)
         GrayinSnapshot(
-            sourceRows = connectorRegistry.all.map { connector -> sourceRow(connector, sourceReferences, strings) },
+            sourceRows = connectorRegistry.all.map { connector ->
+                sourceRow(
+                    connector = connector,
+                    sourceReferences = sourceReferences,
+                    scanStatus = stored.connectorScanStatuses.firstOrNull { status ->
+                        status.connectorId == connector.metadata.connectorId
+                    },
+                    strings = strings,
+                )
+            },
             indexingStatus = loadIndexingStatus(strings),
             timelineRows = timelineRows(events, strings),
             placesRows = listOf(strings.noPlaceClusters),
@@ -474,11 +485,15 @@ class GrayinMemoryController(
 
     suspend fun deleteLocalFileData(strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val deleteResult = store.deleteConnectorData(LocalFileMemoryExtractor.CONNECTOR_ID)
+        localFilesConnector.deleteDerivedData(
+            ConnectorDeleteRequest(connectorId = LocalFileMemoryExtractor.CONNECTOR_ID),
+        )
         strings.deletedLocalFileEvents(deleteResult.deletedDerivedMemoryEventIds.size)
     }
 
     suspend fun deleteConnectorData(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
         val deleteResult = store.deleteConnectorData(connectorId)
+        connectorFor(connectorId).deleteDerivedData(ConnectorDeleteRequest(connectorId = connectorId))
         if (connectorId == LocalFileMemoryExtractor.CONNECTOR_ID) {
             strings.deletedLocalFileEvents(deleteResult.deletedDerivedMemoryEventIds.size)
         } else {
@@ -677,6 +692,7 @@ class GrayinMemoryController(
     private suspend fun sourceRow(
         connector: MemoryConnector,
         sourceReferences: List<SourceReference>,
+        scanStatus: ConnectorScanStatus?,
         strings: GrayinStrings,
     ): ConnectorUiState {
         val state = connector.currentState()
@@ -687,7 +703,13 @@ class GrayinMemoryController(
         return ConnectorUiState(
             id = connectorId,
             name = connectorName,
-            status = sourceStatus(state, permissionState, strings),
+            status = sourceStatus(
+                state = state,
+                permissionState = permissionState,
+                hasStoredSources = sourceReferences.any { source -> source.connectorId == connectorId },
+                scanStatus = scanStatus,
+                strings = strings,
+            ),
             sensitivity = sensitivityLabel(connector.metadata.sensitivity, strings),
             canInvoke = !isLocalFiles && permissionState.canRequestPermission && !state.enabled,
             requiredPermissions = permissionState.requiredPlatformPermissions,
@@ -711,10 +733,14 @@ class GrayinMemoryController(
     private fun sourceStatus(
         state: ConnectorState,
         permissionState: ConnectorPermissionState,
+        hasStoredSources: Boolean,
+        scanStatus: ConnectorScanStatus?,
         strings: GrayinStrings,
     ): String {
         return when {
-            state.processingState == ProcessingState.COMPLETED -> strings.indexed
+            hasStoredSources &&
+                (scanStatus?.processingState == ProcessingState.COMPLETED ||
+                    state.processingState == ProcessingState.COMPLETED) -> strings.indexed
             state.enabled -> strings.selected
             !permissionState.canRequestPermission && !permissionState.permissionGranted -> strings.notImplemented
             else -> strings.off

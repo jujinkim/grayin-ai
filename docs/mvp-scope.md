@@ -10,7 +10,7 @@
 - icon-labeled bottom navigation
 - SQLCipher-backed derived-memory store
 - connector abstraction
-- real Local Files connector for user-selected `.txt` / `.md` documents
+- real Local Files connector for user-selected Text, Markdown, and PDF documents with on-device page/OCR indexing
 - real basic connectors for location, photos, calendar, notifications, and app usage
 - indexing queue abstraction
 - query planner skeleton
@@ -45,4 +45,4 @@
 - Calendar
 - Notification-derived events
 - App Usage
-- Local Files / Markdown
+- Local Files / Markdown / PDF pages

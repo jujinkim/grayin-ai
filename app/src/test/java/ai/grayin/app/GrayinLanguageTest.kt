@@ -104,6 +104,16 @@ class GrayinLanguageTest {
             "No connected sources are ready to index.",
             english.noSourcesReadyToIndex,
         )
+        assertTrue(english.localDocumentSupportDisclosure().contains("PDF"))
+        assertTrue(korean.localDocumentRevokeAllAction().contains("모든"))
+    }
+
+    @Test
+    fun localDocumentPickerUsesOnlySupportedFamilies() {
+        assertEquals(
+            setOf("text/plain", "text/markdown", "application/pdf", "application/octet-stream"),
+            LocalDocumentPickerContract.mimeTypes().toSet(),
+        )
     }
 
     @Test

@@ -4,12 +4,13 @@
 
 Settings can install, cancel, and delete the fixed English, Korean, and Japanese Tesseract language packs. The installer verifies and publishes each download atomically and does not bundle `.traineddata` files in the APK/AAB. The build includes the exact PdfiumAndroidKt and standard Tesseract4Android runtime libraries, locked dependency versions, SHA-256 dependency verification metadata, and packaged license notices.
 
-The private `:document` runtime now validates descriptors and signatures, extracts embedded page text, renders and runs local OCR only when needed, applies the canonical resource limits, and returns a bounded derived-only AIDL result. Local Files does not select or send PDF descriptors to this runtime yet, so PDF indexing is not user-usable until the connector integration step is complete. Installing a language pack alone still does not index PDFs.
+The private `:document` runtime validates descriptors and signatures, extracts embedded page text, renders and runs local OCR only when needed, applies the canonical resource limits, and returns a bounded derived-only AIDL result. Local Files now accepts explicitly selected PDFs, sends only a read-only descriptor to that runtime, independently validates the terminal result, and maps accepted page signals to an atomic HMAC-only derived graph. Installing a language pack alone still does not select or index PDFs.
 
 ## Explicit Source Consent
 
 - Only a PDF explicitly selected through Android's Storage Access Framework may be processed.
-- A persisted read permission is scoped to that selected document.
+- A persisted read permission is scoped to that selected document. Local Files is the only current owner of persisted SAF read grants in the app; a future feature must add an ownership registry before taking one.
+- Grayin preferences store only a domain-separated Android Keystore HMAC marker, not the selected URI or file name. The live URI is resolved from Android's persisted permission list at scan time.
 - Folder crawling, automatic discovery, and media-wide PDF scans are forbidden.
 - Selecting or indexing a document never downloads OCR language data.
 - Each language-data download requires a separate Settings action.
@@ -77,13 +78,13 @@ The PDF runtime must enforce these fail-closed limits:
 | Connector scan | 10 minutes |
 | Derived output | 128 page-derived rows per scan |
 
-Exceeding a limit returns a typed partial/unsupported result. It must not silently truncate while reporting a complete scan.
+Per-document limit failures return a typed partial/unsupported result. The connector's aggregate 128-page cap adds `DOCUMENT_DERIVED_OUTPUT_LIMIT_REACHED` and `PARTIAL_DOCUMENT_INDEX`. If the 10-minute connector deadline expires, the coroutine is canceled and no partial replacement is committed, preserving the previous SQLCipher snapshot.
 
 ## Zero-Raw-Retention Lifecycle
 
 Transient-only objects include the open descriptor, PDF parser state, rendered page bitmap, embedded page text, and OCR transcript. They must be closed or cleared after the bounded page scope and must never be written to a temporary PDF/image/text file, cache, log, SQLCipher table, WorkData, export, backup, or network request.
 
-Persistent output is limited to an HMAC source reference, page citation metadata, bounded derived summary/keyword/entity signals, timestamp when available, capability tags, and confidence. Connector scan commit remains atomic, so removed or failed pages cannot leave stale mixed snapshots.
+Persistent output is limited to a full 64-character page HMAC source reference, a closed `PDF page N` citation, bounded structural summary/keyword signals, connector scan status codes, timestamp, labels, and confidence. The URI, document HMAC, file name, and MIME never enter the graph. Every terminal Local Files scan fully replaces its prior connector snapshot in one SQLCipher transaction, so removed, revoked, shortened, or failed documents cannot leave stale page rows. Invalid Binder results are discarded and represented only by `DOCUMENT_PROCESS_CRASHED`.
 
 ## Typed Outcomes
 
@@ -103,12 +104,17 @@ Document processing uses fixed `ConnectorScanIssueCode` values:
 - `DOCUMENT_PROCESS_TIMED_OUT`
 - `NO_EXTRACTABLE_TEXT`
 - `PARTIAL_DOCUMENT_INDEX`
+- `DOCUMENT_DERIVED_OUTPUT_LIMIT_REACHED`
+
+Text and Markdown scans may additionally report `LOCAL_DOCUMENT_TEXT_LIMIT_REACHED` when the connector's 64 Ki-character transient read limit is reached. A migrated legacy selection above 128 documents is scanned in deterministic HMAC order up to the current bound and reports `LOCAL_DOCUMENT_SELECTION_LIMIT_REACHED`; no new selection can exceed that bound, and revoke still covers every stored legacy marker.
 
 Stored status contains only the stable code. UI text is localized after reading and never includes a file name, URI, parser exception, extracted text, OCR transcript, or provider response.
 
 ## Revocation and Deletion
 
-Revoking Local Files must release its persisted URI permission when possible and delete the connector's derived SQLCipher snapshot. OCR language packs are independent public runtime artifacts and are removed only through their explicit Settings delete action.
+Selecting a document commits its bounded HMAC marker before taking the persisted read grant, and selection/revoke grant operations share one process lock. The connector never acquires a new grant after the 128-marker bound. Revoking Local Files attempts to release every app-held persisted SAF read grant, then re-enumerates the grant list and clears HMAC markers only when none remain. A release, verification, or preference failure reports revoke failure without deleting the SQLCipher snapshot. Local Files has no preferences indexing checkpoint; Sources derives indexed status from SQLCipher.
+
+After successful permission revoke, the controller deletes the connector's derived SQLCipher snapshot. Deleting derived data alone keeps the selection and permission so the user can reindex. Both delete paths fence pending and running queue work in the deletion transaction, preventing an in-flight scan from republishing after deletion. OCR language packs are independent public runtime artifacts and are removed only through their explicit Settings delete action.
 
 ## Dependencies and Notices
 
@@ -116,8 +122,8 @@ The build uses `io.legere:pdfiumandroid:1.0.35` from Maven Central for PDF acces
 
 `app/gradle.lockfile` locks the resolved versions, and `gradle/verification-metadata.xml` verifies artifact and metadata SHA-256 values. The reviewed AAR hashes are `862ed337d6b52485fefba9ced9fe7fdb800d41fb300d8c8ebb03d8bea64d72f0` for PdfiumAndroidKt and `bce5d6413a1a5ae3d7240033fbbc851ba3217d0a08d9769400e17a077f42cb2a` for Tesseract4Android.
 
-The AAR native inventory and license mapping are documented in `docs/third-party-notices.md`. Readable notice and license files ship under `app/src/main/assets/third_party_licenses/`. The runtime implementation is intentionally independent of PDF selection and SQLCipher commit; those remain connector-owned so no raw descriptor or incomplete cross-process result can enter the store.
+The AAR native inventory and license mapping are documented in `docs/third-party-notices.md`. Readable notice and license files ship under `app/src/main/assets/third_party_licenses/`. PDF selection and SQLCipher commit remain connector-owned so no raw descriptor or incomplete cross-process result can enter the store.
 
 ## Verification
 
-Required coverage includes catalog constants, URL closure, redirect/header/size/hash rejection, cancellation cleanup, generation fencing, last-verified preservation, no-backup placement, explicit Settings-only scheduling, PDF signature/seekability checks, every resource limit, embedded-text and OCR paths, process death, typed outcomes, no raw persistence, atomic snapshot replacement, and APK inspection proving that `.traineddata` and raw document fixtures are not shipped unintentionally. `:app:verifyDebugApkNoBundledOcrData` automates the `.traineddata` APK check, `:app:verifyDebugApkPdfOcrNotices` confirms that all PDF/OCR notice assets are packaged, and `:app:verifyDebugApkDocumentBoundary` rejects production PDF fixtures and verifies every expected native library/ABI. JVM, lint, debug/release APK, and instrumentation-source compilation are covered on the host; embedded-text success, installed-pack OCR, cancellation, timeout, and process-death recovery remain explicit device/emulator acceptance checks because no device was connected for this runtime step.
+Required coverage includes catalog constants, URL closure, redirect/header/size/hash rejection, cancellation cleanup, generation fencing, last-verified preservation, no-backup placement and platform extraction rules, explicit Settings-only scheduling, PDF signature/seekability checks, every resource limit, embedded-text and OCR paths, process death, typed outcomes, HMAC-only source identity, closed Local Files output, fail-closed HMAC migration, verified all-grant revoke, deletion fencing, atomic snapshot replacement, and APK inspection proving that `.traineddata` and raw document fixtures are not shipped unintentionally. `:app:verifyDebugApkNoBundledOcrData` automates the `.traineddata` APK check, `:app:verifyDebugApkPdfOcrNotices` confirms that all PDF/OCR notice assets are packaged, and `:app:verifyDebugApkDocumentBoundary` rejects production PDF fixtures and verifies every expected native library/ABI. JVM, lint, debug/release APK, and instrumentation-source compilation are covered on the host; SAF grant persistence/revoke, blocking-provider FD cancellation, embedded-text success, installed-pack OCR, timeout, and process-death recovery remain explicit device/emulator acceptance checks because no device was connected.

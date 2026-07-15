@@ -109,7 +109,7 @@ The MVP should conceptually support these evidence sources through implemented c
 - OCR-derived text
 - future local LLM-generated summaries
 
-Current usable local MVP implementation supports user-selected `.txt` and `.md` files, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app usage summaries, and connected Android notification-derived signals after explicit permission or settings access. A separate default-OFF Location switch permits bounded Android reverse geocoding and fixed Open-Meteo weather lookup through `OnlineEnrichmentGateway`; failures preserve coordinate-only local indexing. Ask can use a local Gemma LiteRT-LM model over retrieved `EvidencePack` data when a runtime-downloaded or manually imported `.litertlm` model file is installed, with template fallback when unavailable. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
+Current usable local MVP implementation supports user-selected Text, Markdown, and PDF documents, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app usage summaries, and connected Android notification-derived signals after explicit permission or settings access. PDF pages use embedded text when available and installed on-device OCR language data otherwise. A separate default-OFF Location switch permits bounded Android reverse geocoding and fixed Open-Meteo weather lookup through `OnlineEnrichmentGateway`; failures preserve coordinate-only local indexing. Ask can use a local Gemma LiteRT-LM model over retrieved `EvidencePack` data when a runtime-downloaded or manually imported `.litertlm` model file is installed, with template fallback when unavailable. Unsupported evidence types remain future work until their platform permissions and zero-raw-retention processing paths are implemented.
 
 ## Important Definitions
 
@@ -295,15 +295,17 @@ Rules:
 
 Purpose:
 
-- reference user-selected folders/files
-- support Markdown, PDF, image exports, and handwriting-note exports conceptually
-- support page-level indexing for PDF/handwriting exports
+- reference explicitly selected Text, Markdown, and PDF documents
+- support page-level PDF indexing with embedded-text and local OCR paths
+- retain stable derived identity without storing document URI or file name
 
 Rules:
 
 - never copy original files
 - never store original file content
 - index only derived text, summary, keywords, embeddings, citations
+- store document/page identity only as a domain-separated Android Keystore HMAC
+- never crawl folders, discover documents automatically, or start an OCR language-data download while indexing
 
 ## Indexing Policy
 
@@ -438,7 +440,7 @@ MVP uses INTERNET permission for typed external enrichment and fixed-catalog mod
 
 It must not use network access for arbitrary or user-supplied URL calls, cloud sync, accounts, telemetry, raw data upload, stored derived-memory upload, fields outside an approved ephemeral enrichment-request projection, or remote LLM APIs. `docs/network-policy.md` is the canonical network boundary.
 
-Prefer `allowBackup=false` unless there is a documented reason otherwise.
+Keep `allowBackup=false` and explicit legacy/Android 12+ cloud and device-transfer exclusion rules unless a future documented backup design deliberately replaces them.
 
 ## Export and Import
 

@@ -41,6 +41,7 @@ Current usable app path:
 - Ask answers from indexed, cited local evidence and lists missing sources
 - Settings supports language selection: `system`, `korean`, `english`, or `japanese`
 - Settings installs, cancels, and deletes fixed-catalog `eng`, `kor`, or `jpn` OCR language data after an explicit user action
+- Local Files accepts explicitly selected Text, Markdown, and PDF documents; PDF pages use embedded text or installed on-device OCR data
 - Bottom navigation uses icons and localized labels
 
 ## Network Boundary
@@ -65,11 +66,11 @@ Examples:
 - calendar events
 - notification-derived payment/reservation/transport events
 - app usage summaries
-- local text and Markdown-derived indexes
+- local Text, Markdown, and PDF page-derived indexes
 
-The private bounded Pdfium/Tesseract document runtime and language-data installer are complete. PDF selection and Local Files graph integration are the next roadmap step; installing a pack alone does not make PDF indexing available yet.
+The private bounded Pdfium/Tesseract document runtime, language-data installer, and Local Files PDF integration are implemented. Selected document identities are stored only as Android Keystore HMACs; PDF/page originals, names, URIs, text, and images are not stored. Installing a language pack remains a separate Settings action and indexing never starts a download.
 
-See `docs/pdf-ocr.md` for the fixed catalog, privacy boundary, and remaining local document-runtime contract.
+See `docs/pdf-ocr.md` for the fixed catalog, privacy boundary, resource limits, and remaining device acceptance checks.
 
 The user can ask questions such as:
 

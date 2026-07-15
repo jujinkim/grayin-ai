@@ -24,6 +24,8 @@ Fixed OCR `.traineddata` files are public runtime artifacts, not user originals.
 
 PDF parsing and OCR run in the private `:document` process. Binder input is limited to a random request ID and duplicated `ParcelFileDescriptor`; Binder output is limited to bounded page numbers, structural counts, derived keyword signals, and fixed codes. The service never returns raw text, OCR transcripts, images, document identity, source references, or exception text. Main-process code must discard the entire in-memory result on Binder death, timeout, cancellation, or failed validation and may commit only a terminal validated result.
 
+Local Files preferences persist only full domain-separated Android Keystore HMAC markers for selected documents. They do not persist a URI, path, display name, MIME, provider ID, or unkeyed document hash. At scan time the connector transiently HMACs Android's current persisted SAF grants and matches only selected markers. Text/Markdown and each PDF page receive HMAC-only source references; citations are restricted to generic text/Markdown labels or `PDF page N`. SQLCipher schema v6 deletes legacy Local Files graphs and statuses that could contain a URI, unkeyed hash, or file-name citation before reindexing.
+
 ## Raw Original Examples
 
 - original photos
@@ -96,3 +98,5 @@ The encrypted automatic-control metadata contains only an enabled flag, monotoni
 The Sources status card reads only bounded queue/runtime metadata: connector display name, trigger/state, timestamps, counts, and stable reason codes. It never renders task IDs, lease owners, exception text, source pointers, or derived/source content.
 
 The encrypted latest connector scan status may contain only connector ID, processing enum, scan timestamp, optional scan-range timestamps, capability/availability enums, connector ID, and a fixed issue-code storage key. It never stores an explanation string. Schema v5 maps recognized legacy fixed explanations to issue codes and replaces unknown legacy prose with `source_unavailable`. UI and Ask text is generated from the code after reading. Status must not contain a file name, URI, parser exception, extracted text, OCR transcript, provider body, or raw source detail.
+
+Deleting or revoking connector data changes pending and running tasks for that connector to a stable terminal skip state and clears their leases in the same SQLCipher transaction that deletes the graph. An already running reader therefore cannot publish its result after user deletion. A global Local Files timeout or coroutine cancellation publishes no partial replacement; the prior encrypted snapshot remains intact until a terminal scan is available.

@@ -228,6 +228,12 @@ data class GrayinStrings(
                 ConnectorScanIssueCode.LOCAL_DOCUMENT_PERMISSION_REVOKED -> "선택한 문서의 읽기 권한이 취소되었습니다."
                 ConnectorScanIssueCode.LOCAL_DOCUMENT_TYPE_UNSUPPORTED -> "지원하지 않는 문서 형식입니다."
                 ConnectorScanIssueCode.LOCAL_DOCUMENT_READ_FAILED -> "선택한 문서를 읽을 수 없습니다."
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_SELECTION_LIMIT_REACHED ->
+                    "선택한 로컬 문서가 스캔 한도를 초과했습니다."
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_TEXT_LIMIT_REACHED ->
+                    "로컬 텍스트 문서가 임시 텍스트 제한을 초과했습니다."
+                ConnectorScanIssueCode.DOCUMENT_DERIVED_OUTPUT_LIMIT_REACHED ->
+                    "로컬 문서 스캔이 파생 페이지 제한에 도달했습니다."
                 ConnectorScanIssueCode.DOCUMENT_FILE_TOO_LARGE -> "문서가 크기 제한을 초과했습니다."
                 ConnectorScanIssueCode.DOCUMENT_SIZE_UNKNOWN -> "문서 크기를 안전하게 확인할 수 없습니다."
                 ConnectorScanIssueCode.DOCUMENT_NOT_SEEKABLE -> "문서가 안전한 임의 접근을 지원하지 않습니다."
@@ -238,7 +244,7 @@ data class GrayinStrings(
                 ConnectorScanIssueCode.OCR_MODEL_UNAVAILABLE -> "필요한 기기 내 OCR 언어 데이터가 설치되지 않았습니다."
                 ConnectorScanIssueCode.OCR_PAGE_LIMIT_REACHED -> "PDF가 문서별 OCR 페이지 제한을 초과했습니다."
                 ConnectorScanIssueCode.OCR_TIMED_OUT -> "기기 내 OCR이 시간 제한을 초과했습니다."
-                ConnectorScanIssueCode.DOCUMENT_PROCESS_CRASHED -> "격리된 문서 처리기가 예기치 않게 중단되었습니다."
+                ConnectorScanIssueCode.DOCUMENT_PROCESS_CRASHED -> "전용 문서 처리 프로세스가 예기치 않게 중단되었습니다."
                 ConnectorScanIssueCode.DOCUMENT_PROCESS_TIMED_OUT -> "문서 처리가 시간 제한을 초과했습니다."
                 ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT -> "문서에서 추출할 수 있는 텍스트를 찾지 못했습니다."
                 ConnectorScanIssueCode.PARTIAL_DOCUMENT_INDEX -> "문서 일부만 인덱싱했습니다."
@@ -258,6 +264,12 @@ data class GrayinStrings(
                 ConnectorScanIssueCode.LOCAL_DOCUMENT_PERMISSION_REVOKED -> "選択した文書の読み取り権限が取り消されました。"
                 ConnectorScanIssueCode.LOCAL_DOCUMENT_TYPE_UNSUPPORTED -> "この文書形式はサポートされていません。"
                 ConnectorScanIssueCode.LOCAL_DOCUMENT_READ_FAILED -> "選択した文書を読み取れません。"
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_SELECTION_LIMIT_REACHED ->
+                    "選択したローカル文書がスキャン上限を超えています。"
+                ConnectorScanIssueCode.LOCAL_DOCUMENT_TEXT_LIMIT_REACHED ->
+                    "ローカルテキスト文書が一時テキスト上限を超えました。"
+                ConnectorScanIssueCode.DOCUMENT_DERIVED_OUTPUT_LIMIT_REACHED ->
+                    "ローカル文書スキャンが派生ページ上限に達しました。"
                 ConnectorScanIssueCode.DOCUMENT_FILE_TOO_LARGE -> "文書がサイズ上限を超えています。"
                 ConnectorScanIssueCode.DOCUMENT_SIZE_UNKNOWN -> "文書サイズを安全に確認できません。"
                 ConnectorScanIssueCode.DOCUMENT_NOT_SEEKABLE -> "文書が安全なランダムアクセスに対応していません。"
@@ -268,7 +280,7 @@ data class GrayinStrings(
                 ConnectorScanIssueCode.OCR_MODEL_UNAVAILABLE -> "必要な端末内OCR言語データがインストールされていません。"
                 ConnectorScanIssueCode.OCR_PAGE_LIMIT_REACHED -> "PDFが文書ごとのOCRページ上限を超えています。"
                 ConnectorScanIssueCode.OCR_TIMED_OUT -> "端末内OCRが時間制限を超えました。"
-                ConnectorScanIssueCode.DOCUMENT_PROCESS_CRASHED -> "分離された文書処理プロセスが予期せず停止しました。"
+                ConnectorScanIssueCode.DOCUMENT_PROCESS_CRASHED -> "非公開の文書処理プロセスが予期せず停止しました。"
                 ConnectorScanIssueCode.DOCUMENT_PROCESS_TIMED_OUT -> "文書処理が時間制限を超えました。"
                 ConnectorScanIssueCode.NO_EXTRACTABLE_TEXT -> "文書から抽出可能なテキストが見つかりません。"
                 ConnectorScanIssueCode.PARTIAL_DOCUMENT_INDEX -> "文書の一部のみをインデックスしました。"
@@ -461,18 +473,33 @@ data class GrayinStrings(
 
     fun indexedLocalFileEvents(count: Int): String {
         return when (languageCode) {
-            GrayinLanguage.KOREAN -> "로컬 파일 이벤트 ${count}개를 인덱싱했습니다."
-            GrayinLanguage.JAPANESE -> "ローカルファイルイベントを${count}件インデックスしました。"
-            GrayinLanguage.ENGLISH -> "Indexed $count local file event(s)."
+            GrayinLanguage.KOREAN -> "로컬 문서 파생 이벤트 ${count}개를 인덱싱했습니다."
+            GrayinLanguage.JAPANESE -> "ローカル文書の派生イベントを${count}件インデックスしました。"
+            GrayinLanguage.ENGLISH -> "Indexed $count local document derived event(s)."
         }
     }
 
     fun deletedLocalFileEvents(count: Int): String {
         return when (languageCode) {
-            GrayinLanguage.KOREAN -> "로컬 파일 이벤트 ${count}개를 삭제했습니다."
-            GrayinLanguage.JAPANESE -> "ローカルファイルイベントを${count}件削除しました。"
-            GrayinLanguage.ENGLISH -> "Deleted $count local file event(s)."
+            GrayinLanguage.KOREAN -> "로컬 문서 파생 이벤트 ${count}개를 삭제했습니다."
+            GrayinLanguage.JAPANESE -> "ローカル文書の派生イベントを${count}件削除しました。"
+            GrayinLanguage.ENGLISH -> "Deleted $count local document derived event(s)."
         }
+    }
+
+    fun localDocumentSupportDisclosure(): String = when (languageCode) {
+        GrayinLanguage.KOREAN ->
+            "지원 형식: Text, Markdown, PDF. 원문은 일시적으로만 읽고 PDF/OCR은 기기 내 별도 전용 프로세스에서 처리합니다."
+        GrayinLanguage.JAPANESE ->
+            "対応形式: Text、Markdown、PDF。原文は一時的にのみ読み取り、PDF/OCRは端末内の非公開の別プロセスで処理します。"
+        GrayinLanguage.ENGLISH ->
+            "Supported: Text, Markdown, and PDF. Originals are read transiently; PDF/OCR runs in a private, separate on-device process."
+    }
+
+    fun localDocumentRevokeAllAction(): String = when (languageCode) {
+        GrayinLanguage.KOREAN -> "모든 로컬 문서 권한 해제"
+        GrayinLanguage.JAPANESE -> "すべてのローカル文書権限を解除"
+        GrayinLanguage.ENGLISH -> "Revoke all local documents"
     }
 
     fun deletedConnectorEvents(connectorName: String, count: Int): String {
@@ -699,6 +726,7 @@ data class GrayinStrings(
                 IndexingSkipReason.THERMAL_STATE_HOT -> "기기 온도 높음"
                 IndexingSkipReason.THERMAL_STATE_CRITICAL -> "기기 온도 위험"
                 IndexingSkipReason.SOURCE_DISABLED -> "소스 꺼짐"
+                IndexingSkipReason.SOURCE_DATA_DELETED -> "사용자가 소스 데이터 삭제"
                 IndexingSkipReason.MISSING_PERMISSION -> "권한 없음"
                 IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE -> "백그라운드 대상 아님"
                 IndexingSkipReason.NO_INDEXABLE_DATA -> "인덱싱할 데이터 없음"
@@ -716,6 +744,7 @@ data class GrayinStrings(
                 IndexingSkipReason.THERMAL_STATE_HOT -> "端末温度が高い"
                 IndexingSkipReason.THERMAL_STATE_CRITICAL -> "端末温度が危険"
                 IndexingSkipReason.SOURCE_DISABLED -> "ソースがオフ"
+                IndexingSkipReason.SOURCE_DATA_DELETED -> "ユーザーがソースデータを削除"
                 IndexingSkipReason.MISSING_PERMISSION -> "権限なし"
                 IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE -> "バックグラウンド対象外"
                 IndexingSkipReason.NO_INDEXABLE_DATA -> "対象データなし"
@@ -733,6 +762,7 @@ data class GrayinStrings(
                 IndexingSkipReason.THERMAL_STATE_HOT -> "Device is hot"
                 IndexingSkipReason.THERMAL_STATE_CRITICAL -> "Device temperature is critical"
                 IndexingSkipReason.SOURCE_DISABLED -> "Source is off"
+                IndexingSkipReason.SOURCE_DATA_DELETED -> "Source data deleted by user"
                 IndexingSkipReason.MISSING_PERMISSION -> "Permission missing"
                 IndexingSkipReason.NOT_BACKGROUND_ELIGIBLE -> "Not background eligible"
                 IndexingSkipReason.NO_INDEXABLE_DATA -> "No indexable data"
@@ -1052,7 +1082,7 @@ private val EnglishStrings = GrayinStrings(
     sourceConnectionBody = "Grayin can read and analyze only sources you connect here. Select a source, then run indexing so Ask can use derived evidence.",
     sourceConnectionPrivacyNote = "Indexing reads originals transiently and stores derived memory, citations, and source references only.",
     invokeSource = "Connect source",
-    addLocalFile = "Add local file",
+    addLocalFile = "Add Text, Markdown, or PDF",
     revoke = "Revoke",
     delete = "Delete",
     indexNow = "Index now",
@@ -1093,23 +1123,23 @@ private val EnglishStrings = GrayinStrings(
     noAnswerAvailable = "No answer available from indexed evidence.",
     cannotAnswerFromIndexedEvidence = "I cannot answer from indexed, cited evidence.",
     noCitedEvidence = "No cited evidence available.",
-    addAndIndexLocalFileFirst = "Add and index a local text or Markdown file first.",
+    addAndIndexLocalFileFirst = "Add and index a local Text, Markdown, or PDF document first.",
     tryIndexingAgain = "Try indexing local evidence again.",
     noMissingSources = "No missing sources for selected evidence.",
     enterMemoryQuestion = "Enter a memory question.",
-    noLocalTextEvidenceIndexed = "No local text or Markdown evidence has been indexed.",
-    askFromIndexedEvidence = "Ask from indexed evidence after adding and indexing a local file.",
-    localFileSelectionFailed = "Local file selection failed.",
+    noLocalTextEvidenceIndexed = "No local Text, Markdown, or PDF evidence has been indexed.",
+    askFromIndexedEvidence = "Ask from indexed evidence after adding and indexing a local document.",
+    localFileSelectionFailed = "Local document selection failed.",
     revokeFailed = "Revoke failed.",
     deleteFailed = "Delete failed.",
     indexingFailed = "Indexing failed.",
     searchFailed = "Search failed.",
-    selectedLocalFile = "Connected local file. Run Index now to update evidence.",
-    unsupportedFileOrPermissionDenied = "Unsupported file or read permission was not granted.",
+    selectedLocalFile = "Connected local document. Run Index now to update evidence.",
+    unsupportedFileOrPermissionDenied = "Unsupported document, selection limit reached, or read access was not granted.",
     sourcePermissionDenied = "Source permission was not granted.",
-    noLocalFilesIndexed = "No local files indexed.",
+    noLocalFilesIndexed = "No local documents indexed.",
     noSourcesReadyToIndex = "No connected sources are ready to index.",
-    revokedLocalFiles = "Revoked local file access and deleted derived local file data.",
+    revokedLocalFiles = "Revoked all selected local document access and deleted derived local document data.",
     networkPermissionRestricted = "Network: typed enrichment and verified fixed-catalog model or OCR data downloads only",
     onlineEnrichmentTitle = "External place and weather enrichment",
     onlineEnrichmentDisclosure = "Optional. Sends only rounded coordinates and a UTC date to fixed providers. Open-Meteo may retain request URL/IP logs for up to 90 days. No source content or stored memory is sent.",
@@ -1172,7 +1202,7 @@ private val KoreanStrings = EnglishStrings.copy(
     sourceConnectionBody = "Grayin은 여기서 사용자가 연결한 소스만 읽고 분석할 수 있습니다. 소스를 선택한 뒤 인덱싱을 실행해야 질문에서 파생 근거를 사용할 수 있습니다.",
     sourceConnectionPrivacyNote = "인덱싱은 원본을 일시적으로만 읽고 파생 기억, 인용, 소스 참조만 저장합니다.",
     invokeSource = "소스 연결",
-    addLocalFile = "로컬 파일 추가",
+    addLocalFile = "Text, Markdown 또는 PDF 추가",
     revoke = "권한 해제",
     delete = "삭제",
     indexNow = "지금 인덱싱",
@@ -1213,23 +1243,23 @@ private val KoreanStrings = EnglishStrings.copy(
     noAnswerAvailable = "인덱싱된 근거에서 나온 답변이 없습니다.",
     cannotAnswerFromIndexedEvidence = "인덱싱되고 인용된 근거만으로는 답할 수 없습니다.",
     noCitedEvidence = "인용된 근거가 없습니다.",
-    addAndIndexLocalFileFirst = "먼저 로컬 텍스트 또는 Markdown 파일을 추가하고 인덱싱하세요.",
+    addAndIndexLocalFileFirst = "먼저 로컬 Text, Markdown 또는 PDF 문서를 추가하고 인덱싱하세요.",
     tryIndexingAgain = "로컬 근거를 다시 인덱싱해 보세요.",
     noMissingSources = "선택된 근거에 부족한 소스가 없습니다.",
     enterMemoryQuestion = "기억 질문을 입력하세요.",
-    noLocalTextEvidenceIndexed = "인덱싱된 로컬 텍스트 또는 Markdown 근거가 없습니다.",
-    askFromIndexedEvidence = "로컬 파일을 추가하고 인덱싱한 뒤 근거에서 질문하세요.",
-    localFileSelectionFailed = "로컬 파일 선택에 실패했습니다.",
+    noLocalTextEvidenceIndexed = "인덱싱된 로컬 Text, Markdown 또는 PDF 근거가 없습니다.",
+    askFromIndexedEvidence = "로컬 문서를 추가하고 인덱싱한 뒤 근거에서 질문하세요.",
+    localFileSelectionFailed = "로컬 문서 선택에 실패했습니다.",
     revokeFailed = "권한 해제에 실패했습니다.",
     deleteFailed = "삭제에 실패했습니다.",
     indexingFailed = "인덱싱에 실패했습니다.",
     searchFailed = "검색에 실패했습니다.",
-    selectedLocalFile = "로컬 파일을 연결했습니다. 근거를 업데이트하려면 지금 인덱싱을 실행하세요.",
-    unsupportedFileOrPermissionDenied = "지원하지 않는 파일이거나 읽기 권한이 허용되지 않았습니다.",
+    selectedLocalFile = "로컬 문서를 연결했습니다. 근거를 업데이트하려면 지금 인덱싱을 실행하세요.",
+    unsupportedFileOrPermissionDenied = "지원하지 않는 문서이거나 선택 한도에 도달했거나 읽기 권한이 허용되지 않았습니다.",
     sourcePermissionDenied = "소스 권한이 허용되지 않았습니다.",
-    noLocalFilesIndexed = "인덱싱된 로컬 파일이 없습니다.",
+    noLocalFilesIndexed = "인덱싱된 로컬 문서가 없습니다.",
     noSourcesReadyToIndex = "인덱싱할 수 있는 연결된 소스가 없습니다.",
-    revokedLocalFiles = "로컬 파일 접근 권한을 해제하고 파생 로컬 파일 데이터를 삭제했습니다.",
+    revokedLocalFiles = "선택한 모든 로컬 문서 접근 권한을 해제하고 파생 로컬 문서 데이터를 삭제했습니다.",
     networkPermissionRestricted = "네트워크: typed 외부 enrichment와 검증된 고정 catalog 모델·OCR 데이터 다운로드만 허용",
     onlineEnrichmentTitle = "외부 장소·날씨 enrichment",
     onlineEnrichmentDisclosure = "선택 기능입니다. 고정 provider에 반올림 좌표와 UTC 날짜만 보냅니다. Open-Meteo는 요청 URL/IP 로그를 최대 90일 보관할 수 있습니다. 소스 내용이나 저장된 기억은 보내지 않습니다.",
@@ -1292,7 +1322,7 @@ private val JapaneseStrings = EnglishStrings.copy(
     sourceConnectionBody = "Grayinはここで接続したソースだけを読み取り、分析できます。ソースを選択してからインデックスすると、質問で派生根拠を使えます。",
     sourceConnectionPrivacyNote = "インデックスは原本を一時的にだけ読み取り、派生記憶、引用、ソース参照だけを保存します。",
     invokeSource = "ソースを接続",
-    addLocalFile = "ローカルファイルを追加",
+    addLocalFile = "Text、Markdown、PDFを追加",
     revoke = "許可を解除",
     delete = "削除",
     indexNow = "今すぐインデックス",
@@ -1333,23 +1363,23 @@ private val JapaneseStrings = EnglishStrings.copy(
     noAnswerAvailable = "インデックス済みの根拠から得られる回答はありません。",
     cannotAnswerFromIndexedEvidence = "インデックス済みで引用可能な根拠だけでは回答できません。",
     noCitedEvidence = "引用済みの根拠はありません。",
-    addAndIndexLocalFileFirst = "まずローカルのテキストまたはMarkdownファイルを追加してインデックスしてください。",
+    addAndIndexLocalFileFirst = "まずローカルのText、Markdown、PDF文書を追加してインデックスしてください。",
     tryIndexingAgain = "ローカル根拠をもう一度インデックスしてください。",
     noMissingSources = "選択された根拠に不足しているソースはありません。",
     enterMemoryQuestion = "記憶の質問を入力してください。",
-    noLocalTextEvidenceIndexed = "ローカルのテキストまたはMarkdown根拠はインデックスされていません。",
-    askFromIndexedEvidence = "ローカルファイルを追加してインデックスした後、根拠に基づいて質問してください。",
-    localFileSelectionFailed = "ローカルファイルの選択に失敗しました。",
+    noLocalTextEvidenceIndexed = "ローカルのText、Markdown、PDF根拠はインデックスされていません。",
+    askFromIndexedEvidence = "ローカル文書を追加してインデックスした後、根拠に基づいて質問してください。",
+    localFileSelectionFailed = "ローカル文書の選択に失敗しました。",
     revokeFailed = "許可の解除に失敗しました。",
     deleteFailed = "削除に失敗しました。",
     indexingFailed = "インデックスに失敗しました。",
     searchFailed = "検索に失敗しました。",
-    selectedLocalFile = "ローカルファイルを接続しました。根拠を更新するには今すぐインデックスしてください。",
-    unsupportedFileOrPermissionDenied = "未対応のファイル、または読み取り許可がありません。",
+    selectedLocalFile = "ローカル文書を接続しました。根拠を更新するには今すぐインデックスしてください。",
+    unsupportedFileOrPermissionDenied = "未対応の文書、選択上限到達、または読み取り許可がありません。",
     sourcePermissionDenied = "ソース権限が許可されていません。",
-    noLocalFilesIndexed = "インデックス済みのローカルファイルはありません。",
+    noLocalFilesIndexed = "インデックス済みのローカル文書はありません。",
     noSourcesReadyToIndex = "インデックス可能な接続済みソースがありません。",
-    revokedLocalFiles = "ローカルファイルへのアクセス許可を解除し、派生ローカルファイルデータを削除しました。",
+    revokedLocalFiles = "選択したすべてのローカル文書へのアクセス許可を解除し、派生ローカル文書データを削除しました。",
     networkPermissionRestricted = "ネットワーク: typed外部enrichmentと検証済み固定catalogのモデル・OCRデータのダウンロードのみ許可",
     onlineEnrichmentTitle = "外部の場所・天気enrichment",
     onlineEnrichmentDisclosure = "任意機能です。固定providerへ丸めた座標とUTC日付だけを送信します。Open-MeteoはリクエストURL/IPログを最大90日保持する場合があります。ソース内容や保存済み記憶は送信しません。",

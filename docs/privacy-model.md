@@ -71,4 +71,4 @@ Local derived-memory storage is encrypted with SQLCipher and an Android Keystore
 - SQLCipher-backed persistence stores derived memory data at rest.
 - Android Keystore protects the generated SQLCipher passphrase.
 - Store APIs must accept only source references, derived memory, citations, summaries, clusters, and index metadata.
-- Android backup remains disabled in the MVP manifest until encrypted export/import is implemented.
+- Android backup remains disabled through the manifest plus explicit legacy and Android 12+ cloud/device-transfer exclusion rules. Encrypted export/import remains an explicit user action and does not enable platform backup.

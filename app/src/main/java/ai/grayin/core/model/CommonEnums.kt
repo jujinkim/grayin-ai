@@ -94,6 +94,18 @@ enum class ConnectorScanIssueCode(
         "The selected document type is unsupported.",
     ),
     LOCAL_DOCUMENT_READ_FAILED("local_document_read_failed", "A selected document could not be read."),
+    LOCAL_DOCUMENT_SELECTION_LIMIT_REACHED(
+        "local_document_selection_limit_reached",
+        "The local document selection exceeds the scan limit.",
+    ),
+    LOCAL_DOCUMENT_TEXT_LIMIT_REACHED(
+        "local_document_text_limit_reached",
+        "A local text document exceeded the transient text limit.",
+    ),
+    DOCUMENT_DERIVED_OUTPUT_LIMIT_REACHED(
+        "document_derived_output_limit_reached",
+        "The local document scan reached its derived page limit.",
+    ),
     DOCUMENT_FILE_TOO_LARGE("document_file_too_large", "The selected document exceeds the size limit."),
     DOCUMENT_SIZE_UNKNOWN("document_size_unknown", "The selected document size could not be verified."),
     DOCUMENT_NOT_SEEKABLE(
@@ -115,7 +127,7 @@ enum class ConnectorScanIssueCode(
     OCR_TIMED_OUT("ocr_timed_out", "On-device OCR exceeded its time limit."),
     DOCUMENT_PROCESS_CRASHED(
         "document_process_crashed",
-        "The isolated document processor stopped unexpectedly.",
+        "The private document processor stopped unexpectedly.",
     ),
     DOCUMENT_PROCESS_TIMED_OUT(
         "document_process_timed_out",

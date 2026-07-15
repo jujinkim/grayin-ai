@@ -48,7 +48,7 @@ MVP 6 sensitivity defaults:
 
 All connectors default OFF.
 
-Local Files supports explicit user-selected `.txt` and `.md` documents through the Android document picker. It reads source text transiently, emits only derived keyword/summary metadata, and does not store raw file contents.
+Local Files supports explicitly selected Text, Markdown, and PDF documents through the Android document picker. It stores only a domain-separated Android Keystore HMAC selection marker and resolves the live URI from Android's persisted SAF permission at scan time. Selection metadata lookup has a 15-second cancellation bound. Text is read transiently, and cancellation directly closes its underlying descriptor. PDFs are passed as read-only descriptors to the private on-device document process, which returns only bounded page signals. The connector emits HMAC-only source references, canonical structural summaries, bounded keywords, exact closed labels, and closed citations without storing URI, file name, MIME, source text, PDF bytes, images, or OCR transcripts.
 
 Calendar supports explicit runtime calendar read permission plus app-level connection before indexing. It reads Android calendar instances transiently, emits derived calendar events/citations/source references, and does not store raw calendar records.
 
@@ -69,6 +69,8 @@ Notifications supports explicit notification-listener settings access plus app-l
 Automatic indexing plans only background-scannable connectors. Foreground-only connectors remain available through explicit user actions, and event-driven connectors do not show a misleading manual historical-index action.
 
 All Android entry points use the same validated connector registry. Registry construction rejects blank or duplicate connector IDs, preventing controller and background execution from resolving the same ID to different implementations. Manual and automatic scans share the durable indexing command executor; notification arrivals remain on their event-driven listener path.
+
+Local Files readiness is connector-wide once at least one document is selected; each SAF grant is rechecked inside the scan so one revoked document cannot block valid documents. A Keystore HMAC failure is a connector failure, not revoked permission, so the prior encrypted snapshot remains intact. Every terminal Local Files scan, including an empty or partially unavailable result, is a full atomic connector-snapshot replacement. A 10-minute scan timeout cancels without publishing a partial replacement, while per-document typed failures may coexist with validated output from other selected documents. Selection and revoke serialize grant ownership; revoke verifies that every app-held persisted read grant is gone before clearing markers.
 
 ## MVP API Boundary
 

@@ -33,13 +33,15 @@
 - Stale download worker publication
 - Malformed or adversarial PDF native-parser failure
 - Stuck or memory-exhausting local OCR work
+- Persisted document URI or file-name identity leakage
+- In-flight connector publication after user deletion or revocation
 
 ## Mitigations
 
 - No raw data retention
 - SQLCipher-encrypted local DB with Android Keystore passphrase protection
 - Android Keystore integration
-- Backup exclusion through `android:allowBackup="false"` in MVP
+- Backup exclusion through `android:allowBackup="false"`, legacy full-backup exclusions, and Android 12+ cloud/device-transfer extraction exclusions
 - Network permission restricted to typed external enrichment and fixed-catalog artifact downloads
 - Provider URLs and schemas fixed by trusted gateway/catalog configuration
 - No arbitrary or user-supplied URL or endpoint calls
@@ -56,6 +58,8 @@
 - Private `:document` process for PDFium/Tesseract crash and memory-pressure containment
 - Seekability/signature/size/page/render/text/OCR/time checks before derived output is accepted
 - Derived-only bounded Binder result with death handling and no partial store commit
+- HMAC-only Local Files selection/source identity with closed citation labels and schema-v6 legacy purge
+- Atomic queue-lease fencing before connector deletion or revocation
 
 ## Network Metadata Risk
 
