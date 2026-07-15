@@ -77,3 +77,5 @@ The MVP connector interface exposes only:
 Connectors must not expose raw/original content through return values, callbacks, store handoff objects, logs, caches, or errors.
 
 Store APIs must accept connector outputs only as source references, derived memory, citations, summaries, clusters, and index metadata. They must not accept original file bytes, raw notification text, raw message text, raw usage dumps, raw calendar records, raw local-file content, or raw source payloads.
+
+Connectors must not own network clients or endpoints. A connector that needs map/place, reverse-geocode, or weather enrichment may call a typed `OnlineEnrichmentGateway` method with only approved derived lookup inputs. All other connector network access is forbidden by `docs/network-policy.md`.

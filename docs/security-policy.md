@@ -1,15 +1,15 @@
 # Security and Backup Policy
 
-MVP 11 documents required security posture. It does not add persistent storage or export implementation.
+Grayin AI uses SQLCipher persistence with an Android Keystore-protected passphrase. Encrypted export/import remains under implementation.
 
-## SQLCipher Plan
+## SQLCipher
 
 - Use SQLCipher for the local database.
 - Encrypt all source references, derived memory events, citations, summaries, place clusters, app usage summaries, indexes, and entity graph data.
 - Keep database pages encrypted at rest.
 - Do not add a plaintext fallback database.
 
-## Android Keystore Plan
+## Android Keystore
 
 - Use Android Keystore to protect the generated SQLCipher passphrase.
 - Generate or unwrap database keys locally on device.
@@ -26,15 +26,18 @@ MVP 11 documents required security posture. It does not add persistent storage o
 
 ## Network Permission
 
-The app may request INTERNET permission for typed online enrichment such as weather or reverse-geocode lookups.
+The app uses INTERNET permission only for typed map/place/reverse-geocode/weather enrichment and fixed-catalog model/manifest downloads.
 
 Network use must not:
 
 - expose arbitrary URL or endpoint calls to app feature code
 - upload raw/original source data
+- upload stored derived-memory records, evidence packs, prompts, answers, embeddings, source references, or fields outside an approved ephemeral enrichment-request projection
 - create cloud sync or server backup
 - send evidence packs to remote LLMs
 - add account, telemetry, ads, or crash analytics SDKs
+
+Provider endpoints and artifact URLs must be fixed by trusted provider or catalog configuration. Users, connectors, feature code, and model output cannot supply endpoints. See `docs/network-policy.md`.
 
 ## Backup
 
@@ -50,13 +53,13 @@ MVP must not include:
 - ad SDKs
 - telemetry SDKs
 - account SDKs
-- server/cloud SDKs
+- application-backend, cloud-storage, or cloud-sync SDKs
 
 ## Logging
 
 MVP must not log source originals, derived memory contents, source references, evidence packs, prompts, answers, or connector outputs.
 
-## Future Hardening
+## Remaining Hardening
 
 - Add optional screenshot blocking for sensitive screens.
 - Add optional biometric app lock for opening the app or viewing sensitive indexed memory.

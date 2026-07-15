@@ -25,7 +25,7 @@ The Ask screen includes:
 - expandable evidence section
 - missing-data section
 
-The answer card starts empty, then renders grounded answers from indexed local Text/Markdown evidence.
+The answer card starts empty, then renders grounded answers from indexed evidence across connected sources.
 
 ## Sources
 
@@ -38,11 +38,11 @@ Local Files supports:
 - Revoke
 - Delete derived data
 
-Other source rows remain disabled until their platform connectors are implemented.
+Location, Photos, Calendar, Notifications, and App Usage expose permission/settings connection, indexing state, revoke, and delete-derived-data controls.
 
 ## Settings
 
-Settings includes language selection, a manual local-file index command, runtime local-model selection/download/cancel/delete controls, local Gemma `.litertlm` import/delete fallback controls, operation status, indexed counts, and local-only policy status rows.
+Settings includes language selection, manual indexing, runtime local-model selection/download/cancel/delete controls, local Gemma `.litertlm` import/delete fallback controls, operation status, indexed counts, and local-first/network-boundary policy status rows.
 
 Language options are:
 

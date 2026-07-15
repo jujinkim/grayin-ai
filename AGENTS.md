@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Grayin AI is an Android Kotlin/Jetpack Compose app. Core source lives under `app/src/main/java/ai/grayin/`: UI/controller code is in `app/`, shared domain models in `core/model`, connector contracts in `core/connector`, SQLCipher store code in `core/store`, and retrieval/grounding/security/local-AI code in matching `core/*` packages. Local Text/Markdown indexing is in `connectors/localfiles`; other connectors remain stubs. Tests live under `app/src/test`. Product, privacy, architecture, and roadmap docs live in `docs/`; benchmark prompts live in `benchmarks/query-set.md`.
+Grayin AI is an Android Kotlin/Jetpack Compose app. Core source lives under `app/src/main/java/ai/grayin/`: UI/controller code is in `app/`, shared domain models in `core/model`, connector contracts in `core/connector`, SQLCipher store code in `core/store`, and retrieval/grounding/security/local-AI code in matching `core/*` packages. Real connector paths live under `connectors/*` for Local Files, Location, Photos, Calendar, Notifications, and App Usage. Tests live under `app/src/test`; device/runtime tests belong under `app/src/androidTest`. Product, privacy, architecture, network, and roadmap docs live in `docs/`; benchmark prompts live in `benchmarks/query-set.md`.
 
 ## Build, Test, and Development Commands
 
@@ -17,7 +17,7 @@ Use Kotlin defaults: 4-space indentation, trailing commas where they reduce diff
 
 ## Testing Guidelines
 
-JVM tests are under `app/src/test`. Name tests after the unit under test, for example `DefaultQueryPlannerTest`. Cover security-sensitive behavior, especially zero-raw-retention, cited evidence filtering, missing-data explanations, and no-network assumptions. Add instrumentation or Compose UI tests under `app/src/androidTest` when device/runtime behavior needs coverage.
+JVM tests are under `app/src/test`. Name tests after the unit under test, for example `DefaultQueryPlannerTest`. Cover security-sensitive behavior, especially zero-raw-retention, cited evidence filtering, missing-data explanations, and the bounded network policy. Add instrumentation or Compose UI tests under `app/src/androidTest` when device/runtime behavior needs coverage.
 
 ## Commit & Pull Request Guidelines
 
@@ -25,10 +25,10 @@ Git history uses short imperative commits such as `Add MVP 8 grounded answer for
 
 ## Agent Workflow
 
-Before implementation work, read `docs/product-spec.md`, `docs/roadmap.md`, `docs/zero-raw-retention.md`, and `docs/non-agentic-boundary.md`. Use `docs/roadmap.md` for future work because the completed MVP task list has been removed.
+Before implementation work, read `docs/product-spec.md`, `docs/roadmap.md`, `docs/network-policy.md`, `docs/zero-raw-retention.md`, and `docs/non-agentic-boundary.md`. Use `docs/roadmap.md` for future work because the completed MVP task list has been removed.
 
 Implement one coherent step at a time. Update affected docs, run available checks or builds, and commit with a clear message.
 
 ## Security & Configuration Tips
 
-MVP constraints are hard requirements: `android.permission.INTERNET` is allowed only through typed online enrichment methods, no arbitrary URL/endpoint caller, no server/cloud/account SDKs, no analytics or crash SDKs, and no raw/original data storage, logging, caching, export, sync, or transmission. Derived memory storage must stay SQLCipher-backed with Android Keystore passphrase protection. When changing behavior, update affected files in `docs/` and keep `docs/roadmap.md` aligned if scope changes.
+MVP constraints are hard requirements: network use is limited to typed map/place/reverse-geocode/weather enrichment and fixed-catalog model/manifest downloads defined by `docs/network-policy.md`. No arbitrary or user-supplied URL/endpoint, remote LLM, application backend, cloud sync, account SDK, analytics, ads, telemetry, crash SDK, or raw/original data storage, logging, caching, export, sync, or transmission. Derived memory storage must stay SQLCipher-backed with Android Keystore passphrase protection. When changing behavior, update affected files in `docs/` and keep `docs/roadmap.md` aligned if scope changes.

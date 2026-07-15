@@ -4,6 +4,8 @@
 
 APK/AAB must not include model weights. Grayin ships the LiteRT-LM runtime only. Users choose a local model at runtime, then download or import a `.litertlm` file into app-private storage.
 
+Model downloads are one of the two allowed network boundaries in `docs/network-policy.md`. They must use fixed catalog URLs and must never include user-memory data.
+
 ## Model Options
 
 | Model | Source | Approx size | Status |
@@ -21,7 +23,7 @@ APK/AAB must not include model weights. Grayin ships the LiteRT-LM runtime only.
 - Update resolver to prefer selected ready downloaded model, then imported model, then adb development model, then template fallback.
 - Update Settings with model picker, source/size/status rows, download/cancel/delete controls, and existing import fallback.
 - Set up Grayin dedicated model hosting outside git, preferably object storage/CDN rather than GitHub Pages, with immutable release URLs and no arbitrary user-entered endpoints.
-- Publish a release manifest for the Grayin dedicated model with model id, version, file name, byte size, SHA-256 checksum, license/terms URL, minimum app version, and rollback/deprecation metadata.
+- Publish a release manifest for the Grayin dedicated model with model id, version, file name, byte size, SHA-256 checksum, license/terms URL, minimum app version, and rollback/deprecation metadata. Sign remotely updated manifests with ECDSA P-256 and verify them with the public key bundled in the app.
 - Keep Grayin dedicated model catalog entry disabled until server URL/checksum are configured.
 - Keep user data out of model training and out of downloaded model state.
 - Keep Gemma reference weights and generated model outputs outside git under `model-training/` ignore rules.

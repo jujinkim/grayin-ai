@@ -80,4 +80,4 @@ The Notifications connector:
 
 Connectors must not read or store source originals outside transient connector processing.
 
-INTERNET permission is allowed for typed weather or reverse-geocode enrichment. Connector and feature code must not call arbitrary URLs or endpoints, upload raw/original source data, or create cloud sync.
+INTERNET permission is used for typed map/place, weather, or reverse-geocode enrichment and fixed-catalog model/manifest downloads. Connectors and feature code must not call arbitrary or user-supplied URLs, upload raw or derived user data, invoke remote LLMs, or create cloud sync. See `docs/network-policy.md`.

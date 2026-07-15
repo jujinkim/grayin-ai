@@ -32,12 +32,14 @@
 ## Mitigations
 
 - No raw data retention
-- Encrypted local DB in final implementation
+- SQLCipher-encrypted local DB with Android Keystore passphrase protection
 - Android Keystore integration
 - Backup exclusion through `android:allowBackup="false"` in MVP
-- Network permission restricted to typed online enrichment methods
-- No arbitrary URL or endpoint calls from app feature code
+- Network permission restricted to typed external enrichment and fixed-catalog artifact downloads
+- Provider URLs and schemas fixed by trusted gateway/catalog configuration
+- No arbitrary or user-supplied URL or endpoint calls
 - No raw/original source upload
+- No stored derived-memory record, evidence pack, prompt, answer, embedding, source-reference, or non-approved enrichment field upload
 - No cloud sync, telemetry, ads, or crash SDK
 - No telemetry
 - No ads
@@ -46,3 +48,9 @@
 - Optional screenshot blocking
 - Optional biometric app lock
 - Connector-level deletion
+
+## Network Metadata Risk
+
+External enrichment can reveal a rounded coordinate, timestamp, locale, units, or coarse place query to the selected provider. Only fields required by a typed operation may leave the device. Provider failures must degrade to local results without retrying through unapproved endpoints.
+
+Model downloads reveal model selection and network metadata to the fixed artifact host. They must not include user-memory identifiers or evidence data. See `docs/network-policy.md`.

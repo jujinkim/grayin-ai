@@ -5,27 +5,31 @@ Grayin AI is designed around user-owned local memory.
 ## Defaults
 
 - Local-first by default.
-- Internet permission is allowed only through typed online enrichment methods.
+- Network access is allowed only through typed external enrichment and fixed-catalog artifact download boundaries.
 - No account.
-- No server.
-- No cloud.
+- No application backend.
+- No cloud storage or sync.
 - No telemetry.
 - No ads.
 - No crash analytics SDK.
 - No raw data retention.
 
-## Online Enrichment
+## Network Scope
 
-Online enrichment may fetch weather or reverse-geocode information.
+Online enrichment may fetch map/place, weather, or reverse-geocode information. Runtime model infrastructure may download a model file or signed manifest selected from the fixed app catalog.
 
 Allowed network requests must:
 
-- use explicit lookup inputs such as latitude/longitude, timestamp, or coarse place query
-- call typed internal methods such as `getWeather` or `reverseGeocode`
-- avoid arbitrary URL or endpoint parameters in app feature code
+- use minimal derived lookup inputs such as rounded latitude/longitude, timestamp, locale, units, or an approved coarse place query
+- call typed gateway methods for map/place, weather, or reverse-geocode operations
+- use fixed HTTPS catalog entries for model or manifest downloads
+- avoid arbitrary or user-supplied URL and endpoint parameters
 - never upload raw/original source data
-- never create cloud sync, account storage, telemetry, ads, or crash analytics
+- never upload stored derived-memory records, evidence packs, prompts, answers, embeddings, source references, or fields outside the approved ephemeral enrichment-request projection
+- never create cloud sync, account storage, application backend state, telemetry, ads, or crash analytics
 - be explainable in policy docs and UI copy before use
+
+`docs/network-policy.md` is the canonical network boundary.
 
 ## Consent
 
@@ -54,7 +58,7 @@ Examples:
 - calendar summaries
 - daily summaries
 
-Final implementation must encrypt local storage.
+Local derived-memory storage is encrypted with SQLCipher and an Android Keystore-protected passphrase.
 
 ## Local Store Security
 

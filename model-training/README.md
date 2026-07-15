@@ -9,7 +9,7 @@ It must not track Gemma reference weights or generated model artifacts.
 - Start from a Gemma instruction model.
 - Tune behavior for Grayin's evidence-grounded, non-agentic recall flow.
 - Prefer LoRA/QLoRA first, then merge/export into a runtime model file outside git.
-- Keep APK/AAB model-free. App receives model files only through runtime download/import.
+- Keep APK/AAB model-free. App receives model files only through fixed-catalog runtime download or explicit local import under `docs/network-policy.md`.
 
 ## Privacy Boundary
 
@@ -130,4 +130,4 @@ make -f model-training/Makefile artifact-policy
 
 ## Release Rule
 
-Only publish final model files through a separate file server or official model host. Do not commit model files to this repository.
+Only publish final model files through an immutable HTTPS artifact URL on an approved static host. Publish pinned SHA-256 metadata and, for remote manifest updates, an ECDSA P-256 signature verifiable by the app. Do not commit model files, private keys, or credentials to this repository.

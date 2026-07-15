@@ -16,10 +16,10 @@ Grayin AI is non-agentic. It does not act on behalf of the user. It helps the us
 
 ## Principles
 
-- No server
+- No application backend
 - No account
-- No cloud in MVP
-- Internet permission allowed only through typed enrichment features
+- No cloud storage or sync
+- Network access only for typed external enrichment and fixed-catalog model downloads
 - No raw data retention
 - No commercial LLM API in MVP
 - No agentic actions
@@ -31,10 +31,10 @@ Grayin AI is non-agentic. It does not act on behalf of the user. It helps the us
 
 Grayin AI indexes user-enabled local Android data sources into derived memory events.
 
-Current usable MVP path:
+Current usable app path:
 
-- user selects `.txt` or `.md` files with the Android document picker
-- connector reads file text transiently during indexing
+- user connects Local Files, Location, Photos, Calendar, Notifications, or App Usage explicitly
+- connectors read source data transiently during indexing or approved listener callbacks
 - app stores only source references, keyword signals, summaries, citations, and confidence
 - SQLCipher encrypts the local derived-memory store
 - Android Keystore protects the generated SQLCipher passphrase
@@ -42,7 +42,18 @@ Current usable MVP path:
 - Settings supports language selection: `system`, `korean`, `english`, or `japanese`
 - Bottom navigation uses icons and localized labels
 
-Planned online enrichment may fetch weather or reverse-geocode details. Network calls must go through typed internal methods (`getWeather` and `reverseGeocode`), not arbitrary URLs or endpoints. They must not upload raw/original source data or add cloud sync, accounts, telemetry, ads, or crash analytics.
+## Network Boundary
+
+Grayin AI is local-first, not offline-only.
+
+Network use is limited to:
+
+- typed map, place, reverse-geocode, and weather enrichment using minimal derived lookup inputs
+- fixed-catalog model and authenticated-manifest downloads into app-private storage
+
+The app does not expose arbitrary or user-entered endpoints. External enrichment receives only an ephemeral typed lookup projection, never a stored derived-memory record. The app does not upload raw sources, evidence packs, prompts, answers, embeddings, or source references. It does not use remote LLMs, application backends, accounts, cloud sync, telemetry, ads, or crash reporting. See `docs/network-policy.md`.
+
+External enrichment may fetch map/place, weather, or reverse-geocode details through typed gateway methods. Runtime model downloads use fixed catalog URLs. Both paths follow `docs/network-policy.md`.
 
 Examples:
 
@@ -107,7 +118,7 @@ Test command:
 ANDROID_HOME=/home/jujin/workspace/android-sdk ANDROID_SDK_ROOT=/home/jujin/workspace/android-sdk ./gradlew :app:testDebugUnitTest
 ```
 
-The manifest includes `android.permission.INTERNET` for typed online enrichment such as weather or reverse-geocode lookups.
+The manifest includes `android.permission.INTERNET` for typed external enrichment and fixed-catalog model downloads.
 
 ## Roadmap
 

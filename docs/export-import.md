@@ -50,4 +50,4 @@ Imported derived data remains sensitive and must stay encrypted at rest.
 
 ## No Sync
 
-MVP export/import design does not add cloud sync, network transfer, account storage, or server backup.
+Export/import uses explicit Android document create/open flows only. It does not add automatic network transfer, cloud sync, account storage, application backend state, or server backup. Network scope remains defined by `docs/network-policy.md`.

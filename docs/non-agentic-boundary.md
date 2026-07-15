@@ -39,3 +39,5 @@ Allowed capabilities include:
 Do not rely on prompting an LLM not to act.
 
 The action APIs must not exist.
+
+Typed external enrichment is application-controlled lookup, not a model action. Local models cannot choose providers, construct URLs, call endpoints, download artifacts, or trigger network tools. Feature code may invoke only the fixed operations allowed by `docs/network-policy.md`.

@@ -11,12 +11,12 @@
 - SQLCipher-backed derived-memory store
 - connector abstraction
 - real Local Files connector for user-selected `.txt` / `.md` documents
-- stub connectors for location, photos, calendar, notifications, and app usage
+- real basic connectors for location, photos, calendar, notifications, and app usage
 - indexing queue abstraction
 - query planner skeleton
 - grounded answer format
 - local LLM adapter abstraction
-- INTERNET permission for typed weather/reverse-geocode enrichment
+- INTERNET permission for typed map/place/reverse-geocode/weather enrichment and fixed-catalog model downloads
 - documentation
 - benchmark questions
 
@@ -24,17 +24,17 @@
 
 - iOS
 - cloud sync
-- server
+- application backend
 - account
 - commercial LLM API
-- broad background networking
+- network use outside approved enrichment and artifact-download boundaries
 - arbitrary URL or endpoint calls from app feature code
 - ads
 - analytics
 - crash SDK
 - agentic action APIs
-- offline map data
-- online map SDK
+- bundled offline map data
+- direct or arbitrary map SDK/API access outside `OnlineEnrichmentGateway`
 - raw data storage
 
 ## MVP Connectors

@@ -50,10 +50,10 @@ Grayin AI is not:
 
 ## Core Principles
 
-- No server.
+- No Grayin application backend.
 - No account.
-- No cloud in MVP.
-- Internet permission is allowed only through typed online enrichment methods in MVP.
+- No cloud storage or sync.
+- Network access is allowed only for typed external enrichment and fixed-catalog model/manifest downloads.
 - No commercial LLM API in MVP.
 - No raw/original data storage, ever.
 - No raw/original data transmission, ever.
@@ -63,9 +63,10 @@ Grayin AI is not:
 - No agentic action APIs.
 - Android-native only for MVP.
 - Local-first by default.
-- Online enrichment must be explicit and limited to derived lookup inputs, such as weather or reverse-geocode requests.
-- App feature code must not call arbitrary URLs or endpoints.
-- Runtime model downloads must use fixed catalog URLs only; APK/AAB must not bundle model weights.
+- External enrichment must be explicit and limited to minimal derived lookup inputs for map, place, reverse-geocode, or weather requests.
+- App feature code, connectors, local models, and users must not call or provide arbitrary URLs or endpoints.
+- Runtime model and manifest downloads must use fixed catalog URLs with pinned SHA-256 digests; remote manifests require a pinned ECDSA P-256 signature. APK/AAB must not bundle model weights.
+- Raw sources, stored derived-memory records, evidence packs, prompts, answers, embeddings, source references, and fields outside an approved ephemeral enrichment-request projection must never be transmitted.
 - All data sources are explicit opt-in.
 - Every connector can be enabled, disabled, revoked, and deleted independently.
 - The app only reasons over locally available, user-enabled, indexed evidence.
@@ -224,11 +225,12 @@ Purpose:
 
 Rules:
 
-- no offline map data in MVP
-- no online map SDK in MVP
-- weather lookups may use network permission through typed enrichment methods when implemented
-- reverse-geocode lookup may use Android's geocoder through the typed enrichment gateway
-- the local LLM must not call map APIs directly; map/place enrichment must go through the typed `OnlineEnrichmentGateway.reverseGeocode` boundary with derived coordinates only
+- no bundled offline map data in MVP
+- external map/place providers may be used only through typed `OnlineEnrichmentGateway` methods
+- weather lookups may use a fixed external provider through the typed enrichment gateway
+- reverse-geocode lookup may use Android's geocoder or a fixed provider through the typed enrichment gateway
+- only rounded coordinates, timestamps, locale, units, or an explicitly approved coarse place query may leave the device
+- the local LLM must not call map APIs directly; map/place enrichment must remain outside the model path
 - exact business names are not required
 - focus on region, movement, stay duration, and user-defined place labels
 
@@ -375,11 +377,11 @@ The app should use `Gemma4LocalLanguageModel` when a local `.litertlm` model fil
 
 The APK must not bundle Gemma model weights. Settings should tell users that model weights come from the official Google AI Edge LiteRT-LM Gemma docs or Hugging Face repo `litert-community/gemma-4-E2B-it-litert-lm`, then let users import a local `.litertlm` file into app-private storage. Developer installation under `/data/local/tmp/grayin/` remains supported.
 
-No commercial LLM API in MVP.
+No remote or commercial LLM API in MVP.
 
-Local AI must not require network access.
+Local inference must not require network access.
 
-Weather and reverse-geocode enrichment may use app network permission outside the local AI path through typed enrichment methods only.
+Model acquisition may use fixed-catalog HTTPS downloads before inference. Map/place, weather, and reverse-geocode enrichment may use the network outside the local AI path through typed gateway methods only.
 
 The local LLM receives only Evidence Pack.
 
@@ -430,9 +432,9 @@ MVP should document and prepare for:
 - optional screenshot blocking
 - optional biometric app lock
 
-MVP may request INTERNET permission for typed online enrichment.
+MVP uses INTERNET permission for typed external enrichment and fixed-catalog model/manifest downloads.
 
-It must not use network access for arbitrary URL calls, cloud sync, accounts, telemetry, raw source upload, or commercial LLM APIs.
+It must not use network access for arbitrary or user-supplied URL calls, cloud sync, accounts, telemetry, raw data upload, stored derived-memory upload, fields outside an approved ephemeral enrichment-request projection, or remote LLM APIs. `docs/network-policy.md` is the canonical network boundary.
 
 Prefer `allowBackup=false` unless there is a documented reason otherwise.
 

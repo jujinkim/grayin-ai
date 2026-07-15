@@ -18,6 +18,8 @@ It must never be:
 - passed to the local store
 - passed to the LLM
 
+Network-enabled enrichment does not weaken this rule. Only an ephemeral `EnrichmentRequest` projection approved by `docs/network-policy.md` may be transmitted to a map/place, reverse-geocode, or weather provider. It may contain required rounded coordinates, timestamp, locale, units, or an approved coarse query, but never a persisted `DerivedMemoryEvent`. Raw originals, stored derived-memory records, evidence packs, prompts, answers, embeddings, and source references never leave the device.
+
 ## Raw Original Examples
 
 - original photos
@@ -50,7 +52,7 @@ Grayin AI may store:
 - derived memory events
 - daily summaries
 
-All derived data is still sensitive and must be encrypted in the final implementation.
+All derived data is still sensitive and remains encrypted in the SQLCipher store.
 
 ## Engineering Rule
 

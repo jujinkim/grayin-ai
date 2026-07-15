@@ -1,6 +1,6 @@
 # Roadmap
 
-Current phase status: usable local Text/Markdown MVP is complete.
+Current phase status: local-first MVP foundation and basic Android source connectors are implemented. Completion work below tracks production correctness, remaining features, and hardening.
 
 ## Current Capability
 
@@ -22,15 +22,78 @@ Current phase status: usable local Text/Markdown MVP is complete.
 - Localized UI copy for system, Korean, English, and Japanese language settings.
 - Bottom navigation with icons and localized labels.
 - Settings shows local model selection, download/cancel/delete controls, official model pages, local Gemma status, current adb install path, and `.litertlm` import/delete fallback controls.
-- INTERNET permission restricted to typed enrichment methods only: `getWeather` and `reverseGeocode`; location indexing can use Android reverse geocoding through that boundary.
+- INTERNET permission bounded by `docs/network-policy.md`: typed map/place/reverse-geocode/weather enrichment plus fixed-catalog model/manifest downloads.
 
-## Future Work
+## Completion Plan
 
-- Implement online weather provider behind `OnlineEnrichmentGateway`.
-- Add PDF/OCR local-file indexing.
-- Set up Grayin dedicated model hosting on object storage/CDN, with fixed download URL, immutable release path, manifest, file size, SHA-256 checksum, and license/terms URL.
-- Configure Grayin dedicated model catalog URL and checksum after hosted release artifact is available.
-- Run app-specific Gemma LoRA/QLoRA training, evaluate against grounded-answer benchmarks, and publish final `.litertlm` outside git.
-- Add signed model integrity checks for downloaded/imported local model weights.
-- Implement encrypted export/import runtime.
-- Add optional screenshot blocking and biometric app lock.
+Each step updates affected docs, runs available checks, and produces one coherent commit.
+
+### 0. Canonical Network Policy
+
+- [x] Define allowed typed external enrichment and fixed-catalog artifact-download boundaries.
+- [x] Forbid arbitrary/user-supplied endpoints, raw or derived memory transmission, remote LLMs, application backends, accounts, sync, and telemetry.
+- [x] Align repository instructions and product/privacy/security/network docs.
+
+### 1. Retrieval and Connector Correctness
+
+- [ ] Resolve available capabilities from every indexed connector instead of Local Files only.
+- [ ] Preserve per-event capabilities through retrieval and missing-data calculation.
+- [ ] Validate local-model evidence IDs and citations before displaying a generated answer.
+- [ ] Add and enforce the notification application allowlist required by the product spec.
+
+### 2. Typed External Enrichment
+
+- [ ] Implement a fixed weather provider behind `OnlineEnrichmentGateway`.
+- [ ] Keep map/place and reverse-geocode operations inside the typed gateway.
+- [ ] Add timeout, schema validation, explicit unavailable results, and network-boundary tests.
+
+### 3. Automatic Indexing Runtime
+
+- [ ] Add a persistent indexing queue implementation and command executor.
+- [ ] Add WorkManager scheduling for enabled automatic indexing.
+- [ ] Enforce charging, low-usage window, battery, and thermal conditions at runtime.
+- [ ] Surface last run, queued work, skipped reason, and failure state in Sources.
+
+### 4. PDF and OCR Indexing
+
+- [ ] Accept user-selected PDF documents.
+- [ ] Extract text and page metadata transiently; render and OCR pages locally when embedded text is unavailable.
+- [ ] Persist only derived page summaries, keyword signals, citations, and source references.
+- [ ] Add size/page/time limits and explicit unsupported/missing-data results.
+
+### 5. Encrypted Export and Import
+
+- [ ] Implement password-protected authenticated export containing allowed derived sections only.
+- [ ] Implement schema/version/integrity validation and transactional import.
+- [ ] Require connector re-consent after import.
+- [ ] Add Android document create/open flows without cloud sync or automatic backup.
+
+### 6. Optional App Security
+
+- [ ] Add persisted screenshot-blocking preference and apply `FLAG_SECURE` when enabled.
+- [ ] Add biometric/device-credential app lock with explicit fallback and recovery behavior.
+- [ ] Add lifecycle tests for lock and unlock transitions.
+
+### 7. Source and UI Completion
+
+- [ ] Build place history/cluster output from indexed location evidence and populate Places.
+- [ ] Refresh usage/notification permission state after returning from Android settings.
+- [ ] Localize connector status, error, and derived-summary presentation.
+- [ ] Complete date-range indexing and visible indexing status.
+
+### 8. Local Model Release Hardening
+
+- [ ] Require pinned SHA-256 for every downloaded model; verify remote manifests with a bundled ECDSA P-256 public key.
+- [ ] Validate imported model identity beyond extension and minimum size.
+- [ ] Expand synthetic training/evaluation data and run grounded-answer benchmarks.
+- [ ] Merge/export the release adapter to `.litertlm` outside git.
+- [ ] Publish the Grayin model to an immutable external artifact URL and configure catalog metadata.
+
+External artifact publication requires a selected host, release credentials, license/terms URL, and final model file. Repository work must prepare and validate the release without committing weights or credentials.
+
+### 9. Final Verification
+
+- [ ] Add JVM coverage for policy, queue, crypto, parsing, capability, and grounding behavior.
+- [ ] Add Android instrumentation tests for permissions, SQLCipher, document flows, WorkManager, notification filtering, and app security.
+- [ ] Run unit tests, Android lint, debug/release builds, security scans, and device smoke tests.
+- [ ] Remove stale roadmap/status text and confirm all hard constraints.

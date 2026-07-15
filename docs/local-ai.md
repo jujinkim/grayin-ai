@@ -25,9 +25,9 @@ No commercial LLM API is configured.
 
 The Gemma adapter does not use the network. It only reads an installed local model file and an `EvidencePack`.
 
-Runtime model download is separate from inference. It is limited to fixed catalog URLs for official Gemma LiteRT Community models and the future Grayin model server entry. Users cannot enter arbitrary model URLs.
+Runtime model download is separate from inference. It is limited to fixed catalog URLs for official Gemma LiteRT Community models and a future static Grayin artifact host. Users cannot enter arbitrary model URLs. Downloads must follow `docs/network-policy.md` and pass configured integrity checks before installation.
 
-The app may request INTERNET permission for typed weather or reverse-geocode enrichment, but that permission must not be used by local model adapters. Map or place inference goes through `OnlineEnrichmentGateway.reverseGeocode` with derived coordinates only, not through arbitrary URL calls.
+The app uses INTERNET permission for typed external enrichment and fixed-catalog artifact downloads, but local model adapters must remain network-free. Map or place enrichment goes through `OnlineEnrichmentGateway` with approved derived lookup inputs only, never through model-generated URL calls.
 
 ## Model File
 
