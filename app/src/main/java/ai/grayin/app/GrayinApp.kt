@@ -780,6 +780,19 @@ fun GrayinApp(
                                 }
                             }
                         },
+                        onLocationObservationChanged = { enabled ->
+                            scope.launch {
+                                working = true
+                                try {
+                                    statusMessage = controller.updateLocationObservation(enabled, strings)
+                                } catch (_: Throwable) {
+                                    statusMessage = strings.locationObservationUnavailable()
+                                } finally {
+                                    refreshSnapshotSafely()
+                                    working = false
+                                }
+                            }
+                        },
                     )
                     GrayinScreen.Settings -> SettingsScreen(
                         appSecurityState = appSecurityState,
@@ -1437,6 +1450,7 @@ private fun SourcesScreen(
     onDeleteSourceData: (String) -> Unit,
     onSaveNotificationAllowlist: (String) -> Unit,
     onOnlineEnrichmentChanged: (Boolean) -> Unit,
+    onLocationObservationChanged: (Boolean) -> Unit,
 ) {
     ProductionLazyColumn {
         item {
@@ -1478,6 +1492,7 @@ private fun SourcesScreen(
                 onDeleteSourceData = onDeleteSourceData,
                 onSaveNotificationAllowlist = onSaveNotificationAllowlist,
                 onOnlineEnrichmentChanged = onOnlineEnrichmentChanged,
+                onLocationObservationChanged = onLocationObservationChanged,
             )
         }
     }
@@ -1756,6 +1771,7 @@ private fun SourceRow(
     onDeleteSourceData: (String) -> Unit,
     onSaveNotificationAllowlist: (String) -> Unit,
     onOnlineEnrichmentChanged: (Boolean) -> Unit,
+    onLocationObservationChanged: (Boolean) -> Unit,
 ) {
     var notificationAllowlistText by rememberSaveable(source.id) {
         mutableStateOf(source.notificationAllowedPackages.joinToString("\n"))
@@ -1822,6 +1838,22 @@ private fun SourceRow(
                         checked = enabled,
                         enabled = !working,
                         onCheckedChange = onOnlineEnrichmentChanged,
+                    )
+                }
+            }
+            source.locationObservationEnabled?.let { enabled ->
+                Text(strings.locationObservationTitle(), style = MaterialTheme.typography.titleSmall)
+                SupportingText(strings.locationObservationDisclosure())
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(strings.locationObservationTitle())
+                    Switch(
+                        checked = enabled,
+                        enabled = !working && source.canIndex,
+                        onCheckedChange = onLocationObservationChanged,
                     )
                 }
             }

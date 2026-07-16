@@ -238,7 +238,10 @@ Rules:
 - the local LLM must not call map APIs directly; map/place enrichment must remain outside the model path
 - exact business names are not required
 - focus on region, movement, stay duration, and user-defined place labels
-- the current connector reads one Android last-known observation per manual scan; it does not claim to recover prior device location history
+- a separate default-OFF movement-observation mode may be started only from the visible app after Location is connected; it uses a persistent foreground-service notification with an immediate Stop action and does not request Android background-location permission
+- while that visibly active mode is running, the connector requests bounded network/GPS observations at a 15-minute / 250-metre threshold, rejects stale, future-dated, excessively inaccurate, and over-frequent fixes, and never performs online enrichment for those backgrounded foreground-service observations
+- exact platform fixes remain transient: the service passes only a 0.001-degree rounded projection into the connector/store boundary and stops on user action, source deletion, revocation, missing permission, no provider, or re-consent requirement
+- observed history begins only after explicit activation; it does not recover Android's prior location history, fill OS delivery gaps, or claim a continuous route
 - each observation emits a stable cluster keyed by a domain-separated hash of its 0.001-degree rounded coordinate
 - repeated scans of the same source are idempotent; a new source observation at that coordinate extends the encrypted cluster visit count and first/last-seen range
 

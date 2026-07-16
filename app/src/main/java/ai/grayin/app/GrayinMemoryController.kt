@@ -7,6 +7,9 @@ import ai.grayin.connectors.AndroidConnectorRegistry
 import ai.grayin.connectors.localfiles.LocalFileMemoryExtractor
 import ai.grayin.connectors.localfiles.LocalFilesConnector
 import ai.grayin.connectors.location.LocationConnector
+import ai.grayin.connectors.location.LocationObservationPreferences
+import ai.grayin.connectors.location.LocationObservationConsentCoordinator
+import ai.grayin.connectors.location.LocationObservationService
 import ai.grayin.connectors.notification.NotificationAppAllowlist
 import ai.grayin.connectors.notification.NotificationConnector
 import ai.grayin.connectors.photos.PhotoPermissionPolicy
@@ -104,6 +107,7 @@ data class ConnectorUiState(
     val canDelete: Boolean = false,
     val notificationAllowedPackages: List<String> = emptyList(),
     val onlineEnrichmentEnabled: Boolean? = null,
+    val locationObservationEnabled: Boolean? = null,
     val detailRows: List<String> = emptyList(),
     val supportsDateRangeIndexing: Boolean = false,
     val lastRequestedScanRange: IndexedDateRangePresentation? = null,
@@ -196,6 +200,9 @@ class GrayinMemoryController(
     private val queryPlanner: DefaultQueryPlanner = DefaultQueryPlanner(),
     private val notificationAllowlist: NotificationAppAllowlist = NotificationAppAllowlist(context.applicationContext),
     private val onlineEnrichmentPreferences: OnlineEnrichmentPreferences = OnlineEnrichmentPreferences(
+        context.applicationContext,
+    ),
+    private val locationObservationPreferences: LocationObservationPreferences = LocationObservationPreferences(
         context.applicationContext,
     ),
     private val modelCatalogRepository: ModelCatalogRepository = ModelCatalogRepository(context.applicationContext),
@@ -558,6 +565,22 @@ class GrayinMemoryController(
         strings.onlineEnrichmentSaved(enabled)
     }
 
+    suspend fun updateLocationObservation(enabled: Boolean, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
+        if (enabled) {
+            val location = connectorRegistry.find(LocationConnector.CONNECTOR_ID)
+                ?: return@withContext strings.locationObservationUnavailable()
+            if (!location.currentState().enabled || !location.permissionState().permissionGranted) {
+                return@withContext strings.locationObservationUnavailable()
+            }
+            withContext(Dispatchers.Main) {
+                LocationObservationService.start(appContext)
+            }
+        } else {
+            LocationObservationService.stop(appContext)
+        }
+        strings.locationObservationSaved(enabled)
+    }
+
     suspend fun prepareEncryptedExport(
         password: CharArray,
         createdAt: Instant = Instant.now(),
@@ -754,7 +777,14 @@ class GrayinMemoryController(
     }
 
     suspend fun deleteConnectorData(connectorId: String, strings: GrayinStrings): String = withContext(Dispatchers.IO) {
-        val deleteResult = store.deleteConnectorData(connectorId)
+        val deleteResult = if (connectorId == LocationConnector.CONNECTOR_ID) {
+            LocationObservationConsentCoordinator.withExclusiveAccess {
+                LocationObservationService.stop(appContext)
+                store.deleteConnectorData(connectorId)
+            }
+        } else {
+            store.deleteConnectorData(connectorId)
+        }
         connectorFor(connectorId).deleteDerivedData(ConnectorDeleteRequest(connectorId = connectorId))
         if (connectorId == LocalFileMemoryExtractor.CONNECTOR_ID) {
             strings.deletedLocalFileEvents(deleteResult.deletedDerivedMemoryEventIds.size)
@@ -1004,6 +1034,11 @@ class GrayinMemoryController(
             },
             onlineEnrichmentEnabled = if (connectorId == LocationConnector.CONNECTOR_ID) {
                 onlineEnrichmentPreferences.isEnabled()
+            } else {
+                null
+            },
+            locationObservationEnabled = if (connectorId == LocationConnector.CONNECTOR_ID) {
+                locationObservationPreferences.isEnabled()
             } else {
                 null
             },

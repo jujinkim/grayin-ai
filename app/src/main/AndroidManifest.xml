@@ -8,6 +8,8 @@
         android:maxSdkVersion="27" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
@@ -56,6 +58,11 @@
             android:name=".connectors.localfiles.document.DocumentProcessingService"
             android:exported="false"
             android:process=":document" />
+        <service
+            android:name=".connectors.location.LocationObservationService"
+            android:exported="false"
+            android:foregroundServiceType="location"
+            android:stopWithTask="false" />
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"

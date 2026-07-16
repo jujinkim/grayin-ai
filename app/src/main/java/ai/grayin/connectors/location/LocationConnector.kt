@@ -121,15 +121,27 @@ class LocationConnector(
 
         val location = lastKnownLocation()
             ?: return skipped(now, SourceAvailability.NOT_INDEXED, ConnectorScanIssueCode.NO_LAST_KNOWN_LOCATION)
-        val sampleAt = location.sampleAt(now)
+        return scanObservedLocation(
+            location = location,
+            indexedAt = now,
+            includeOnlineEnrichment = enrichmentPreferences.isEnabled(),
+        )
+    }
+
+    internal suspend fun scanObservedLocation(
+        location: Location,
+        indexedAt: Instant = Instant.now(),
+        includeOnlineEnrichment: Boolean = false,
+    ): ConnectorScanResult {
+        val sampleAt = location.sampleAt(indexedAt)
         val coordinate = location.roundedCoordinate()
         val enrichment = LocationOnlineEnrichmentPolicy.lookup(
-            enabled = enrichmentPreferences.isEnabled(),
+            enabled = includeOnlineEnrichment,
             gateway = enrichmentGateway,
             coordinate = coordinate,
             observedAt = sampleAt,
         )
-        val result = location.toExtractionResult(now, sampleAt, coordinate, enrichment)
+        val result = location.toExtractionResult(indexedAt, sampleAt, coordinate, enrichment)
         return ConnectorScanResult(
             connectorId = CONNECTOR_ID,
             processingState = ProcessingState.COMPLETED,
@@ -137,7 +149,7 @@ class LocationConnector(
             derivedEvents = listOf(result.derivedEvent),
             citations = listOf(result.citation),
             placeClusters = listOf(result.placeCluster),
-            scannedAt = now,
+            scannedAt = indexedAt,
         )
     }
 
@@ -148,14 +160,17 @@ class LocationConnector(
     }
 
     override suspend fun revoke(): ConnectorRevokeResult {
-        check(prefs().edit().clear().commit()) { "Could not clear location connector consent." }
-        enrichmentPreferences.setEnabled(false)
-        return ConnectorRevokeResult(
-            connectorId = CONNECTOR_ID,
-            revokedAt = Instant.now(),
-            permissionState = permissionState(),
-            deleteRequest = ConnectorDeleteRequest(connectorId = CONNECTOR_ID),
-        )
+        return LocationObservationConsentCoordinator.withExclusiveAccess {
+            LocationObservationService.stop(context)
+            check(prefs().edit().clear().commit()) { "Could not clear location connector consent." }
+            enrichmentPreferences.setEnabled(false)
+            ConnectorRevokeResult(
+                connectorId = CONNECTOR_ID,
+                revokedAt = Instant.now(),
+                permissionState = permissionState(),
+                deleteRequest = ConnectorDeleteRequest(connectorId = CONNECTOR_ID),
+            )
+        }
     }
 
     override suspend fun deleteDerivedData(request: ConnectorDeleteRequest): ConnectorDeleteResult {

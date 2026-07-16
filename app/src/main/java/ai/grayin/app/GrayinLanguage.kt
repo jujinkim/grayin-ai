@@ -869,6 +869,38 @@ data class GrayinStrings(
         }
     }
 
+    fun locationObservationTitle(): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "이동 기억 관측"
+            GrayinLanguage.JAPANESE -> "移動記憶の観測"
+            GrayinLanguage.ENGLISH -> "Movement memory observation"
+        }
+    }
+
+    fun locationObservationDisclosure(): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "기본값은 꺼짐입니다. 켜면 지속 알림이 표시되며, 15분 간격·250m 이동 기준으로 위치를 관측합니다. 정확한 위치 경로는 저장하지 않고 0.001도 반올림 파생 기록만 SQLCipher에 저장합니다. 알림의 중지 버튼으로 즉시 멈출 수 있습니다."
+            GrayinLanguage.JAPANESE -> "初期設定はオフです。有効にすると継続通知を表示し、15分間隔・250m移動を基準に位置を観測します。正確な位置履歴は保存せず、0.001度に丸めた派生記録だけをSQLCipherへ保存します。通知の停止ボタンですぐに停止できます。"
+            GrayinLanguage.ENGLISH -> "Off by default. When enabled, a persistent notification is shown and location is observed at a 15-minute/250 m threshold. Exact traces are not stored; only 0.001-degree rounded derived records enter SQLCipher. The notification provides an immediate stop action."
+        }
+    }
+
+    fun locationObservationSaved(enabled: Boolean): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> if (enabled) "이동 기억 관측을 시작했습니다." else "이동 기억 관측을 중지했습니다."
+            GrayinLanguage.JAPANESE -> if (enabled) "移動記憶の観測を開始しました。" else "移動記憶の観測を停止しました。"
+            GrayinLanguage.ENGLISH -> if (enabled) "Started movement memory observation." else "Stopped movement memory observation."
+        }
+    }
+
+    fun locationObservationUnavailable(): String {
+        return when (languageCode) {
+            GrayinLanguage.KOREAN -> "위치 소스를 연결하고 위치 권한을 허용한 상태에서 앱 화면이 보일 때 관측을 시작해 주세요."
+            GrayinLanguage.JAPANESE -> "位置ソースを接続して位置権限を許可し、アプリ画面が表示されている間に観測を開始してください。"
+            GrayinLanguage.ENGLISH -> "Connect the Location source, grant location permission, and start observation while the app screen is visible."
+        }
+    }
+
     fun automaticIndexingSummary(state: AutomaticIndexingUiState): String {
         val enabledLabel = if (state.enabled) automaticIndexingOn else automaticIndexingOff
         val chargingLabel = if (state.requireCharging) " · $chargingOnly" else ""

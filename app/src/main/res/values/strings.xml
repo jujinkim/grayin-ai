@@ -1,4 +1,9 @@
 <resources>
     <string name="app_name">Grayin AI</string>
+    <string name="location_observation_channel_name">Location memory observation</string>
+    <string name="location_observation_channel_description">Shows when Grayin is explicitly observing rounded location samples.</string>
+    <string name="location_observation_notification_title">Grayin location memory is active</string>
+    <string name="location_observation_notification_text">Rounded location samples are being indexed locally. Exact fixes are not stored.</string>
+    <string name="location_observation_notification_stop">Stop</string>
 </resources>
 

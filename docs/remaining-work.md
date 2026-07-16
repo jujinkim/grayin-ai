@@ -235,8 +235,8 @@ The user explicitly authorized the concept-aligned expansion on 2026-07-16. Impl
 
 ### 3.2 Historical movement memory
 
-- [ ] Design an explicit default-OFF observation mode that is visibly active and does not resemble silent background collection.
-- [ ] Add the minimum Android permission and foreground-service boundaries needed for supported API levels, with persistent disclosure and one-action pause/stop.
+- [x] Design an explicit default-OFF observation mode that is visibly active and does not resemble silent background collection.
+- [x] Add the minimum Android permission and foreground-service boundaries needed for supported API levels, with persistent disclosure and one-action pause/stop.
 - [ ] Derive rounded observations, bounded stays, movement legs, and visit sequences transiently; never persist exact raw fixes or a raw location trace.
 - [ ] Merge observations idempotently into SQLCipher-backed place visits/clusters and expose coverage gaps, accuracy, and observation-window limits.
 - [ ] Support route-oriented Timeline/Places retrieval without claiming history from before consent or periods the OS did not deliver.
