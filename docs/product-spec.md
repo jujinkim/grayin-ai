@@ -109,7 +109,9 @@ The current repository implements these evidence sources:
 
 Current usable local MVP implementation supports user-selected Text, Markdown, and PDF documents, connected Android last-known location samples, connected Android calendar events, connected Android photo metadata, connected Android app-usage sessions, and connected Android notification-derived signals after explicit permission or settings access. PDF pages use embedded text when available and installed on-device OCR language data otherwise, but neither extracted text nor OCR transcripts are persisted. A separate default-OFF Location switch permits bounded Android reverse geocoding and fixed Open-Meteo weather lookup through `OnlineEnrichmentGateway`; failures preserve coordinate-only local indexing. Ask can use a local Gemma LiteRT-LM model over retrieved `EvidencePack` data when a verified runtime-downloaded or manually imported `.litertlm` model file is installed, with template fallback when unavailable.
 
-Future evidence paths include photo pixel understanding and visual clusters, a platform-appropriate historical location source, calls/messages/browser/audio/video, and richer local summaries. They remain out of scope until their permissions, provenance, and zero-raw-retention processing paths are explicitly designed and implemented.
+The long-term expansion now includes photo pixel understanding and visual clusters, a platform-appropriate historical location observation mode, calls and user-defined person aliases, permitted message/browser evidence, explicitly selected audio/video signals, and richer local synthesis. These capabilities are authorized for staged design and implementation in `docs/remaining-work.md`, but each remains unavailable to product claims until its permission, provenance, zero-raw-retention projection, storage closure, retrieval, UI, and verification gates are complete.
+
+Cloud sync, accounts, an application backend, analytics, ads, crash reporting, remote LLMs, and agentic actions are not part of this expansion. They remain incompatible with the current core concept.
 
 ## Important Definitions
 

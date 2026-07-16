@@ -7,9 +7,11 @@ This file is the single source of truth for open Grayin AI work.
 ## Current Verified Baseline
 
 - Repository implementation is complete through roadmap Step 9.
+- Current repository head: commit `316cbe1` on 2026-07-16; the working tree is clean and synchronized with `origin/main`.
 - Host-verified implementation baseline: commit `5a9b3d9` on 2026-07-15.
 - Host verification passed 377 JVM tests, Android instrumentation source compilation, lint with no errors, debug/release assembly, APK boundary checks, 30 deterministic grounded-answer fixtures, and 46 model-tooling tests.
 - Lint still reports 76 warnings and 3 hints; these are tracked below as release-quality work, not hidden implementation failures.
+- A real adaptive/monochrome launcher icon was added after that full host baseline; physical-device visual acceptance remains part of section 1.
 - No Android device or emulator was connected for the baseline verification.
 - Production model transport remains fail-closed: model catalog download URLs, exact sizes, digests, production manifest endpoint, and production public key are not configured.
 - Inactive model transport metadata is defined in `app/src/main/java/ai/grayin/core/ai/ModelCatalog.kt`; production endpoint/key configuration is defined by `RemoteModelManifestConfiguration` in `app/src/main/java/ai/grayin/core/ai/SignedModelManifest.kt`.
@@ -23,6 +25,12 @@ This file is the single source of truth for open Grayin AI work.
 4. Complete one coherent item, update affected docs, run its validation, and commit it. Check completed substeps while a numbered item remains active.
 5. When a full numbered item is complete, remove it from this file. Record lasting behavior and verification in the owning document and `docs/roadmap.md`.
 6. Never commit secrets, private keys, release keystores, provider credentials, user data, model weights, or generated model artifacts.
+
+## Current User-Directed Priority
+
+On 2026-07-16 the original long-term memory-engine scope was explicitly authorized for staged implementation. Work may therefore proceed through P3 before the externally blocked production-release items, while preserving every existing non-agentic, local-first, consent, network, and zero-raw-retention invariant.
+
+This authorization does not include cloud sync, accounts, an application backend, analytics, ads, crash reporting, remote LLMs, or agentic actions. Those remain prohibited product changes unless the core concept is separately revised.
 
 ## Next Session Start
 
@@ -192,7 +200,6 @@ These tasks do not reopen repository feature implementation. Complete before pub
 Baseline: 76 warnings and 3 hints; no lint errors. Largest groups are `UseKtx` (49), dependency/version notices (14), and `InlinedApi` (6).
 
 - [ ] Review correctness/API warnings first; fix or narrowly document intentional suppressions.
-- [ ] Add a real launcher icon and resolve `MissingApplicationIcon`.
 - [ ] Review dependency and Android Gradle Plugin upgrades without unreviewed lock or verification-metadata regeneration.
 - [ ] Resolve safe KTX, allocation, and platform-API findings.
 - [ ] Reach zero unexplained correctness/security warnings; record any accepted non-actionable version hints.
@@ -213,18 +220,67 @@ ANDROID_HOME=/home/jujin/workspace/android-sdk ANDROID_SDK_ROOT=/home/jujin/work
 
 Done when a signed production artifact passes all host and device gates and its store disclosures match `docs/privacy-model.md` and `docs/network-policy.md`.
 
-## P3 — Explicitly Deferred Product Scope
+## P3 — Active Long-Term Memory-Engine Expansion
 
-Status: `DEFERRED_POLICY_CHANGE_REQUIRED`
+Status: `ACTIVE_DESIGN_AND_IMPLEMENTATION`
 
-Do not implement these as opportunistic follow-ups. Each requires product, permission, provenance, privacy, security, zero-raw-retention, retrieval, UI, and test design before code.
+The user explicitly authorized the concept-aligned expansion on 2026-07-16. Implement the stages below one coherent boundary at a time. Before each connector reads a new Android source or media payload, update its product purpose, permission/consent model, provenance, zero-raw-retention projection, storage closure, retrieval behavior, UI disclosure, deletion/revocation behavior, and tests.
 
-- [ ] Photo pixel understanding, visual captions, and visual-content clusters.
-- [ ] Historical location source beyond last-known observations explicitly seen by Grayin scans.
-- [ ] Calls, messages, browser history, audio, and video connectors.
-- [ ] Cloud sync, accounts, application backend, analytics, ads, crash reporting, remote LLMs, or agentic actions.
+### 3.1 Shared expansion foundation
 
-Any P3 proposal must revise scope and hard boundaries explicitly before moving into P0–P2.
+- [ ] Define closed event kinds, capabilities, citations, issue codes, and validators for movement sessions, visual labels, person/call evidence, communication hints, browsing topics, and audio/video structural signals.
+- [ ] Keep raw payloads outside core/store boundaries; add negative tests proving the new records cannot carry raw text, phone numbers, URLs, pixels, audio, video, transcripts, or provider/model output prose.
+- [ ] Add connector-specific explicit consent, independent revoke/delete, authoritative replacement, and missing-data behavior.
+- [ ] Extend English/Korean/Japanese typed presentation and benchmark fixtures before generated answers may claim the new capabilities.
+
+### 3.2 Historical movement memory
+
+- [ ] Design an explicit default-OFF observation mode that is visibly active and does not resemble silent background collection.
+- [ ] Add the minimum Android permission and foreground-service boundaries needed for supported API levels, with persistent disclosure and one-action pause/stop.
+- [ ] Derive rounded observations, bounded stays, movement legs, and visit sequences transiently; never persist exact raw fixes or a raw location trace.
+- [ ] Merge observations idempotently into SQLCipher-backed place visits/clusters and expose coverage gaps, accuracy, and observation-window limits.
+- [ ] Support route-oriented Timeline/Places retrieval without claiming history from before consent or periods the OS did not deliver.
+
+### 3.3 On-device photo understanding
+
+- [ ] Define a fixed, reviewed local visual-model artifact path with immutable identity, exact size/digest, license, and no network during inference.
+- [ ] Decode bounded user-authorized image content transiently and derive only closed visual labels, confidence, coarse composition/color signals, and visual-cluster identifiers.
+- [ ] Never persist or transmit pixels, crops, reconstructable embeddings, unrestricted captions, OCR text, or model prompts/responses.
+- [ ] Add food/drink/document/person-presence and other reviewed closed labels needed by benchmark questions, with conservative confidence and missing-model behavior.
+- [ ] Add authoritative photo-index replacement, revoke/delete, corruption/limit handling, and representative device performance tests.
+
+### 3.4 Calls and user-defined people
+
+- [ ] Review Android/Play call-log eligibility before requesting restricted permissions; keep the connector unavailable when distribution policy does not permit access.
+- [ ] Derive only direction, time, duration bucket, completion state, and a Keystore-HMAC counterparty identity from transient call-log rows.
+- [ ] Add local user-defined person/family aliases without persisting raw phone numbers or importing the contacts database as raw memory.
+- [ ] Support direct-call evidence, alias matching, independent revoke/delete, and explicit indirect-only answers when direct evidence is unavailable.
+
+### 3.5 Messages and browser history
+
+- [ ] Select platform-permitted, explicit user-authorized sources; do not add accessibility scraping, arbitrary app database access, or silent surveillance.
+- [ ] Derive bounded communication/topic/domain-category hints transiently without persisting message bodies, sender addresses, full URLs, query strings, page content, or unrestricted titles.
+- [ ] Add security-code, authentication, financial-secret, health, and other sensitive-content discard policies before indexing.
+- [ ] Add provenance, partial-history disclosures, revoke/delete, and negative raw-retention tests.
+
+### 3.6 Audio and video memory signals
+
+- [ ] Limit input to explicit user selections unless a separately reviewed platform source exists.
+- [ ] Run bounded local processing with explicit model artifacts and derive only reviewed structural/topic labels and time references.
+- [ ] Never persist media bytes, waveform/frame caches, unrestricted transcripts, speaker voiceprints, face embeddings, or reconstructable embeddings.
+- [ ] Add process isolation, resource/time limits, cancellation, deletion, missing-model behavior, and device acceptance.
+
+### 3.7 Rich local synthesis and original-question acceptance
+
+- [ ] Build deterministic daily activity, meeting-context, busyness, drinking-context, photo-finding, and route synthesis from cited derived events only.
+- [ ] Keep synthesis records closed and recomputable; do not persist local-model prose as memory truth.
+- [ ] Extend Ask, Timeline, Places, and source links for multi-source evidence while preserving visible inference, confidence, and missing data.
+- [ ] Add English/Korean/Japanese held-out fixtures for every original product question and pass deterministic template plus accepted local-model gates.
+- [ ] Run complete host, APK-boundary, privacy, and representative physical-device acceptance before declaring the long-term concept implemented.
+
+### Permanently excluded without a separate core-concept revision
+
+- Cloud sync, accounts, application backend, analytics, ads, crash reporting, remote LLMs, and agentic actions remain forbidden rather than implementation backlog.
 
 ## Host Regression Gate
 
