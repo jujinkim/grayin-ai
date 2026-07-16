@@ -120,7 +120,7 @@ After successful permission revoke, the controller deletes the connector's deriv
 
 The build uses `io.legere:pdfiumandroid:1.0.35` from Maven Central for PDF access and the standard `cz.adaptech.tesseract4android:tesseract4android:4.9.0` variant for local OCR. JitPack is an `exclusiveContent` repository for that one Tesseract module only; it cannot supply or shadow other dependencies.
 
-`app/gradle.lockfile` locks the resolved versions, and `gradle/verification-metadata.xml` verifies artifact and metadata SHA-256 values. The reviewed AAR hashes are `862ed337d6b52485fefba9ced9fe7fdb800d41fb300d8c8ebb03d8bea64d72f0` for PdfiumAndroidKt and `bce5d6413a1a5ae3d7240033fbbc851ba3217d0a08d9769400e17a077f42cb2a` for Tesseract4Android.
+`app/gradle.lockfile` locks the resolved versions, and `gradle/verification-metadata.xml` verifies artifact and metadata SHA-256 values for executable build/runtime dependencies. Android Studio-only source and Javadoc attachments, including the synthetic Gradle source component, are narrowly trusted by filename or component so IDE sync does not require those non-executable attachments in the checksum inventory. The reviewed AAR hashes are `862ed337d6b52485fefba9ced9fe7fdb800d41fb300d8c8ebb03d8bea64d72f0` for PdfiumAndroidKt and `bce5d6413a1a5ae3d7240033fbbc851ba3217d0a08d9769400e17a077f42cb2a` for Tesseract4Android.
 
 The AAR native inventory and license mapping are documented in `docs/third-party-notices.md`. Readable notice and license files ship under `app/src/main/assets/third_party_licenses/`. PDF selection and SQLCipher commit remain connector-owned so no raw descriptor or incomplete cross-process result can enter the store.
 

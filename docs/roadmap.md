@@ -128,6 +128,8 @@ Repository tooling prepares and validates a release without committing weights, 
 
 Host verification completed on 2026-07-15. A clean rerun executed 119 Gradle tasks: all 377 JVM tests passed with zero failures; Android instrumentation sources compiled; debug and unsigned release APKs assembled; lint completed with no errors (76 warnings and 3 hints remain); and the OCR-data, PDF/OCR notice, document-runtime, and debug/release model-artifact APK boundaries passed. The model tooling checked 30 training and 30 held-out records across 10 families and 3 languages, passed all 30 deterministic grounded-answer fixtures and all 46 Python tests, and passed configuration, artifact-policy, release-plan, smoke-plan, bytecode-compilation, and diff checks. An independent final diff review found no remaining high- or medium-severity repository issue.
 
+Android Studio sync compatibility was verified on 2026-07-16 with Gradle 9.5.1 and AGP 8.13.2. Strict checksum verification remains enabled for executable build/runtime dependencies; IDE-only source and Javadoc attachments use the narrow trusted-artifact patterns recommended by the Android dependency-verification guidance.
+
 ## Remaining Work
 
 All open work, blockers, ordering, completion criteria, and next-session commands live in `docs/remaining-work.md`. Keep this roadmap as completed implementation and verification history; do not duplicate open checklists here.
