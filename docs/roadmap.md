@@ -1,6 +1,6 @@
 # Roadmap
 
-Current phase status: the repository-local implementation plan is complete through Step 9. `docs/remaining-work.md` is the single source of truth for external release inputs, physical-device acceptance, release quality, and explicitly deferred scope.
+Current phase status: the repository-local MVP implementation plan is complete through Step 9, and the authorized long-term memory-engine expansion is active. `docs/remaining-work.md` is the single source of truth for external release inputs, physical-device acceptance, release quality, and expansion work.
 
 ## Current Capability
 
@@ -129,6 +129,13 @@ Repository tooling prepares and validates a release without committing weights, 
 Host verification completed on 2026-07-15. A clean rerun executed 119 Gradle tasks: all 377 JVM tests passed with zero failures; Android instrumentation sources compiled; debug and unsigned release APKs assembled; lint completed with no errors (76 warnings and 3 hints remain); and the OCR-data, PDF/OCR notice, document-runtime, and debug/release model-artifact APK boundaries passed. The model tooling checked 30 training and 30 held-out records across 10 families and 3 languages, passed all 30 deterministic grounded-answer fixtures and all 46 Python tests, and passed configuration, artifact-policy, release-plan, smoke-plan, bytecode-compilation, and diff checks. An independent final diff review found no remaining high- or medium-severity repository issue.
 
 Android Studio sync compatibility was verified on 2026-07-16 with Gradle 9.5.1 and AGP 8.13.2. Strict checksum verification remains enabled for executable build/runtime dependencies; IDE-only source and Javadoc attachments use the narrow trusted-artifact patterns recommended by the Android dependency-verification guidance.
+
+### 10. Long-Term Movement Foundation
+
+- [x] Promote the original concept-aligned evidence expansion into an explicit staged implementation plan while preserving the non-agentic, local-first, network, consent, and zero-raw-retention invariants.
+- [x] Add a pure location-timeline derivation boundary that accepts only 0.001-degree rounded observations, rejects exact coordinates and invalid accuracy, deduplicates stable sources, derives bounded stays and movement legs, and reports coverage gaps instead of claiming movement across long observation gaps.
+
+This foundation does not yet request background location, run a foreground observation service, persist movement legs, or expand current product claims. Targeted JVM coverage passed for the new timeline derivation and existing location cluster policy on 2026-07-16.
 
 ## Remaining Work
 

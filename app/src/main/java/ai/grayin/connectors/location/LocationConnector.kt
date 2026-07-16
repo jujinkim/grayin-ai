@@ -486,13 +486,8 @@ internal object LocationPlaceClusterPolicy {
             "A location place cluster must reference a location source."
         }
         val rounded = roundedCoordinate(coordinate.latitude, coordinate.longitude)
-        val identity = "location-place-cluster-v1:${rounded.latitude}:${rounded.longitude}"
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(identity.toByteArray(Charsets.UTF_8))
-            .joinToString(separator = "") { byte -> "%02x".format(byte) }
-            .take(HASH_ID_CHARS)
         return PlaceCluster(
-            id = "place-cluster:${LocationConnector.CONNECTOR_ID}:$digest",
+            id = clusterId(rounded),
             regionLabel = closedRegionLabel(regionLabel),
             centroidLatitude = rounded.latitude,
             centroidLongitude = rounded.longitude,
@@ -503,6 +498,16 @@ internal object LocationPlaceClusterPolicy {
             sourceReferenceIds = listOf(sourceReferenceId),
             confidence = confidence,
         )
+    }
+
+    fun clusterId(coordinate: GeoCoordinate): String {
+        val rounded = roundedCoordinate(coordinate.latitude, coordinate.longitude)
+        val identity = "location-place-cluster-v1:${rounded.latitude}:${rounded.longitude}"
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(identity.toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte -> "%02x".format(byte) }
+            .take(HASH_ID_CHARS)
+        return "place-cluster:${LocationConnector.CONNECTOR_ID}:$digest"
     }
 
     fun closedRegionLabel(value: String?): String? {
