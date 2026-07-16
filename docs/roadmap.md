@@ -137,6 +137,8 @@ Android Studio sync compatibility was verified on 2026-07-16 with Gradle 9.5.1 a
 
 The next completed movement increment adds a default-OFF, user-started `location` foreground service. It can begin only from the visible app after Location is connected, displays a persistent notification with an immediate Stop action, requests no background-location permission, never auto-starts, and indexes only accepted 15-minute / 250-metre network/GPS observations through the existing 0.001-degree rounded SQLCipher scan boundary. It disables online enrichment on this path and serializes direct observation writes with Location revoke/delete. Movement stays/legs remain transient derivation output. Route-oriented Ask requests now build ephemeral evidence only for adjacent observations less than six hours apart and only when both endpoint citations exist; Timeline and Places route presentation remain pending. Full JVM tests, Android instrumentation-source compilation, lint with no errors, and debug assembly passed on 2026-07-16.
 
+The first visual-understanding foundation adds a closed visual-signal policy: only reviewed `food`, `drink`, `document`, `person-present`, `indoor`, and `outdoor` labels with medium/high confidence can ever be admitted; arbitrary captions, OCR, embeddings, pixels, crops, and model prose have no representation. It is not connected to photo indexing until the fixed reviewed on-device visual-model artifact and the store-validator changes in `docs/remaining-work.md` are completed.
+
 ## Remaining Work
 
 All open work, blockers, ordering, completion criteria, and next-session commands live in `docs/remaining-work.md`. Keep this roadmap as completed implementation and verification history; do not duplicate open checklists here.
