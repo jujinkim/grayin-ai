@@ -242,6 +242,7 @@ Rules:
 - while that visibly active mode is running, the connector requests bounded network/GPS observations at a 15-minute / 250-metre threshold, rejects stale, future-dated, excessively inaccurate, and over-frequent fixes, and never performs online enrichment for those backgrounded foreground-service observations
 - exact platform fixes remain transient: the service passes only a 0.001-degree rounded projection into the connector/store boundary and stops on user action, source deletion, revocation, missing permission, no provider, or re-consent requirement
 - observed history begins only after explicit activation; it does not recover Android's prior location history, fill OS delivery gaps, or claim a continuous route
+- route-oriented Ask requests may derive ephemeral movement legs only from adjacent rounded observations less than six hours apart and cite both endpoint samples; gaps, uncited endpoints, and pre-consent periods remain unavailable rather than inferred
 - each observation emits a stable cluster keyed by a domain-separated hash of its 0.001-degree rounded coordinate
 - repeated scans of the same source are idempotent; a new source observation at that coordinate extends the encrypted cluster visit count and first/last-seen range
 

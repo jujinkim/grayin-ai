@@ -10,6 +10,7 @@ import ai.grayin.connectors.location.LocationConnector
 import ai.grayin.connectors.location.LocationObservationPreferences
 import ai.grayin.connectors.location.LocationObservationConsentCoordinator
 import ai.grayin.connectors.location.LocationObservationService
+import ai.grayin.connectors.location.LocationRouteEvidenceResolver
 import ai.grayin.connectors.notification.NotificationAppAllowlist
 import ai.grayin.connectors.notification.NotificationConnector
 import ai.grayin.connectors.photos.PhotoPermissionPolicy
@@ -67,6 +68,7 @@ import ai.grayin.core.retrieval.EvidenceEventSelector
 import ai.grayin.core.retrieval.MissingEvidenceResolver
 import ai.grayin.core.retrieval.MemoryCapabilityResolver
 import ai.grayin.core.retrieval.QueryPlan
+import ai.grayin.core.retrieval.QueryIntent
 import ai.grayin.core.retrieval.ScopedQueryPlanning
 import ai.grayin.core.ocr.OcrLanguagePackCatalog
 import ai.grayin.core.ocr.OcrLanguagePackDownloadScheduler
@@ -878,7 +880,34 @@ class GrayinMemoryController(
             planner = queryPlanner,
         )
         val plan = planning.plan
-        val evidenceItems = evidenceFor(trimmedQuery, plan, planning.events)
+        val selectedEvidence = evidenceFor(trimmedQuery, plan, planning.events)
+        val routeEvidence = if (plan.intent == QueryIntent.NIGHT_OUT_ROUTE_RECONSTRUCTION) {
+            LocationRouteEvidenceResolver.resolve(
+                sourceReferences = stored.sourceReferences,
+                placeClusters = stored.placeClusters,
+                citations = stored.citations,
+                timeRange = plan.timeRange,
+            ).map { route ->
+                EvidenceItem(
+                    id = "evidence:${route.id}",
+                    derivedMemoryEventId = route.id,
+                    summary = route.summary,
+                    eventKind = ai.grayin.core.model.DerivedMemoryEventKind.PLACE_VISIT,
+                    occurredAt = route.occurredAt,
+                    confidence = route.confidence,
+                    citationIds = route.citationIds,
+                    capabilities = setOf(
+                        ai.grayin.core.model.MemoryCapability.HAS_TIME,
+                        ai.grayin.core.model.MemoryCapability.HAS_LOCATION,
+                    ),
+                )
+            }
+        } else {
+            emptyList()
+        }
+        val evidenceItems = (routeEvidence + selectedEvidence)
+            .distinctBy(EvidenceItem::id)
+            .take(MAX_EVIDENCE_ITEMS)
         val usedCitationIds = evidenceItems.flatMap { it.citationIds }.toSet()
         val citations = stored.citations.filter { it.id in usedCitationIds }
         val plannedMissingSources = MissingEvidenceResolver.resolve(
