@@ -30,7 +30,7 @@ internal object TransferTestFixtures {
         return TransferPayload(
             createdAt = observedAt,
             producer = TransferProducerMetadata(
-                applicationId = "ai.grayin",
+                applicationId = "kim.jujin.grayin",
                 versionCode = 1,
                 storeSchemaVersion = 8,
             ),

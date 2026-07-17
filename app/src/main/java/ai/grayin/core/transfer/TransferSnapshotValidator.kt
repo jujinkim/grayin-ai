@@ -535,7 +535,7 @@ internal object TransferSnapshotValidator {
         )
     }
 
-    private const val APPLICATION_ID = "ai.grayin"
+    private const val APPLICATION_ID = "kim.jujin.grayin"
     private const val CURRENT_STORE_SCHEMA_VERSION = 8
     private const val APP_USAGE_CONNECTOR_ID = "app_usage"
     private const val LOCAL_FILES_CONNECTOR_ID = "local_files"

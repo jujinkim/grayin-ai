@@ -13,7 +13,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "ai.grayin"
+        applicationId = "kim.jujin.grayin"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
